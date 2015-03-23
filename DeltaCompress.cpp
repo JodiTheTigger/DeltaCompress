@@ -2,7 +2,7 @@
 
 // http://gafferongames.com/2015/03/14/the-networked-physics-data-compression-challenge/
 
-// g++ -std=c++14 DeltaCompress.cpp -o DeltaCompress
+// g++ -std=c++14 DeltaCompress.cpp -Wall -g -o DeltaCompress
 
 // //////////////////////////////////////////////////////
 
@@ -135,7 +135,7 @@ inline bool operator==(const Frame& lhs, const Frame& rhs)
         return false;
     }
 
-    for (auto i = 0; i < size; ++i)
+    for (size_t i = 0; i < size; ++i)
     {
         if (lhs[i] != rhs[i])
         {
@@ -256,7 +256,7 @@ public:
 
     void Write(unsigned value, unsigned bitsToWrite)
     {
-        assert(value <= ((1 << bitsToWrite) - 1));
+        assert(value <= ((1u << bitsToWrite) - 1));
 
         auto bitOffset = m_bitOffset;
         auto byteOffset = bitOffset / 8u;
@@ -459,7 +459,7 @@ std::vector<uint8_t> Encode(const Frame& base, const Frame& target)
     // A. If nothing changed, don't send anything at all.
 
     bool same = true;
-    auto firstChanged = 0;
+    size_t firstChanged = 0;
     for (;firstChanged < count; ++firstChanged)
     {
         if (base[firstChanged] != target[firstChanged])
@@ -481,7 +481,7 @@ std::vector<uint8_t> Encode(const Frame& base, const Frame& target)
     BitStream changed;
     BitStream deltas;
 
-    for (auto i = 0; i < count; ++i)
+    for (size_t i = 0; i < count; ++i)
     {
         if (base[i] == target[i])
         {
@@ -528,7 +528,7 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
 
     auto changed = BitStream(bits.ReadArray(Cubes));
 
-    for (auto i = 0; i < Cubes; ++i)
+    for (size_t i = 0; i < Cubes; ++i)
     {
         if (changed.Read(1))
         {
