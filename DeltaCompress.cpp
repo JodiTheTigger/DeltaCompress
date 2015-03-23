@@ -65,6 +65,9 @@ inline bool operator==(const DeltaData& lhs, const DeltaData& rhs)
 inline bool operator!=(const DeltaData& lhs, const DeltaData& rhs){return !operator==(lhs,rhs);}
 
 static const size_t Cubes = 901;
+static const size_t CubeBits = 10;
+
+static_assert(Cubes < ((1 << CubeBits) - 1), "CubeBits is too small.");
 
 // Using contraints from
 // http://gafferongames.com/networked-physics/snapshot-compression/
@@ -191,114 +194,130 @@ void ZigZagTest()
 
 // //////////////////////////////////////////////////////
 
-unsigned CrappyByteArrayWrite(
-        std::vector<uint8_t>& target,
-        unsigned bitOffset,
-        unsigned value,
-        unsigned bitsToWrite)
+class BitStream
 {
-    auto byteOffset = bitOffset / 8u;
-    auto byteOffsetAfter = (bitOffset + bitsToWrite) / 8u;
-    auto index = bitOffset - (byteOffset * 8);
-    auto mask = ((1 << index) - 1);
-
-    while (target.size() <= byteOffsetAfter)
+public:
+    BitStream()
     {
-        target.push_back(0);
     }
 
-    while (bitsToWrite)
+    BitStream(std::vector<uint8_t> newData)
+        : m_data{newData}
     {
-        target[byteOffset] |= (value & 0xFF) << index;
+    }
 
-        if ((index + bitsToWrite) > 8)
+    void Write(unsigned value, unsigned bitsToWrite)
+    {
+        auto bitOffset = m_bitOffset;
+        auto byteOffset = bitOffset / 8u;
+        auto byteOffsetAfter = (bitOffset + bitsToWrite) / 8u;
+        auto index = bitOffset - (byteOffset * 8);
+        auto mask = ((1 << index) - 1);
+
+        while (m_data.size() <= byteOffsetAfter)
         {
-            target[byteOffset + 1] |= (value >> (8 - index)) & mask;
+            m_data.push_back(0);
         }
 
-        if (bitsToWrite >= 8)
+        while (bitsToWrite)
         {
-            value >>= 8;
-            byteOffset++;
+            m_data[byteOffset] |= (value & 0xFF) << index;
 
-            bitOffset+= 8;
-            bitsToWrite -= 8;
+            if ((index + bitsToWrite) > 8)
+            {
+                m_data[byteOffset + 1] |= (value >> (8 - index)) & mask;
+            }
+
+            if (bitsToWrite >= 8)
+            {
+                value >>= 8;
+                byteOffset++;
+
+                bitOffset+= 8;
+                bitsToWrite -= 8;
+            }
+            else
+            {
+                bitOffset+= bitsToWrite;
+                bitsToWrite = 0;
+            }
         }
-        else
+
+        m_bitOffset = bitOffset;
+    }
+
+    unsigned Read(unsigned bitsToRead)
+    {
+        auto bitOffset = m_bitOffset;
+        auto byteOffset = bitOffset / 8u;
+        auto index = bitOffset - (byteOffset * 8);
+        auto size = m_data.size();
+        auto mask = ((1 << bitsToRead) - 1);
+        auto shift = 0;
+
+        unsigned value = 0;
+
+        while (bitsToRead)
         {
-            bitOffset+= bitsToWrite;
-            bitsToWrite = 0;
+            if (byteOffset < size)
+            {
+                value |= (m_data[byteOffset] >> index) << shift;
+            }
+
+            if (((index + bitsToRead) > 8) && ((byteOffset + 1) < size))
+            {
+                value |= ((m_data[byteOffset + 1] << (8 - index) & 0xFF)) << shift;
+            }
+
+            if (bitsToRead >= 8)
+            {
+                byteOffset++;
+                shift+=8;
+
+                bitOffset+= 8;
+                bitsToRead -= 8;
+            }
+            else
+            {
+                bitOffset += bitsToRead;
+                bitsToRead = 0;
+            }
+        }
+
+        value &= mask;
+        m_bitOffset = bitOffset;
+
+        return value;
+    }
+
+    void TrimZerosFromBack()
+    {
+        while (m_data.back() == 0)
+        {
+            m_data.pop_back();
         }
     }
 
-    return bitOffset;
-}
+    std::vector<uint8_t> Data() { return m_data; }
 
-unsigned CrappyByteArrayRead(
-        std::vector<uint8_t>& source,
-        unsigned bitOffset,
-        unsigned& value,
-        unsigned bitsToRead)
+private:
+    size_t                  m_bitOffset   = 0;
+    std::vector<uint8_t>    m_data        = {};
+};
+
+void BitStreamTest()
 {
-    auto byteOffset = bitOffset / 8u;
-    auto index = bitOffset - (byteOffset * 8);
-    auto size = source.size();
-    auto mask = ((1 << bitsToRead) - 1);
-    auto shift = 0;
+    BitStream bitsIn;
 
-    value = 0;
+    bitsIn.Write(46, 6);
+    bitsIn.Write(666, 10);
+    bitsIn.Write(169, 8);
 
-    while (bitsToRead)
-    {
-        if (byteOffset < size)
-        {
-            value |= (source[byteOffset] >> index) << shift;
-        }
+    BitStream bitsOut(bitsIn.Data());
 
-        if (((index + bitsToRead) > 8) && ((byteOffset + 1) < size))
-        {
-            value |= ((source[byteOffset + 1] << (8 - index) & 0xFF)) << shift;
-        }
-
-        if (bitsToRead >= 8)
-        {
-            byteOffset++;
-            shift+=8;
-
-            bitOffset+= 8;
-            bitsToRead -= 8;
-        }
-        else
-        {
-            bitOffset += bitsToRead;
-            bitsToRead = 0;
-        }
-    }
-
-    value &= mask;
-
-    return bitOffset;
-}
-
-void CrappyByteArrayTest()
-{
-    std::vector<uint8_t> array;
-
-    unsigned bitOffset = 0;
-
-    bitOffset = CrappyByteArrayWrite(array, bitOffset, 46, 6);
-    bitOffset = CrappyByteArrayWrite(array, bitOffset, 666, 10);
-    bitOffset = CrappyByteArrayWrite(array, bitOffset, 169, 8);
-
-    unsigned a = 0;
-    unsigned b = 0;
-    unsigned c = 0;
-
-    bitOffset = 0;
-
-    bitOffset = CrappyByteArrayRead(array, bitOffset, a, 6);
-    bitOffset = CrappyByteArrayRead(array, bitOffset, b, 10);
-    bitOffset = CrappyByteArrayRead(array, bitOffset, c, 8);
+    auto a = bitsOut.Read(6);
+    auto b = bitsOut.Read(10);
+    auto c = bitsOut.Read(8);
 
     assert(a == 46);
     assert(b == 666);
@@ -306,12 +325,7 @@ void CrappyByteArrayTest()
 }
 
 // //////////////////////////////////////////////////////
-/// \brief Encode
-/// \param base
-/// \param target
-/// \param stats
-/// \return
-///
+
 std::vector<uint8_t> Encode(const Frame& base, const Frame& target, Stats& stats)
 {
     const auto count = base.size();
@@ -337,6 +351,35 @@ std::vector<uint8_t> Encode(const Frame& base, const Frame& target, Stats& stats
     {
         return {};
     }
+
+    // ////////////////////////////////
+
+    BitStream result;
+
+    // i. Use Stats based encoding for this number.
+    result.Write(firstChanged, CubeBits);
+
+    BitStream changed;
+    BitStream deltas;
+
+    for (auto i = firstChanged; i < count; ++i)
+    {
+        if (base[i] == target[i])
+        {
+            changed.Write(0, 1);
+        }
+        else
+        {
+            changed.Write(1, 1);
+
+            // Meh, first time delta, just write the target.
+
+        }
+    }
+
+    result.TrimZerosFromBack();
+
+    return result.Data();
 }
 
 Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
@@ -346,13 +389,17 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
     {
         return base;
     }
+
+    BitStream bits(buffer);
+
+    auto firstChanged = bits.Read(CubeBits);
 }
 
 // //////////////////////////////////////////////////////
 
 int main(int, char**)
 {
-    CrappyByteArrayTest();
+    BitStreamTest();
     ZigZagTest();
 
     // //////////////////////////////////////////////////////
