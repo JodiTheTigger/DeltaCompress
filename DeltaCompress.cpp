@@ -212,6 +212,9 @@ void ZigZagTest()
     assert(42 == ZigZag(ZigZag(42)));
     assert(-42 == ZigZag(ZigZag(-42)));
     assert(0 == ZigZag(ZigZag(0)));
+    assert(-12345 == ZigZag(ZigZag(-12345)));
+    assert(30654 == ZigZag(ZigZag(30654)));
+    assert(-31654 == ZigZag(ZigZag(-31654)));
 }
 
 // //////////////////////////////////////////////////////
