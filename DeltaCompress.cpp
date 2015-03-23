@@ -157,7 +157,7 @@ struct Stats
 
     unsigned interactingTotal;
     unsigned interactingNotChanged;
-    unsigned notInteractingNotChanged;    
+    unsigned notInteractingNotChanged;
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -256,6 +256,8 @@ public:
 
     void Write(unsigned value, unsigned bitsToWrite)
     {
+        assert(value <= ((1 << bitsToWrite) - 1));
+
         auto bitOffset = m_bitOffset;
         auto byteOffset = bitOffset / 8u;
         auto byteOffsetAfter = (bitOffset + bitsToWrite) / 8u;
@@ -387,7 +389,25 @@ void BitStreamTest()
 
     assert(a == 46);
     assert(b == 666);
-    assert(c == 169);    
+    assert(c == 169);
+
+    // ////////////////////////////////
+
+    BitStream bitsInB;
+
+    bitsInB.Write(3, 2);
+    bitsInB.Write(256, 9);
+    bitsInB.Write(256, 9);
+
+    BitStream bitsOutB(bitsInB.Data());
+
+    auto ab = bitsOutB.Read(2);
+    auto bb = bitsOutB.Read(9);
+    auto cb = bitsOutB.Read(9);
+
+    assert(ab == 3);
+    assert(bb == 256);
+    assert(cb == 256);
 
     // ////////////////////////////////
 
@@ -471,11 +491,15 @@ std::vector<uint8_t> Encode(const Frame& base, const Frame& target)
         {
             changed.Write(1, 1);
 
+            assert(target[i].orientation_a >= 0);
+            assert(target[i].orientation_b >= 0);
+            assert(target[i].orientation_c >= 0);
+
             // Meh, first time delta, just write the target.
             deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
-            deltas.Write(ZigZag(target[i].orientation_a), RotationMaxBits);
-            deltas.Write(ZigZag(target[i].orientation_b), RotationMaxBits);
-            deltas.Write(ZigZag(target[i].orientation_c), RotationMaxBits);
+            deltas.Write(target[i].orientation_a, RotationMaxBits);
+            deltas.Write(target[i].orientation_b, RotationMaxBits);
+            deltas.Write(target[i].orientation_c, RotationMaxBits);
             deltas.Write(ZigZag(target[i].position_x), MaxBitsXY);
             deltas.Write(ZigZag(target[i].position_y), MaxBitsXY);
             deltas.Write(target[i].position_z, MaxBitsZ);
@@ -509,9 +533,9 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
         if (changed.Read(1))
         {
             result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
-            result[i].orientation_a         = ZigZag(bits.Read(RotationMaxBits));
-            result[i].orientation_b         = ZigZag(bits.Read(RotationMaxBits));
-            result[i].orientation_c         = ZigZag(bits.Read(RotationMaxBits));
+            result[i].orientation_a         = bits.Read(RotationMaxBits);
+            result[i].orientation_b         = bits.Read(RotationMaxBits);
+            result[i].orientation_c         = bits.Read(RotationMaxBits);
             result[i].position_x            = ZigZag(bits.Read(MaxBitsXY));
             result[i].position_y            = ZigZag(bits.Read(MaxBitsXY));
             result[i].position_z            = bits.Read(MaxBitsZ);
@@ -522,6 +546,8 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
             result[i] = base[i];
         }
     }
+
+    return result;
 }
 
 // //////////////////////////////////////////////////////
