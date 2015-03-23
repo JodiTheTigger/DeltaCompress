@@ -126,6 +126,28 @@ static_assert(
 
 typedef std::array<DeltaData, Cubes> Frame;
 
+inline bool operator==(const Frame& lhs, const Frame& rhs)
+{
+    auto size = lhs.size();
+
+    if (size != rhs.size())
+    {
+        return false;
+    }
+
+    for (auto i = 0; i < size; ++i)
+    {
+        if (lhs[i] != rhs[i])
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+inline bool operator!=(const Frame& lhs, const Frame& rhs){return !operator==(lhs,rhs);}
+
 // //////////////////////////////////////////////////////
 struct Stats
 {
@@ -309,6 +331,24 @@ public:
         return value;
     }
 
+    std::vector<uint8_t> ReadArray(unsigned bitsToRead)
+    {
+        std::vector<uint8_t> result;
+
+        while (bitsToRead > 7)
+        {
+            result.push_back(Read(8));
+            bitsToRead -= 8;
+        }
+
+        if (bitsToRead)
+        {
+            result.push_back(Read(bitsToRead));
+        }
+
+        return result;
+    }
+
     void TrimZerosFromBack()
     {
         while (m_data.back() == 0)
@@ -345,7 +385,7 @@ void BitStreamTest()
 
 // //////////////////////////////////////////////////////
 
-std::vector<uint8_t> Encode(const Frame& base, const Frame& target, Stats& stats)
+std::vector<uint8_t> Encode(const Frame& base, const Frame& target)
 {
     const auto count = base.size();
 
@@ -376,6 +416,8 @@ std::vector<uint8_t> Encode(const Frame& base, const Frame& target, Stats& stats
     BitStream result;
 
     // i. Use Stats based encoding for this number.
+    // ii. Could save a bit as we can assume the first item in this array
+    //     has changed.
     result.Write(firstChanged, CubeBits);
 
     BitStream changed;
@@ -392,9 +434,19 @@ std::vector<uint8_t> Encode(const Frame& base, const Frame& target, Stats& stats
             changed.Write(1, 1);
 
             // Meh, first time delta, just write the target.
-
+            deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+            deltas.Write(ZigZag(target[i].orientation_a), RotationMaxBits);
+            deltas.Write(ZigZag(target[i].orientation_b), RotationMaxBits);
+            deltas.Write(ZigZag(target[i].orientation_c), RotationMaxBits);
+            deltas.Write(ZigZag(target[i].position_x), MaxBitsXY);
+            deltas.Write(ZigZag(target[i].position_y), MaxBitsXY);
+            deltas.Write(target[i].position_z, MaxBitsZ);
+            deltas.Write(target[i].interacting, 1);
         }
     }
+
+    result.Write(changed);
+    result.Write(deltas);
 
     result.TrimZerosFromBack();
 
@@ -410,8 +462,35 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
     }
 
     BitStream bits(buffer);
+    Frame result;
 
     auto firstChanged = bits.Read(CubeBits);
+
+    for (auto i = 0; i < firstChanged; ++i)
+    {
+        result[i] = base[i];
+    }
+
+    auto changed = BitStream(bits.ReadArray(Cubes - firstChanged));
+
+    for (auto i = firstChanged; i < Cubes; ++i)
+    {
+        if (changed.Read(1))
+        {
+            result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
+            result[i].orientation_a         = ZigZag(bits.Read(RotationMaxBits));
+            result[i].orientation_b         = ZigZag(bits.Read(RotationMaxBits));
+            result[i].orientation_c         = ZigZag(bits.Read(RotationMaxBits));
+            result[i].position_x            = ZigZag(bits.Read(MaxBitsXY));
+            result[i].position_y            = ZigZag(bits.Read(MaxBitsXY));
+            result[i].position_z            = bits.Read(MaxBitsZ);
+            result[i].interacting           = bits.Read(1);
+        }
+        else
+        {
+            result[i] = base[i];
+        }
+    }
 }
 
 // //////////////////////////////////////////////////////
@@ -481,6 +560,33 @@ int main(int, char**)
     PRINT_FLOAT(percentUnchanged)
     PRINT_FLOAT(percentIUnchanged)
     PRINT_FLOAT(percentSUnchanged)
+
+    // Lets actually do the stuff.
+    unsigned bytes = 0;
+    unsigned packetsCoded = 0;
+
+    for (size_t i = FirstBase; i < size; ++i)
+    {
+        auto buffer = Encode(frames[i-FirstBase], frames[i]);
+
+        bytes += buffer.size();
+
+        auto back = Decode(frames[i-FirstBase], buffer);
+
+        assert(back == frames[i]);
+
+        packetsCoded++;
+    }
+
+    float packetSizeAverge = ((float) bytes) / (size - FirstBase);
+    float bytesPerSecondAverage = packetSizeAverge * 60.0f;
+    float kbps = bytesPerSecondAverage * 8 / 1000.0f;
+
+    PRINT_INT(bytes)
+    PRINT_INT(packetsCoded)
+    PRINT_FLOAT(packetSizeAverge)
+    PRINT_FLOAT(bytesPerSecondAverage)
+    PRINT_FLOAT(kbps)
 
     return 0;
 }
