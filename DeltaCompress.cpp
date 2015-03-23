@@ -132,7 +132,7 @@ struct Stats
 
     unsigned interactingTotal;
     unsigned interactingNotChanged;
-    unsigned notInteractingNotChanged;
+    unsigned notInteractingNotChanged;    
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -172,8 +172,191 @@ void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
 
 // //////////////////////////////////////////////////////
 
+inline constexpr uint32_t ZigZag(int32_t n)
+{
+    return (n << 1) ^ (n >> 31);
+}
+
+inline constexpr int32_t ZigZag(uint32_t n)
+{
+    return (n >> 1) ^ (-(n & 1));
+}
+
+void ZigZagTest()
+{
+    assert(42 == ZigZag(ZigZag(42)));
+    assert(-42 == ZigZag(ZigZag(-42)));
+    assert(0 == ZigZag(ZigZag(0)));
+}
+
+// //////////////////////////////////////////////////////
+
+unsigned CrappyByteArrayWrite(
+        std::vector<uint8_t>& target,
+        unsigned bitOffset,
+        unsigned value,
+        unsigned bitsToWrite)
+{
+    auto byteOffset = bitOffset / 8u;
+    auto byteOffsetAfter = (bitOffset + bitsToWrite) / 8u;
+    auto index = bitOffset - (byteOffset * 8);
+    auto mask = ((1 << index) - 1);
+
+    while (target.size() <= byteOffsetAfter)
+    {
+        target.push_back(0);
+    }
+
+    while (bitsToWrite)
+    {
+        target[byteOffset] |= (value & 0xFF) << index;
+
+        if ((index + bitsToWrite) > 8)
+        {
+            target[byteOffset + 1] |= (value >> (8 - index)) & mask;
+        }
+
+        if (bitsToWrite >= 8)
+        {
+            value >>= 8;
+            byteOffset++;
+
+            bitOffset+= 8;
+            bitsToWrite -= 8;
+        }
+        else
+        {
+            bitOffset+= bitsToWrite;
+            bitsToWrite = 0;
+        }
+    }
+
+    return bitOffset;
+}
+
+unsigned CrappyByteArrayRead(
+        std::vector<uint8_t>& source,
+        unsigned bitOffset,
+        unsigned& value,
+        unsigned bitsToRead)
+{
+    auto byteOffset = bitOffset / 8u;
+    auto index = bitOffset - (byteOffset * 8);
+    auto size = source.size();
+    auto mask = ((1 << bitsToRead) - 1);
+    auto shift = 0;
+
+    value = 0;
+
+    while (bitsToRead)
+    {
+        if (byteOffset < size)
+        {
+            value |= (source[byteOffset] >> index) << shift;
+        }
+
+        if (((index + bitsToRead) > 8) && ((byteOffset + 1) < size))
+        {
+            value |= ((source[byteOffset + 1] << (8 - index) & 0xFF)) << shift;
+        }
+
+        if (bitsToRead >= 8)
+        {
+            byteOffset++;
+            shift+=8;
+
+            bitOffset+= 8;
+            bitsToRead -= 8;
+        }
+        else
+        {
+            bitOffset += bitsToRead;
+            bitsToRead = 0;
+        }
+    }
+
+    value &= mask;
+
+    return bitOffset;
+}
+
+void CrappyByteArrayTest()
+{
+    std::vector<uint8_t> array;
+
+    unsigned bitOffset = 0;
+
+    bitOffset = CrappyByteArrayWrite(array, bitOffset, 46, 6);
+    bitOffset = CrappyByteArrayWrite(array, bitOffset, 666, 10);
+    bitOffset = CrappyByteArrayWrite(array, bitOffset, 169, 8);
+
+    unsigned a = 0;
+    unsigned b = 0;
+    unsigned c = 0;
+
+    bitOffset = 0;
+
+    bitOffset = CrappyByteArrayRead(array, bitOffset, a, 6);
+    bitOffset = CrappyByteArrayRead(array, bitOffset, b, 10);
+    bitOffset = CrappyByteArrayRead(array, bitOffset, c, 8);
+
+    assert(a == 46);
+    assert(b == 666);
+    assert(c == 169);
+}
+
+// //////////////////////////////////////////////////////
+/// \brief Encode
+/// \param base
+/// \param target
+/// \param stats
+/// \return
+///
+std::vector<uint8_t> Encode(const Frame& base, const Frame& target, Stats& stats)
+{
+    const auto count = base.size();
+
+    assert(count > 0);
+    assert(count == target.size());
+
+    // ////////////////////////////////
+    // A. If nothing changed, don't send anything at all.
+
+    bool same = true;
+    auto firstChanged = 0;
+    for (;firstChanged < count; ++firstChanged)
+    {
+        if (base[firstChanged] != target[firstChanged])
+        {
+            same = false;
+            break;
+        }
+    }
+
+    if (same)
+    {
+        return {};
+    }
+}
+
+Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
+{
+    // A.
+    if (buffer.empty())
+    {
+        return base;
+    }
+}
+
+// //////////////////////////////////////////////////////
+
 int main(int, char**)
 {
+    CrappyByteArrayTest();
+    ZigZagTest();
+
+    // //////////////////////////////////////////////////////
+
     auto frames = []() -> std::vector<Frame>
     {
         const auto fileHandle = fopen("delta_data.bin", "rb");
