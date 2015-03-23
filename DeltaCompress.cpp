@@ -2,7 +2,7 @@
 
 // http://gafferongames.com/2015/03/14/the-networked-physics-data-compression-challenge/
 
-// g++ -std=c++14 DeltaCompress.cpp -Wall -g -o DeltaCompress
+// g++ -std=c++14 DeltaCompress.cpp -Wall -Wextra -Werror -g -o DeltaCompress
 
 // //////////////////////////////////////////////////////
 
@@ -594,7 +594,7 @@ int main(int, char**)
 
     // Lets do some research
     auto size = frames.size();
-    Stats stats = {0};
+    Stats stats = {0, 0, 0, 0, 0};
     for (size_t i = FirstBase; i < size; ++i)
     {
          DoSomeStats(frames[i-FirstBase], frames[i], stats);
