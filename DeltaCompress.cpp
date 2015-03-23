@@ -206,6 +206,25 @@ public:
     {
     }
 
+    void Write(const BitStream& other)
+    {
+        const auto offset = m_bitOffset;
+
+        for (const auto& b : other.m_data)
+        {
+            Write(b, 8);
+        }
+
+        auto newSize = (offset + other.m_bitOffset / 8);
+
+        while (m_data.size() > newSize)
+        {
+            m_data.pop_back();
+        }
+
+        m_bitOffset = newSize;
+    }
+
     void Write(unsigned value, unsigned bitsToWrite)
     {
         auto bitOffset = m_bitOffset;
