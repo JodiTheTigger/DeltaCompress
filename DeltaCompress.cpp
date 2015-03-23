@@ -231,23 +231,27 @@ public:
     {
     }
 
+    void Reset()
+    {
+        m_bitOffset = 0;
+    }
+
     void Write(const BitStream& other)
     {
-        const auto offset = m_bitOffset;
+        const auto newOffset = m_bitOffset + other.m_bitOffset;
+        const auto newSize = ((newOffset + 7) / 8);
 
         for (const auto& b : other.m_data)
         {
             Write(b, 8);
         }
 
-        auto newSize = (offset + other.m_bitOffset / 8);
-
         while (m_data.size() > newSize)
         {
             m_data.pop_back();
         }
 
-        m_bitOffset = newSize;
+        m_bitOffset = newOffset;
     }
 
     void Write(unsigned value, unsigned bitsToWrite)
@@ -383,7 +387,43 @@ void BitStreamTest()
 
     assert(a == 46);
     assert(b == 666);
-    assert(c == 169);
+    assert(c == 169);    
+
+    // ////////////////////////////////
+
+    BitStream bitsOutToSplit(bitsIn.Data());
+    BitStream bitsSplit(bitsOutToSplit.ReadArray(6));
+
+    auto as = bitsSplit.Read(6);
+    auto bs = bitsOutToSplit.Read(10);
+    auto cs = bitsOutToSplit.Read(8);
+
+    assert(as == 46);
+    assert(bs == 666);
+    assert(cs == 169);
+
+    // ////////////////////////////////
+
+    BitStream bitsIn1;
+    BitStream bitsIn2;
+
+    bitsIn1.Write(46, 6);
+    bitsIn2.Write(666, 10);
+    bitsIn2.Write(169, 8);
+
+    BitStream bitJoin;
+    bitJoin.Write(bitsIn1);
+    bitJoin.Write(bitsIn2);
+
+    bitJoin.Reset();
+
+    auto aj = bitJoin.Read(6);
+    auto bj = bitJoin.Read(10);
+    auto cj = bitJoin.Read(8);
+
+    assert(aj == 46);
+    assert(bj == 666);
+    assert(cj == 169);
 }
 
 // //////////////////////////////////////////////////////
@@ -418,15 +458,10 @@ std::vector<uint8_t> Encode(const Frame& base, const Frame& target)
 
     BitStream result;
 
-    // i. Use Stats based encoding for this number.
-    // ii. Could save a bit as we can assume the first item in this array
-    //     has changed.
-    result.Write(firstChanged, CubeBits);
-
     BitStream changed;
     BitStream deltas;
 
-    for (auto i = firstChanged; i < count; ++i)
+    for (auto i = 0; i < count; ++i)
     {
         if (base[i] == target[i])
         {
@@ -467,16 +502,9 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
     BitStream bits(buffer);
     Frame result;
 
-    auto firstChanged = bits.Read(CubeBits);
+    auto changed = BitStream(bits.ReadArray(Cubes));
 
-    for (auto i = 0; i < firstChanged; ++i)
-    {
-        result[i] = base[i];
-    }
-
-    auto changed = BitStream(bits.ReadArray(Cubes - firstChanged));
-
-    for (auto i = firstChanged; i < Cubes; ++i)
+    for (auto i = 0; i < Cubes; ++i)
     {
         if (changed.Read(1))
         {
