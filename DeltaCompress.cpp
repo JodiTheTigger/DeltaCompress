@@ -158,6 +158,8 @@ struct Stats
     unsigned interactingTotal;
     unsigned interactingNotChanged;
     unsigned notInteractingNotChanged;
+
+    std::array<unsigned, Cubes> changedDistanceRunHistogram;
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -448,7 +450,10 @@ void BitStreamTest()
 
 // //////////////////////////////////////////////////////
 
-std::vector<uint8_t> Encode(const Frame& base, const Frame& target)
+std::vector<uint8_t> Encode(
+    const Frame& base,
+    const Frame& target,
+    Stats& stats)
 {
     const auto count = base.size();
 
@@ -481,15 +486,21 @@ std::vector<uint8_t> Encode(const Frame& base, const Frame& target)
     BitStream changed;
     BitStream deltas;
 
+    unsigned zeroRunLength = 0;
+
     for (size_t i = 0; i < count; ++i)
     {
         if (base[i] == target[i])
         {
             changed.Write(0, 1);
+            ++zeroRunLength;
         }
         else
         {
             changed.Write(1, 1);
+
+            ++(stats.changedDistanceRunHistogram[zeroRunLength]);
+            zeroRunLength = 0;
 
             assert(target[i].orientation_a >= 0);
             assert(target[i].orientation_b >= 0);
@@ -506,6 +517,8 @@ std::vector<uint8_t> Encode(const Frame& base, const Frame& target)
             deltas.Write(target[i].interacting, 1);
         }
     }
+
+    ++(stats.changedDistanceRunHistogram[zeroRunLength]);
 
     result.Write(changed);
     result.Write(deltas);
@@ -594,7 +607,16 @@ int main(int, char**)
 
     // Lets do some research
     auto size = frames.size();
-    Stats stats = {0, 0, 0, 0, 0};
+    Stats stats
+    {
+        0,
+        0,
+        0,
+        0,
+        0,
+        {0},
+    };
+
     for (size_t i = FirstBase; i < size; ++i)
     {
          DoSomeStats(frames[i-FirstBase], frames[i], stats);
@@ -624,7 +646,7 @@ int main(int, char**)
 
     for (size_t i = FirstBase; i < size; ++i)
     {
-        auto buffer = Encode(frames[i-FirstBase], frames[i]);
+        auto buffer = Encode(frames[i-FirstBase], frames[i], stats);
 
         bytes += buffer.size();
 
@@ -644,6 +666,12 @@ int main(int, char**)
     PRINT_FLOAT(packetSizeAverge)
     PRINT_FLOAT(bytesPerSecondAverage)
     PRINT_FLOAT(kbps)
+
+    for (const auto h : stats.changedDistanceRunHistogram)
+    {
+        printf("%d, ", h);
+    }
+    printf("\n");
 
     return 0;
 }
