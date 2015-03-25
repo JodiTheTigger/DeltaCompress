@@ -159,7 +159,8 @@ struct Stats
     unsigned interactingNotChanged;
     unsigned notInteractingNotChanged;
 
-    std::array<unsigned, Cubes> changedDistanceRunHistogram;
+    std::array<unsigned, Cubes> changed0DistanceRunHistogram;
+    std::array<unsigned, Cubes> changed1DistanceRunHistogram;
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -231,6 +232,11 @@ public:
     BitStream(std::vector<uint8_t> newData)
         : m_data{newData}
     {
+    }
+
+    size_t Bits() const
+    {
+        return m_bitOffset + 1;
     }
 
     void Reset()
@@ -450,6 +456,132 @@ void BitStreamTest()
 
 // //////////////////////////////////////////////////////
 
+// http://michael.dipperstein.com/rle/
+
+BitStream BitPack8Bit(BitStream toPack, unsigned runThreshold)
+{
+    assert(runThreshold >= 2);
+    assert(runThreshold < 131);
+
+    auto bits = toPack.Bits();
+    toPack.Reset();
+    BitStream result;
+    BitStream hold;
+
+    auto read = toPack.Read(1);
+    auto last = read;
+    auto running = false;
+    unsigned run = 1;
+    unsigned unRun = 1;
+    hold.Write(read, 1);
+
+    auto dumpRun = [&result](int value, unsigned last)
+    {
+        result.Write(ZigZag(value), 8);
+        result.Write(last, 1);
+    };
+
+    auto dumpUnRun = [&result, &hold](int value)
+    {
+        result.Write(ZigZag(value), 8);
+        hold.Reset();
+
+        for (int i = 0; i < value; ++i)
+        {
+            result.Write(hold.Read(1), 1);
+        }
+    };
+
+    while (toPack.Bits() < bits)
+    {
+        auto read = toPack.Read(1);
+        hold.Write(read, 1);
+
+        if (running)
+        {
+            bool dump = true;
+
+            if (last == read)
+            {
+                ++run;
+
+                if (run < 130)
+                {
+                    dump = false;
+                }
+            }
+
+            if (dump)
+            {
+                dumpRun(-(run - 2), last);
+
+                hold.Reset();
+
+                if (toPack.Bits() == bits)
+                {
+                    break;
+                }
+
+                read = toPack.Read(1);
+                hold.Write(read, 1);
+                running = false;
+                run = 1;
+            }
+        }
+        else
+        {
+            if (last == read)
+            {
+                ++run;
+                ++unRun;
+
+                if (run > runThreshold)
+                {
+                    unRun = 1;
+                    running = true;
+
+                    // dump a non-run.
+                    dumpUnRun(unRun - runThreshold);
+                }
+            }
+            else
+            {
+                ++unRun;
+                run = 1;
+            }
+        }
+    }
+
+    if (running)
+    {
+        dumpRun(-(run - 2), last);
+    }
+    else
+    {
+        if (hold.Bits() > 0)
+        dumpUnRun(unRun - runThreshold);
+    }
+
+    return result;
+}
+
+void BitPack8BitTest()
+{
+    BitStream start;
+
+    start.Write(0xFF, 8);
+
+    auto result = BitPack8Bit(start, 3);
+
+    auto a = result.Read(8);
+    auto b = result.Read(1);
+
+    assert(a == (8 - 2));
+    assert(b == 1);
+}
+
+// //////////////////////////////////////////////////////
+
 std::vector<uint8_t> Encode(
     const Frame& base,
     const Frame& target,
@@ -486,21 +618,26 @@ std::vector<uint8_t> Encode(
     BitStream changed;
     BitStream deltas;
 
-    unsigned zeroRunLength = 0;
+    unsigned runLength0 = 0;
+    unsigned runLength1 = 0;
 
     for (size_t i = 0; i < count; ++i)
     {
         if (base[i] == target[i])
         {
             changed.Write(0, 1);
-            ++zeroRunLength;
+            ++runLength0;
+
+            ++(stats.changed1DistanceRunHistogram[runLength1]);
+            runLength1 = 0;
         }
         else
         {
             changed.Write(1, 1);
+            ++runLength1;
 
-            ++(stats.changedDistanceRunHistogram[zeroRunLength]);
-            zeroRunLength = 0;
+            ++(stats.changed0DistanceRunHistogram[runLength0]);
+            runLength0 = 0;
 
             assert(target[i].orientation_a >= 0);
             assert(target[i].orientation_b >= 0);
@@ -518,7 +655,8 @@ std::vector<uint8_t> Encode(
         }
     }
 
-    ++(stats.changedDistanceRunHistogram[zeroRunLength]);
+    ++(stats.changed0DistanceRunHistogram[runLength0]);
+    ++(stats.changed1DistanceRunHistogram[runLength1]);
 
     result.Write(changed);
     result.Write(deltas);
@@ -569,6 +707,7 @@ int main(int, char**)
 {
     BitStreamTest();
     ZigZagTest();
+    BitPack8BitTest();
 
     // //////////////////////////////////////////////////////
 
@@ -614,6 +753,7 @@ int main(int, char**)
         0,
         0,
         0,
+        {0},
         {0},
     };
 
@@ -667,7 +807,13 @@ int main(int, char**)
     PRINT_FLOAT(bytesPerSecondAverage)
     PRINT_FLOAT(kbps)
 
-    for (const auto h : stats.changedDistanceRunHistogram)
+    for (const auto h : stats.changed0DistanceRunHistogram)
+    {
+        printf("%d, ", h);
+    }
+    printf("\n");
+
+    for (const auto h : stats.changed1DistanceRunHistogram)
     {
         printf("%d, ", h);
     }
