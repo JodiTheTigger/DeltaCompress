@@ -778,14 +778,14 @@ ByteVector RunLengthEncode(const ByteVector& data)
 {
     auto size = data.size();
 
-    if (size < 2)
+    if (size < 3)
     {
         return data;
     }
 
     ByteVector  result;
-    auto        previous = data[0];
-    unsigned    index = 1;
+    auto        previous    = data[0];
+    unsigned    index       = 1;
 
     result.push_back(previous);
 
@@ -843,17 +843,17 @@ ByteVector RunLengthDecode(const ByteVector& data)
         return data;
     }
 
-    ByteVector result;
+    ByteVector  result;
+    auto        previous    = data[0];
+    unsigned    index       = 1;
 
-    auto first = data[0];
-    unsigned index = 1;
-    result.push_back(first);
+    result.push_back(previous);
 
     while (index < size)
     {
-        auto second = data[index++];
+        auto current = data[index++];
 
-        if (first == second)
+        if (previous == current)
         {
             unsigned run = 0;
 
@@ -862,23 +862,31 @@ ByteVector RunLengthDecode(const ByteVector& data)
                 run = data[index++];
             }
 
-            result.push_back(second);
+            bool max = (run == 255);
+
+            result.push_back(current);
             while (run--)
             {
-                result.push_back(second);
+                result.push_back(current);
             }
 
             if (index < size)
             {
-                first = data[index++];
-                result.push_back(first);
+                current = data[index++];
+            }
+
+            if (max)
+            {
+                result.push_back(current);
             }
         }
-        else
+
+        if (current != previous)
         {
-            result.push_back(second);
-            first = second;
+            result.push_back(current);
         }
+
+        previous = current;
     }
 
     return result;
