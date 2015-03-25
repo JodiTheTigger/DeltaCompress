@@ -376,6 +376,21 @@ public:
 
     std::vector<uint8_t> Data() { return m_data; }
 
+    inline bool operator==(const BitStream& rhs)
+    {
+        if (this->m_bitOffset != rhs.m_bitOffset)
+        {
+            return false;
+        }
+
+        return m_data == rhs.m_data;
+    }
+
+    inline bool operator!=(const BitStream& rhs)
+    {
+        return !operator==(rhs);
+    }
+
 private:
     size_t                  m_bitOffset   = 0;
     std::vector<uint8_t>    m_data        = {};
@@ -483,6 +498,11 @@ BitStream BitPack8Bit(BitStream toPack, unsigned runThreshold)
 
     auto dumpUnRun = [&result, &hold](int value)
     {
+        if (!value)
+        {
+            return;
+        }
+
         result.Write(ZigZag(value), 8);
         hold.Reset();
 
@@ -537,11 +557,10 @@ BitStream BitPack8Bit(BitStream toPack, unsigned runThreshold)
 
                 if (run > runThreshold)
                 {
+                    dumpUnRun(unRun - (runThreshold + 1));
+
                     unRun = 1;
                     running = true;
-
-                    // dump a non-run.
-                    dumpUnRun(unRun - runThreshold);
                 }
             }
             else
@@ -559,7 +578,7 @@ BitStream BitPack8Bit(BitStream toPack, unsigned runThreshold)
     else
     {
         if (hold.Bits() > 0)
-        dumpUnRun(unRun - runThreshold);
+        dumpUnRun(unRun - (runThreshold + 1));
     }
 
     return result;
@@ -585,16 +604,22 @@ BitStream BitPack8BitUnpack(BitStream toUnPack, unsigned totalExpectedBits)
             {
                 result.Write(repeat, 1);
             }
+
+            bitCount += count;
         }
         else
         {
             ++run;
             result.Write(toUnPack.ReadArray(run));
+
+            bitCount += run;
         }
     }
 
     return result;
 }
+
+// //////////////////////////////////////////////////////
 
 void BitPack8BitTest()
 {
@@ -604,11 +629,20 @@ void BitPack8BitTest()
 
     auto result = BitPack8Bit(start, 3);
 
+    result.Reset();
+
     auto a = result.Read(8);
+    auto az = ZigZag(a);
     auto b = result.Read(1);
 
-    assert(a == (8 - 2));
+    assert(-az == (8 - 2));
     assert(b == 1);
+
+    result.Reset();
+
+    auto back = BitPack8BitUnpack(result, 8);
+
+    assert(start == back);
 }
 
 // //////////////////////////////////////////////////////
