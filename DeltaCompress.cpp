@@ -64,6 +64,12 @@ inline bool operator==(const DeltaData& lhs, const DeltaData& rhs)
 
 inline bool operator!=(const DeltaData& lhs, const DeltaData& rhs){return !operator==(lhs,rhs);}
 
+// //////////////////////////////////////////////////////
+
+using ByteVector = std::vector<uint8_t>;
+
+// //////////////////////////////////////////////////////
+
 static const size_t Cubes = 901;
 static const size_t CubeBits = 10;
 
@@ -768,8 +774,142 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
 
 // //////////////////////////////////////////////////////
 
+ByteVector RunLengthEncode(const ByteVector& data)
+{
+    auto size = data.size();
+
+    if (size < 2)
+    {
+        return data;
+    }
+
+    ByteVector result;
+
+    auto first = data[0];
+    unsigned index = 1;
+
+    result.push_back(first);
+
+    while (index < size)
+    {
+        auto second = data[index++];
+
+        if (first == second)
+        {
+            unsigned run = 0;
+
+            while (index < size)
+            {
+                second = data[index++];
+
+                if ((second != first) || (run > 254))
+                {
+                    break;
+                }
+
+                ++run;
+            }
+
+            result.push_back(first);
+            result.push_back(run);
+
+            if (second != first)
+            {
+                result.push_back(second);
+            }
+        }
+        else
+        {
+            result.push_back(second);
+        }
+
+        first = second;
+    }
+
+    return result;
+}
+
+ByteVector RunLengthDecode(const ByteVector& data)
+{
+    auto size = data.size();
+
+    if (size < 3)
+    {
+        return data;
+    }
+
+    ByteVector result;
+
+    auto first = data[0];
+    unsigned index = 1;
+    result.push_back(first);
+
+    while (index < size)
+    {
+        auto second = data[index++];
+
+        if (first == second)
+        {
+            unsigned run = 0;
+
+            if (index < size)
+            {
+                run = data[index++];
+            }
+
+            result.push_back(second);
+            while (run--)
+            {
+                result.push_back(second);
+            }
+
+            if (index < size)
+            {
+                first = data[index++];
+                result.push_back(first);
+            }
+        }
+        else
+        {
+            result.push_back(second);
+            first = second;
+        }
+    }
+
+    return result;
+}
+
+void RunLengthTest()
+{
+    {
+        auto data = ByteVector
+        {
+            0,1,3,3,4,4,4,4,4,5,6,6,6,5,4,3,3,3,3,4,
+        };
+
+        auto encoded = RunLengthEncode(data);
+        auto decoded = RunLengthDecode(encoded);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = ByteVector
+        {
+            0,1,3,3,4,4,4,4,4,5,6,6,6,5,4,3,3,3,3,
+        };
+
+        auto encoded = RunLengthEncode(data);
+        auto decoded = RunLengthDecode(encoded);
+
+        assert(data == decoded);
+    }
+}
+
+// //////////////////////////////////////////////////////
+
 int main(int, char**)
 {
+    RunLengthTest();
     BitPack8BitTest();
     BitStreamTest();
     ZigZagTest();
