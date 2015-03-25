@@ -565,6 +565,37 @@ BitStream BitPack8Bit(BitStream toPack, unsigned runThreshold)
     return result;
 }
 
+
+BitStream BitPack8BitUnpack(BitStream toUnPack, unsigned totalExpectedBits)
+{
+    unsigned bitCount = 0;
+    BitStream result;
+
+    while (bitCount < totalExpectedBits)
+    {
+        auto run = ZigZag(toUnPack.Read(8));
+
+        if (run < 0)
+        {
+            auto repeat = toUnPack.Read(1);
+
+            auto count = -run + 2;
+
+            for (auto i = 0; i < count; ++i)
+            {
+                result.Write(repeat, 1);
+            }
+        }
+        else
+        {
+            ++run;
+            result.Write(toUnPack.ReadArray(run));
+        }
+    }
+
+    return result;
+}
+
 void BitPack8BitTest()
 {
     BitStream start;
