@@ -348,19 +348,19 @@ public:
         return value;
     }
 
-    std::vector<uint8_t> ReadArray(unsigned bitsToRead)
+    BitStream ReadArray(unsigned bitsToRead)
     {
-        std::vector<uint8_t> result;
+        BitStream result;
 
         while (bitsToRead > 7)
         {
-            result.push_back(Read(8));
+            result.Write(Read(8), 8);
             bitsToRead -= 8;
         }
 
         if (bitsToRead)
         {
-            result.push_back(Read(bitsToRead));
+            result.Write(Read(bitsToRead), bitsToRead);
         }
 
         return result;
@@ -420,7 +420,7 @@ void BitStreamTest()
     // ////////////////////////////////
 
     BitStream bitsOutToSplit(bitsIn.Data());
-    BitStream bitsSplit(bitsOutToSplit.ReadArray(6));
+    BitStream bitsSplit = bitsOutToSplit.ReadArray(6);
 
     auto as = bitsSplit.Read(6);
     auto bs = bitsOutToSplit.Read(10);
@@ -708,7 +708,7 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
     BitStream bits(buffer);
     Frame result;
 
-    auto changed = BitStream(bits.ReadArray(Cubes));
+    auto changed = bits.ReadArray(Cubes);
 
     for (size_t i = 0; i < Cubes; ++i)
     {
@@ -736,9 +736,9 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
 
 int main(int, char**)
 {
+    BitPack8BitTest();
     BitStreamTest();
     ZigZagTest();
-    BitPack8BitTest();
 
     // //////////////////////////////////////////////////////
 
