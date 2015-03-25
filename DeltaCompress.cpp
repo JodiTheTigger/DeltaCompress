@@ -783,26 +783,30 @@ ByteVector RunLengthEncode(const ByteVector& data)
         return data;
     }
 
-    ByteVector result;
+    ByteVector  result;
+    auto        previous = data[0];
+    unsigned    index = 1;
 
-    auto first = data[0];
-    unsigned index = 1;
-
-    result.push_back(first);
+    result.push_back(previous);
 
     while (index < size)
     {
-        auto second = data[index++];
+        auto current = data[index++];
 
-        if (first == second)
+        if (previous == current)
         {
             unsigned run = 0;
 
             while (index < size)
             {
-                second = data[index++];
+                current = data[index++];
 
-                if ((second != first) || (run > 254))
+                if (current != previous)
+                {
+                    break;
+                }
+
+                if (run == 255)
                 {
                     break;
                 }
@@ -810,20 +814,21 @@ ByteVector RunLengthEncode(const ByteVector& data)
                 ++run;
             }
 
-            result.push_back(first);
+            result.push_back(previous);
             result.push_back(run);
 
-            if (second != first)
+            if (run == 255)
             {
-                result.push_back(second);
+                result.push_back(current);
             }
         }
-        else
+
+        if (current != previous)
         {
-            result.push_back(second);
+            result.push_back(current);
         }
 
-        first = second;
+        previous = current;
     }
 
     return result;
@@ -897,6 +902,14 @@ void RunLengthTest()
         {
             0,1,3,3,4,4,4,4,4,5,6,6,6,5,4,3,3,3,3,
         };
+
+        auto encoded = RunLengthEncode(data);
+        auto decoded = RunLengthDecode(encoded);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = ByteVector(300, 5);
 
         auto encoded = RunLengthEncode(data);
         auto decoded = RunLengthDecode(encoded);
