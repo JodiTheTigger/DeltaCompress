@@ -756,6 +756,7 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
     Frame result;
 
     auto changed = bits.ReadArray(Cubes);
+    changed.Reset();
 
     for (size_t i = 0; i < Cubes; ++i)
     {
