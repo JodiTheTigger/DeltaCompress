@@ -941,11 +941,11 @@ ByteVector BitPackEncode(const ByteVector& data)
 
     ByteVector  result;
     unsigned startIndex = 0;
-    unsigned run = 1;
 
     while (startIndex < size)
     {
         unsigned i = 1;
+        unsigned run = 1;
 
         while (i != 128)
         {
