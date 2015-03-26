@@ -1023,8 +1023,42 @@ ByteVector BitPackEncode(const ByteVector& data)
 
 ByteVector BitPackDecode(const ByteVector& data)
 {
-    // RAM: TODO
-    return data;
+    auto size = data.size();
+
+    if (size < 2)
+    {
+        return {};
+    }
+
+    ByteVector  result;
+    unsigned index = 0;
+    while (index < size)
+    {
+        auto tag = ZigZag(data[index++]);
+
+        if (tag > 0)
+        {
+            auto count = tag + 1;
+
+            while (count--)
+            {
+                result.push_back(data[index++]);
+            }
+        }
+        else
+        {
+            auto count = -tag + 2u;
+
+            while (count--)
+            {
+                result.push_back(data[index]);
+            }
+
+            index++;
+        }
+    }
+
+    return result;
 }
 
 void BitPackTest()
