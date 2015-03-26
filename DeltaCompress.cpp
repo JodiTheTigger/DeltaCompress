@@ -975,11 +975,13 @@ ByteVector BitPackEncode(const ByteVector& data)
 //        auto unRunCount = (run == 1) ?
 //                    1 + i :
 //                    1 + (i - run);
-        auto unRunCount = 1 + (i - run);
+        unsigned unRunCount = 1 + (i - run);
 
         if (unRunCount)
         {
-            result.push_back(ZigZag(unRunCount - 1u));
+            auto header = ZigZag(static_cast<int32_t>(unRunCount) - 1);
+
+            result.push_back(header);
 
             unsigned index = 0;
             while (index != unRunCount)
@@ -1011,7 +1013,9 @@ ByteVector BitPackEncode(const ByteVector& data)
                 ++run;
             }
 
-            result.push_back(ZigZag(-(run - 2u)));
+            auto header = ZigZag(-(static_cast<int32_t>(run) - 2));
+
+            result.push_back(header);
             result.push_back(data[startIndex]);
 
             startIndex += run;
@@ -1034,11 +1038,11 @@ ByteVector BitPackDecode(const ByteVector& data)
     unsigned index = 0;
     while (index < size)
     {
-        auto tag = ZigZag(data[index++]);
+        auto header = ZigZag(static_cast<uint32_t>(data[index++]));
 
-        if (tag > 0)
+        if (header >= 0)
         {
-            auto count = tag + 1;
+            auto count = header + 1;
 
             while (count--)
             {
@@ -1047,7 +1051,7 @@ ByteVector BitPackDecode(const ByteVector& data)
         }
         else
         {
-            auto count = -tag + 2u;
+            auto count = -header + 2u;
 
             while (count--)
             {
