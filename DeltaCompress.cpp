@@ -1107,6 +1107,7 @@ void BitPackTest()
 static const std::array<unsigned, 8> exponentialBitLevelRunLengthLookup
 {
     0, 2, 7, 27, 57, 90, 496, 898,
+    //0, 2, 4, 12, 30, 62, 126, 254,
 };
 
 BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
@@ -1142,11 +1143,12 @@ BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
             current = data.Read(1);
         }
 
+        result.Write(previous, 1);
+
         if (run > 1)
         {
             while (run > 1)
             {
-                result.Write(previous, 1);
                 result.Write(previous, 1);
 
                 run -= 2;
@@ -1169,15 +1171,16 @@ BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
                 result.Write(1 - previous, 1);
 
                 run -= exponentialBitLevelRunLengthLookup[expRun];
+
+                if (run > 0)
+                {
+                    result.Write(previous, 1);
+                }
             }
 
-            if (run == 1)
-            {
-                result.Write(previous, 1);
-            }
         }
 
-        result.Write(current, 1);
+        //result.Write(current, 1);
         previous = current;
     }
 
@@ -1231,7 +1234,11 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream data)
                 result.Write(previous, 1);
             }
 
-            current = data.Read(1);
+            if (count < size)
+            {
+                current = data.Read(1);
+                count++;
+            }
         }
         else
         {
