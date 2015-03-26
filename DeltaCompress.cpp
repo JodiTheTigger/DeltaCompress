@@ -155,6 +155,21 @@ inline bool operator==(const Frame& lhs, const Frame& rhs)
 inline bool operator!=(const Frame& lhs, const Frame& rhs){return !operator==(lhs,rhs);}
 
 // //////////////////////////////////////////////////////
+
+struct MinMaxSum
+{
+    unsigned min;
+    unsigned max;
+    unsigned sum;
+
+    void Update(unsigned value)
+    {
+        min = std::min(min, value);
+        max = std::max(max, value);
+        sum += value;
+    }
+};
+
 struct Stats
 {
     unsigned itemCount;
@@ -168,9 +183,9 @@ struct Stats
     std::array<unsigned, Cubes> changed0DistanceRunHistogram;
     std::array<unsigned, Cubes> changed1DistanceRunHistogram;
 
-    unsigned rle;
-    unsigned btipack;
-    unsigned bitexprle;
+    MinMaxSum rle;
+    MinMaxSum bitpack;
+    MinMaxSum bitexprle;
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -1268,9 +1283,17 @@ std::vector<uint8_t> Encode(
     ++(stats.changed1DistanceRunHistogram[runLength1]);
 
     // Oooh, finally, some research!
-    stats.rle += RunLengthEncode(changed.Data()).size() * 8;
-    stats.btipack += BitPackEncode(changed.Data()).size() * 8;
-    stats.bitexprle += ExponentialBitLevelRunLengthEncode(changed).Bits();
+    auto rle = RunLengthEncode(changed.Data()).size() * 8;
+    auto bitpack = BitPackEncode(changed.Data()).size() * 8;
+    auto bitexprle = ExponentialBitLevelRunLengthEncode(changed).Bits();
+
+    assert(rle < Cubes);
+    assert(bitpack < Cubes);
+    assert(bitexprle < Cubes);
+
+    stats.rle.Update(rle);
+    stats.bitpack.Update(bitpack);
+    stats.bitexprle.Update(bitexprle);
 
     result.Write(changed);
     result.Write(deltas);
@@ -1373,7 +1396,9 @@ int main(int, char**)
         0,
         {0},
         {0},
-        0,0,0
+        {Cubes,0,0},
+        {Cubes,0,0},
+        {Cubes,0,0},
     };
 
     for (size_t i = FirstBase; i < size; ++i)
@@ -1425,6 +1450,21 @@ int main(int, char**)
     PRINT_FLOAT(packetSizeAverge)
     PRINT_FLOAT(bytesPerSecondAverage)
     PRINT_FLOAT(kbps)
+
+    float changedBitsTotal  = (901 * packetsCoded);
+    float rle               = 100 * (stats.rle.sum / changedBitsTotal);
+    float bitpack           = 100 * (stats.bitpack.sum / changedBitsTotal);
+    float bitexprle         = 100 * (stats.bitexprle.sum / changedBitsTotal);
+
+    PRINT_FLOAT(rle)
+    PRINT_INT(stats.rle.min)
+    PRINT_INT(stats.rle.max)
+    PRINT_FLOAT(bitpack)
+    PRINT_INT(stats.bitpack.min)
+    PRINT_INT(stats.bitpack.max)
+    PRINT_FLOAT(bitexprle)
+    PRINT_INT(stats.bitexprle.min)
+    PRINT_INT(stats.bitexprle.max)
 
     for (const auto h : stats.changed0DistanceRunHistogram)
     {
