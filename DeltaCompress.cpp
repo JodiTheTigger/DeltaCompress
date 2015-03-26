@@ -167,6 +167,10 @@ struct Stats
 
     std::array<unsigned, Cubes> changed0DistanceRunHistogram;
     std::array<unsigned, Cubes> changed1DistanceRunHistogram;
+
+    unsigned rle;
+    unsigned btipack;
+    unsigned bitexprle;
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -660,128 +664,6 @@ void BitPack8BitTest()
 
 // //////////////////////////////////////////////////////
 
-std::vector<uint8_t> Encode(
-    const Frame& base,
-    const Frame& target,
-    Stats& stats)
-{
-    const auto count = base.size();
-
-    assert(count > 0);
-    assert(count == target.size());
-
-    // ////////////////////////////////
-    // A. If nothing changed, don't send anything at all.
-
-    bool same = true;
-    size_t firstChanged = 0;
-    for (;firstChanged < count; ++firstChanged)
-    {
-        if (base[firstChanged] != target[firstChanged])
-        {
-            same = false;
-            break;
-        }
-    }
-
-    if (same)
-    {
-        return {};
-    }
-
-    // ////////////////////////////////
-
-    BitStream result;
-
-    BitStream changed;
-    BitStream deltas;
-
-    unsigned runLength0 = 0;
-    unsigned runLength1 = 0;
-
-    for (size_t i = 0; i < count; ++i)
-    {
-        if (base[i] == target[i])
-        {
-            changed.Write(0, 1);
-            ++runLength0;
-
-            ++(stats.changed1DistanceRunHistogram[runLength1]);
-            runLength1 = 0;
-        }
-        else
-        {
-            changed.Write(1, 1);
-            ++runLength1;
-
-            ++(stats.changed0DistanceRunHistogram[runLength0]);
-            runLength0 = 0;
-
-            assert(target[i].orientation_a >= 0);
-            assert(target[i].orientation_b >= 0);
-            assert(target[i].orientation_c >= 0);
-
-            // Meh, first time delta, just write the target.
-            deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
-            deltas.Write(target[i].orientation_a, RotationMaxBits);
-            deltas.Write(target[i].orientation_b, RotationMaxBits);
-            deltas.Write(target[i].orientation_c, RotationMaxBits);
-            deltas.Write(ZigZag(target[i].position_x), MaxBitsXY);
-            deltas.Write(ZigZag(target[i].position_y), MaxBitsXY);
-            deltas.Write(target[i].position_z, MaxBitsZ);
-            deltas.Write(target[i].interacting, 1);
-        }
-    }
-
-    ++(stats.changed0DistanceRunHistogram[runLength0]);
-    ++(stats.changed1DistanceRunHistogram[runLength1]);
-
-    result.Write(changed);
-    result.Write(deltas);
-
-    result.TrimZerosFromBack();
-
-    return result.Data();
-}
-
-Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
-{
-    // A.
-    if (buffer.empty())
-    {
-        return base;
-    }
-
-    BitStream bits(buffer);
-    Frame result;
-
-    auto changed = bits.ReadArray(Cubes);
-    changed.Reset();
-
-    for (size_t i = 0; i < Cubes; ++i)
-    {
-        if (changed.Read(1))
-        {
-            result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
-            result[i].orientation_a         = bits.Read(RotationMaxBits);
-            result[i].orientation_b         = bits.Read(RotationMaxBits);
-            result[i].orientation_c         = bits.Read(RotationMaxBits);
-            result[i].position_x            = ZigZag(bits.Read(MaxBitsXY));
-            result[i].position_y            = ZigZag(bits.Read(MaxBitsXY));
-            result[i].position_z            = bits.Read(MaxBitsZ);
-            result[i].interacting           = bits.Read(1);
-        }
-        else
-        {
-            result[i] = base[i];
-        }
-    }
-
-    return result;
-}
-
-// //////////////////////////////////////////////////////
-
 ByteVector RunLengthEncode(const ByteVector& data)
 {
     auto size = data.size();
@@ -1025,6 +907,15 @@ ByteVector BitPackEncode(const ByteVector& data)
 
             startIndex += run;
         }
+
+        if ((startIndex + 1) == size)
+        {
+            auto header = ZigZag(static_cast<int32_t>(0));
+
+            result.push_back(header);
+            result.push_back(data[startIndex]);
+            startIndex++;
+        }
     }
 
     return result;
@@ -1072,6 +963,17 @@ ByteVector BitPackDecode(const ByteVector& data)
 
 void BitPackTest()
 {
+    {
+        auto data = ByteVector
+        {
+            32,0,0,0,8
+        };
+
+        auto encoded = BitPackEncode(data);
+        auto decoded = BitPackDecode(encoded);
+
+        assert(data == decoded);
+    }
     {
         auto data = ByteVector
         {
@@ -1289,6 +1191,133 @@ void ExponentialBitLevelRunLengthEncodingTest()
 
 // //////////////////////////////////////////////////////
 
+std::vector<uint8_t> Encode(
+    const Frame& base,
+    const Frame& target,
+    Stats& stats)
+{
+    const auto count = base.size();
+
+    assert(count > 0);
+    assert(count == target.size());
+
+    // ////////////////////////////////
+    // A. If nothing changed, don't send anything at all.
+
+    bool same = true;
+    size_t firstChanged = 0;
+    for (;firstChanged < count; ++firstChanged)
+    {
+        if (base[firstChanged] != target[firstChanged])
+        {
+            same = false;
+            break;
+        }
+    }
+
+    if (same)
+    {
+        return {};
+    }
+
+    // ////////////////////////////////
+
+    BitStream result;
+
+    BitStream changed;
+    BitStream deltas;
+
+    unsigned runLength0 = 0;
+    unsigned runLength1 = 0;
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (base[i] == target[i])
+        {
+            changed.Write(0, 1);
+            ++runLength0;
+
+            ++(stats.changed1DistanceRunHistogram[runLength1]);
+            runLength1 = 0;
+        }
+        else
+        {
+            changed.Write(1, 1);
+            ++runLength1;
+
+            ++(stats.changed0DistanceRunHistogram[runLength0]);
+            runLength0 = 0;
+
+            assert(target[i].orientation_a >= 0);
+            assert(target[i].orientation_b >= 0);
+            assert(target[i].orientation_c >= 0);
+
+            // Meh, first time delta, just write the target.
+            deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+            deltas.Write(target[i].orientation_a, RotationMaxBits);
+            deltas.Write(target[i].orientation_b, RotationMaxBits);
+            deltas.Write(target[i].orientation_c, RotationMaxBits);
+            deltas.Write(ZigZag(target[i].position_x), MaxBitsXY);
+            deltas.Write(ZigZag(target[i].position_y), MaxBitsXY);
+            deltas.Write(target[i].position_z, MaxBitsZ);
+            deltas.Write(target[i].interacting, 1);
+        }
+    }
+
+    ++(stats.changed0DistanceRunHistogram[runLength0]);
+    ++(stats.changed1DistanceRunHistogram[runLength1]);
+
+    // Oooh, finally, some research!
+    stats.rle += RunLengthEncode(changed.Data()).size() * 8;
+    stats.btipack += BitPackEncode(changed.Data()).size() * 8;
+    stats.bitexprle += ExponentialBitLevelRunLengthEncode(changed).Bits();
+
+    result.Write(changed);
+    result.Write(deltas);
+
+    result.TrimZerosFromBack();
+
+    return result.Data();
+}
+
+Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
+{
+    // A.
+    if (buffer.empty())
+    {
+        return base;
+    }
+
+    BitStream bits(buffer);
+    Frame result;
+
+    auto changed = bits.ReadArray(Cubes);
+    changed.Reset();
+
+    for (size_t i = 0; i < Cubes; ++i)
+    {
+        if (changed.Read(1))
+        {
+            result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
+            result[i].orientation_a         = bits.Read(RotationMaxBits);
+            result[i].orientation_b         = bits.Read(RotationMaxBits);
+            result[i].orientation_c         = bits.Read(RotationMaxBits);
+            result[i].position_x            = ZigZag(bits.Read(MaxBitsXY));
+            result[i].position_y            = ZigZag(bits.Read(MaxBitsXY));
+            result[i].position_z            = bits.Read(MaxBitsZ);
+            result[i].interacting           = bits.Read(1);
+        }
+        else
+        {
+            result[i] = base[i];
+        }
+    }
+
+    return result;
+}
+
+// //////////////////////////////////////////////////////
+
 int main(int, char**)
 {
     ExponentialBitLevelRunLengthEncodingTest();
@@ -1344,6 +1373,7 @@ int main(int, char**)
         0,
         {0},
         {0},
+        0,0,0
     };
 
     for (size_t i = FirstBase; i < size; ++i)
