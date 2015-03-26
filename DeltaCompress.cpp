@@ -930,7 +930,7 @@ BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
     return result;
 }
 
-BitStream ExponentialBitLevelRunLengthDecode(BitStream data)
+BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBits = 0)
 {
     auto size = data.Bits();
 
@@ -946,6 +946,14 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream data)
 
     while (count < size)
     {
+        if (targetBits > 0)
+        {
+            if (result.Bits() == (targetBits + 1))
+            {
+                break;
+            }
+        }
+
         auto current = data.Read(1);
         count++;
 
@@ -975,6 +983,14 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream data)
             while (runCount--)
             {
                 result.Write(previous, 1);
+            }
+
+            if (targetBits > 0)
+            {
+                if (result.Bits() == (targetBits + 1))
+                {
+                    continue;
+                }
             }
 
             if (count < size)
@@ -1119,7 +1135,9 @@ std::vector<uint8_t> Encode(
     stats.bitpack.Update(bitpack);
     stats.bitexprle.Update(bitexprle);
 
-    result.Write(changed);
+    auto changedCompressed = ExponentialBitLevelRunLengthEncode(changed);
+
+    result.Write(changedCompressed);
     result.Write(deltas);
 
     result.TrimZerosFromBack();
@@ -1135,10 +1153,10 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
         return base;
     }
 
-    BitStream bits(buffer);
+    BitStream bits(buffer, buffer.size());
     Frame result;
 
-    auto changed = bits.ReadArray(Cubes);
+    auto changed = ExponentialBitLevelRunLengthDecode(bits, Cubes);
     changed.Reset();
 
     for (size_t i = 0; i < Cubes; ++i)
