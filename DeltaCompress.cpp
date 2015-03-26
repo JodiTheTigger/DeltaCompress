@@ -240,6 +240,12 @@ public:
     {
     }
 
+    BitStream(std::vector<uint8_t> newData, size_t bits)
+        : m_bitOffset(bits)
+        , m_data{newData}
+    {
+    }
+
     size_t Bits() const
     {
         return m_bitOffset + 1;
@@ -972,9 +978,6 @@ ByteVector BitPackEncode(const ByteVector& data)
             ++i;
         }
 
-//        auto unRunCount = (run == 1) ?
-//                    1 + i :
-//                    1 + (i - run);
         unsigned unRunCount = 1 + (i - run);
 
         if (unRunCount)
@@ -1101,9 +1104,84 @@ void BitPackTest()
 
 // //////////////////////////////////////////////////////
 
+static const std::array<unsigned, 8> exponentialBitLevelRunLengthLookup
+{
+    0, 2, 7, 27, 57, 90, 496, 898,
+};
+
 BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
 {
-    return data;
+    auto size = data.Bits();
+
+    if (size < 2)
+    {
+        return data;
+    }
+
+    unsigned count = 1;
+    data.Reset();
+    auto previous = data.Read(1);
+    BitStream result;
+
+    while (count < size)
+    {
+        auto current = data.Read(1);
+        count++;
+
+        unsigned run = 1;
+
+        while (current == previous)
+        {
+            if (count == size)
+            {
+                break;
+            }
+
+            run++;
+            count++;
+            current = data.Read(1);
+        }
+
+        if (run > 1)
+        {
+            while (run > 1)
+            {
+                result.Write(previous, 1);
+                result.Write(previous, 1);
+
+                run -= 2;
+                unsigned expRun = 0;
+                unsigned ordinal = 0;
+                for (const auto& exp : exponentialBitLevelRunLengthLookup)
+                {
+                    if (run >= exp)
+                    {
+                        expRun = ordinal;
+                        ordinal++;
+                    }
+                }
+
+                for (unsigned i = 0; i < expRun; ++i)
+                {
+                    result.Write(previous, 1);
+                }
+
+                result.Write(1 - previous, 1);
+
+                run -= exponentialBitLevelRunLengthLookup[expRun];
+            }
+
+            if (run == 1)
+            {
+                result.Write(previous, 1);
+            }
+        }
+
+        result.Write(current, 1);
+        previous = current;
+    }
+
+    return result;
 }
 
 BitStream ExponentialBitLevelRunLengthDecode(BitStream data)
@@ -1117,7 +1195,7 @@ void ExponentialBitLevelRunLengthEncodingTest()
         auto data = BitStream(ByteVector
         {
             0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,4,
-        });
+        }, 20 * 8);
 
         auto encoded = ExponentialBitLevelRunLengthEncode(data);
         auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
@@ -1128,7 +1206,7 @@ void ExponentialBitLevelRunLengthEncodingTest()
         auto data = BitStream(ByteVector
         {
             0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,
-        });
+        }, 19 * 8);
 
         auto encoded = ExponentialBitLevelRunLengthEncode(data);
         auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
@@ -1136,7 +1214,7 @@ void ExponentialBitLevelRunLengthEncodingTest()
         assert(data == decoded);
     }
     {
-        auto data = BitStream(ByteVector(100, 0));
+        auto data = BitStream(ByteVector(100, 0), 100 * 8);
 
         auto encoded = ExponentialBitLevelRunLengthEncode(data);
         auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
