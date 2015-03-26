@@ -1186,7 +1186,62 @@ BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
 
 BitStream ExponentialBitLevelRunLengthDecode(BitStream data)
 {
-    return data;
+    auto size = data.Bits();
+
+    if (size < 2)
+    {
+        return data;
+    }
+
+    unsigned count = 1;
+    data.Reset();
+    auto previous = data.Read(1);
+    BitStream result;
+
+    while (count < size)
+    {
+        auto current = data.Read(1);
+        count++;
+
+        unsigned run = 1;
+
+        while (current == previous)
+        {
+            if (count == size)
+            {
+                break;
+            }
+
+            run++;
+            count++;
+            current = data.Read(1);
+        }
+
+        if (run > 1)
+        {
+            result.Write(previous, 1);
+            result.Write(previous, 1);
+
+            run -= 2;
+            assert(run < exponentialBitLevelRunLengthLookup.size());
+            auto runCount = exponentialBitLevelRunLengthLookup[run];
+
+            while (runCount--)
+            {
+                result.Write(previous, 1);
+            }
+
+            current = data.Read(1);
+        }
+        else
+        {
+            result.Write(previous, 1);
+        }
+
+        previous = current;
+    }
+
+    return result;
 }
 
 void ExponentialBitLevelRunLengthEncodingTest()
