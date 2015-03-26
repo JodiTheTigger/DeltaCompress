@@ -280,7 +280,7 @@ public:
 
         auto bitOffset = m_bitOffset;
         auto byteOffset = bitOffset / 8u;
-        auto byteOffsetAfter = (bitOffset + bitsToWrite) / 8u;
+        auto byteOffsetAfter = (bitOffset + bitsToWrite + -1) / 8u;
         auto index = bitOffset - (byteOffset * 8);
         auto mask = ((1 << index) - 1);
 
