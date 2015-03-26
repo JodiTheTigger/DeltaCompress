@@ -928,9 +928,145 @@ void RunLengthTest()
 
 // //////////////////////////////////////////////////////
 
+// http://michael.dipperstein.com/rle/
+
+ByteVector BitPackEncode(const ByteVector& data)
+{
+    auto size = data.size();
+
+    if (size < 1)
+    {
+        return {};
+    }
+
+    ByteVector  result;
+    unsigned startIndex = 0;
+    unsigned run = 1;
+
+    while (startIndex < size)
+    {
+        unsigned i = 1;
+
+        while (i != 128)
+        {
+            auto index = startIndex + i;
+            if (data[index] == data[index - 1])
+            {
+                run++;
+            }
+            else
+            {
+                run = 1;
+            }
+
+            if (run == 3)
+            {
+                break;
+            }
+
+            if ((startIndex + i) == size)
+            {
+                break;
+            }
+
+            ++i;
+        }
+
+//        auto unRunCount = (run == 1) ?
+//                    1 + i :
+//                    1 + (i - run);
+        auto unRunCount = 1 + (i - run);
+
+        if (unRunCount)
+        {
+            result.push_back(ZigZag(unRunCount - 1u));
+
+            unsigned index = 0;
+            while (index != unRunCount)
+            {
+                result.push_back(data[startIndex + index]);
+
+                index++;
+            }
+        }
+
+        startIndex += unRunCount;
+
+        if (run == 3)
+        {
+            while (run < 130)
+            {
+                auto index = startIndex + run;
+
+                if (data[index] != data[index - 1])
+                {
+                    break;
+                }
+
+                if ((startIndex + run) == size)
+                {
+                    break;
+                }
+
+                ++run;
+            }
+
+            result.push_back(ZigZag(-(run - 2u)));
+            result.push_back(data[startIndex]);
+
+            startIndex += run;
+        }
+    }
+
+    return result;
+}
+
+ByteVector BitPackDecode(const ByteVector& data)
+{
+    // RAM: TODO
+    return data;
+}
+
+void BitPackTest()
+{
+    {
+        auto data = ByteVector
+        {
+            0,1,3,3,4,4,4,4,4,5,6,6,6,5,4,3,3,3,3,4,
+        };
+
+        auto encoded = BitPackEncode(data);
+        auto decoded = BitPackDecode(encoded);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = ByteVector
+        {
+            0,1,3,3,4,4,4,4,4,5,6,6,6,5,4,3,3,3,3,
+        };
+
+        auto encoded = BitPackEncode(data);
+        auto decoded = BitPackDecode(encoded);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = ByteVector(300, 5);
+
+        auto encoded = BitPackEncode(data);
+        auto decoded = BitPackDecode(encoded);
+
+        assert(data == decoded);
+    }
+}
+
+// //////////////////////////////////////////////////////
+
 int main(int, char**)
 {
     RunLengthTest();
+    BitPackTest();
     BitPack8BitTest();
     BitStreamTest();
     ZigZagTest();
