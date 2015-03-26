@@ -448,6 +448,7 @@ void BitStreamTest()
 
     BitStream bitsOutToSplit(bitsIn.Data());
     BitStream bitsSplit = bitsOutToSplit.ReadArray(6);
+    bitsSplit.Reset();
 
     auto as = bitsSplit.Read(6);
     auto bs = bitsOutToSplit.Read(10);
