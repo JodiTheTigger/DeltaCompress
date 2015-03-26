@@ -188,6 +188,14 @@ struct Stats
     MinMaxSum bitexprle;
 };
 
+enum class ChangedArrayEncoding
+{
+    None,
+    Rle,
+    BitPack,
+    Exp
+};
+
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
 {
     assert(base.size() == target.size());
@@ -1046,10 +1054,16 @@ void ExponentialBitLevelRunLengthEncodingTest()
 
 // //////////////////////////////////////////////////////
 
+struct Config
+{
+    ChangedArrayEncoding rle;
+};
+
 std::vector<uint8_t> Encode(
     const Frame& base,
     const Frame& target,
-    Stats& stats)
+    Stats& stats,
+    Config config = {ChangedArrayEncoding::None})
 {
     const auto count = base.size();
 
@@ -1123,19 +1137,43 @@ std::vector<uint8_t> Encode(
     ++(stats.changed1DistanceRunHistogram[runLength1]);
 
     // Oooh, finally, some research!
-    auto rle = RunLengthEncode(changed.Data()).size() * 8;
-    auto bitpack = BitPackEncode(changed.Data()).size() * 8;
-    auto bitexprle = ExponentialBitLevelRunLengthEncode(changed).Bits();
+    auto rle = RunLengthEncode(changed.Data());
+    auto bitpack = BitPackEncode(changed.Data());
+    auto bitexprle = ExponentialBitLevelRunLengthEncode(changed);
 
-    assert(rle < Cubes);
-    assert(bitpack < Cubes);
-    assert(bitexprle < Cubes);
+    assert((rle.size() * 8) < Cubes);
+    assert((bitpack.size() * 8) < Cubes);
+    assert((bitexprle.Bits()) < Cubes);
 
-    stats.rle.Update(rle);
-    stats.bitpack.Update(bitpack);
-    stats.bitexprle.Update(bitexprle);
+    stats.rle.Update(rle.size() * 8);
+    stats.bitpack.Update(bitpack.size() * 8);
+    stats.bitexprle.Update(bitexprle.Bits());
 
-    auto changedCompressed = ExponentialBitLevelRunLengthEncode(changed);
+    auto changedCompressed = [&changed, &config]()
+    {
+        switch (config.rle)
+        {
+            case ChangedArrayEncoding::None:
+            {
+                return changed;
+            }
+
+            case ChangedArrayEncoding::Rle:
+            {
+                return RunLengthEncode(changed);
+            }
+
+            case ChangedArrayEncoding::BitPack:
+            {
+                return BitPackEncode(changed);
+            }
+
+            case ChangedArrayEncoding::Exp:
+            {
+                return ExponentialBitLevelRunLengthEncode(changed);
+            }
+        }
+    }();
 
     result.Write(changedCompressed);
     result.Write(deltas);
@@ -1145,7 +1183,10 @@ std::vector<uint8_t> Encode(
     return result.Data();
 }
 
-Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
+Frame Decode(
+    const Frame& base,
+    std::vector<uint8_t>& buffer,
+    Config config = {ChangedArrayEncoding::None})
 {
     // A.
     if (buffer.empty())
@@ -1156,7 +1197,32 @@ Frame Decode(const Frame& base, std::vector<uint8_t>& buffer)
     BitStream bits(buffer, buffer.size());
     Frame result;
 
-    auto changed = ExponentialBitLevelRunLengthDecode(bits, Cubes);
+    auto changed = [&bits, &config]()
+    {
+        switch (config.rle)
+        {
+            case ChangedArrayEncoding::None:
+            {
+                return bits.ReadArray(Cubes);
+            }
+
+            case ChangedArrayEncoding::Rle:
+            {
+                return RunLengthDecode(changed);
+            }
+
+            case ChangedArrayEncoding::BitPack:
+            {
+                return BitPackDecode(changed);
+            }
+
+            case ChangedArrayEncoding::Exp:
+            {
+                return ExponentialBitLevelRunLengthDecode(bits, Cubes);
+            }
+        }
+    }();
+
     changed.Reset();
 
     for (size_t i = 0; i < Cubes; ++i)
