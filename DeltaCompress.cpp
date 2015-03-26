@@ -1101,8 +1101,55 @@ void BitPackTest()
 
 // //////////////////////////////////////////////////////
 
+BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
+{
+    return data;
+}
+
+BitStream ExponentialBitLevelRunLengthDecode(BitStream data)
+{
+    return data;
+}
+
+void ExponentialBitLevelRunLengthEncodingTest()
+{
+    {
+        auto data = BitStream(ByteVector
+        {
+            0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,4,
+        });
+
+        auto encoded = ExponentialBitLevelRunLengthEncode(data);
+        auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = BitStream(ByteVector
+        {
+            0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,
+        });
+
+        auto encoded = ExponentialBitLevelRunLengthEncode(data);
+        auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = BitStream(ByteVector(100, 0));
+
+        auto encoded = ExponentialBitLevelRunLengthEncode(data);
+        auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
+
+        assert(data == decoded);
+    }
+}
+
+// //////////////////////////////////////////////////////
+
 int main(int, char**)
 {
+    ExponentialBitLevelRunLengthEncodingTest();
     RunLengthTest();
     BitPackTest();
     BitPack8BitTest();
