@@ -278,9 +278,14 @@ public:
         return m_bitOffset + 1;
     }
 
+    void SetOffset(unsigned offset)
+    {
+        m_bitOffset = offset;
+    }
+
     void Reset()
     {
-        m_bitOffset = 0;
+        SetOffset(0);
     }
 
     void Write(const BitStream& other)
@@ -571,7 +576,10 @@ ByteVector RunLengthEncode(const ByteVector& data)
     return result;
 }
 
-ByteVector RunLengthDecode(const ByteVector& data)
+ByteVector RunLengthDecode(
+    const ByteVector& data,
+    unsigned& bytesConsumed,
+    unsigned maxResultBytes = 0)
 {
     auto size = data.size();
 
@@ -623,10 +631,22 @@ ByteVector RunLengthDecode(const ByteVector& data)
             result.push_back(current);
         }
 
+        if (result.size() == maxResultBytes)
+        {
+            break;
+        }
+
         previous = current;
     }
 
+    bytesConsumed = index;
     return result;
+}
+
+ByteVector RunLengthDecode(const ByteVector& data)
+{
+    unsigned unused;
+    return RunLengthDecode(data, unused);
 }
 
 void RunLengthTest()
@@ -768,7 +788,10 @@ ByteVector BitPackEncode(const ByteVector& data)
     return result;
 }
 
-ByteVector BitPackDecode(const ByteVector& data)
+ByteVector BitPackDecode(
+    const ByteVector& data,
+    unsigned& bytesConsumed,
+    unsigned maxResultBytes = 0)
 {
     auto size = data.size();
 
@@ -803,9 +826,25 @@ ByteVector BitPackDecode(const ByteVector& data)
 
             index++;
         }
+
+        if (maxResultBytes > 0)
+        {
+            if (result.size() == maxResultBytes)
+            {
+                break;
+            }
+        }
     }
 
+    bytesConsumed = index;
+
     return result;
+}
+
+ByteVector BitPackDecode(const ByteVector& data)
+{
+    unsigned unused;
+    return BitPackDecode(data, unused);
 }
 
 void BitPackTest()
@@ -852,6 +891,7 @@ void BitPackTest()
         assert(data == decoded);
     }
 }
+
 
 // //////////////////////////////////////////////////////
 
@@ -1153,6 +1193,7 @@ std::vector<uint8_t> Encode(
     {
         switch (config.rle)
         {
+            default:
             case ChangedArrayEncoding::None:
             {
                 return changed;
@@ -1160,12 +1201,14 @@ std::vector<uint8_t> Encode(
 
             case ChangedArrayEncoding::Rle:
             {
-                return RunLengthEncode(changed);
+                auto result = RunLengthEncode(changed.Data());
+                return BitStream(result, result.size() * 8);
             }
 
             case ChangedArrayEncoding::BitPack:
             {
-                return BitPackEncode(changed);
+                auto result = BitPackEncode(changed.Data());
+                return BitStream(result, result.size() * 8);
             }
 
             case ChangedArrayEncoding::Exp:
@@ -1201,6 +1244,7 @@ Frame Decode(
     {
         switch (config.rle)
         {
+            default:
             case ChangedArrayEncoding::None:
             {
                 return bits.ReadArray(Cubes);
@@ -1208,12 +1252,22 @@ Frame Decode(
 
             case ChangedArrayEncoding::Rle:
             {
-                return RunLengthDecode(changed);
+                unsigned bytesUsed = 0;
+                auto decode = RunLengthDecode(bits.Data(), bytesUsed, 113);
+
+                bits.SetOffset(bytesUsed * 8);
+
+                return BitStream(decode);
             }
 
             case ChangedArrayEncoding::BitPack:
             {
-                return BitPackDecode(changed);
+                unsigned bytesUsed = 0;
+                auto decode = BitPackDecode(bits.Data(), bytesUsed, 113);
+
+                bits.SetOffset(bytesUsed * 8);
+
+                return BitStream(decode);
             }
 
             case ChangedArrayEncoding::Exp:
