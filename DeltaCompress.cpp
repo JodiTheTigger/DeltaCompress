@@ -1239,6 +1239,7 @@ Frame Decode(
 
     BitStream bits(buffer, buffer.size());
     Frame result;
+    bits.Reset();
 
     auto changed = [&bits, &config]()
     {
@@ -1391,11 +1392,11 @@ int main(int, char**)
 
     for (size_t i = FirstBase; i < size; ++i)
     {
-        auto buffer = Encode(frames[i-FirstBase], frames[i], stats);
+        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::None});
 
         bytes += buffer.size();
 
-        auto back = Decode(frames[i-FirstBase], buffer);
+        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::None});
 
         assert(back == frames[i]);
 
