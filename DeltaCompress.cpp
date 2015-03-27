@@ -6,6 +6,8 @@
 
 // //////////////////////////////////////////////////////
 
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
@@ -240,7 +242,7 @@ inline constexpr uint32_t ZigZag(int32_t n)
 
 inline constexpr int32_t ZigZag(uint32_t n)
 {
-    return (n >> 1) ^ (-(n & 1));
+    return (n >> 1) ^ (-(static_cast<int>(n) & 1));
 }
 
 void ZigZagTest()
@@ -760,12 +762,12 @@ ByteVector BitPackEncode(const ByteVector& data)
             {
                 auto index = startIndex + run;
 
-                if (data[index] != data[index - 1])
-                {
-                    break;
-                }
+				if ((startIndex + run) == size)
+				{
+					break;
+				}
 
-                if ((startIndex + run) == size)
+                if (data[index] != data[index - 1])
                 {
                     break;
                 }
@@ -1440,7 +1442,7 @@ int main(int, char**)
     PRINT_FLOAT(bytesPerSecondAverage)
     PRINT_FLOAT(kbps)
 
-    float changedBitsTotal  = (901 * packetsCoded);
+    float changedBitsTotal  = (901.0f * packetsCoded);
     float rle               = 100 * (stats.rle.sum / changedBitsTotal);
     float bitpack           = 100 * (stats.bitpack.sum / changedBitsTotal);
     float bitexprle         = 100 * (stats.bitexprle.sum / changedBitsTotal);
