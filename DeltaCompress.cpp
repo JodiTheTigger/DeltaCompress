@@ -596,6 +596,11 @@ ByteVector RunLengthDecode(
 
     while (index < size)
     {
+        if (result.size() == maxResultBytes)
+        {
+            break;
+        }
+
         auto current = data[index++];
 
         if (previous == current)
@@ -615,6 +620,11 @@ ByteVector RunLengthDecode(
                 result.push_back(current);
             }
 
+            if (result.size() == maxResultBytes)
+            {
+                continue;
+            }
+
             if (index < size)
             {
                 current = data[index++];
@@ -629,11 +639,6 @@ ByteVector RunLengthDecode(
         if (current != previous)
         {
             result.push_back(current);
-        }
-
-        if (result.size() == maxResultBytes)
-        {
-            break;
         }
 
         previous = current;
@@ -1392,11 +1397,11 @@ int main(int, char**)
 
     for (size_t i = FirstBase; i < size; ++i)
     {
-        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::None});
+        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::Rle});
 
         bytes += buffer.size();
 
-        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::None});
+        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::Rle});
 
         assert(back == frames[i]);
 
