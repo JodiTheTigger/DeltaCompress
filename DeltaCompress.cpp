@@ -275,7 +275,8 @@ public:
 
     size_t Bits() const
     {
-        return m_bitOffset + 1;
+        // Next place to write, so in affect == existing size.
+        return m_bitOffset;
     }
 
     void SetOffset(unsigned offset)
@@ -915,27 +916,28 @@ BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
         return data;
     }
 
-    unsigned count = 1;
+    unsigned bitsReadCount = 1;
     data.Reset();
     auto previous = data.Read(1);
     BitStream result;
 
-    while (count < size)
+    while (bitsReadCount < size)
     {
         auto current = data.Read(1);
-        count++;
+        bitsReadCount++;
 
         unsigned run = 1;
 
         while (current == previous)
         {
-            if (count == size)
+            run++;
+
+            if (bitsReadCount == size)
             {
                 break;
             }
 
-            run++;
-            count++;
+            bitsReadCount++;
             current = data.Read(1);
         }
 
@@ -973,7 +975,11 @@ BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
                     result.Write(previous, 1);
                 }
             }
+        }
 
+        if ((bitsReadCount - 1) == size)
+        {
+            break;
         }
 
         //result.Write(current, 1);
@@ -992,35 +998,36 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
         return data;
     }
 
-    unsigned count = 1;
+    unsigned bitsReadCount = 1;
     data.Reset();
     auto previous = data.Read(1);
     BitStream result;
 
-    while (count < size)
+    while (bitsReadCount != size)
     {
         if (targetBits > 0)
         {
-            if (result.Bits() == (targetBits + 1))
+            if (result.Bits() == targetBits)
             {
                 break;
             }
         }
 
         auto current = data.Read(1);
-        count++;
+        bitsReadCount++;
 
         unsigned run = 1;
 
         while (current == previous)
         {
-            if (count == size)
+            run++;
+
+            if (bitsReadCount == size)
             {
                 break;
             }
 
-            run++;
-            count++;
+            bitsReadCount++;
             current = data.Read(1);
         }
 
@@ -1040,16 +1047,29 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
 
             if (targetBits > 0)
             {
-                if (result.Bits() == (targetBits + 1))
+                if (result.Bits() == targetBits)
                 {
                     continue;
                 }
             }
 
-            if (count < size)
+            if (bitsReadCount < size)
             {
                 current = data.Read(1);
-                count++;
+                bitsReadCount++;
+
+                if (bitsReadCount == size)
+                {
+                    result.Write(current, 1);
+                }
+
+                if (targetBits > 0)
+                {
+                    if (result.Bits() == (targetBits - 1))
+                    {
+                        result.Write(current, 1);
+                    }
+                }
             }
         }
         else
@@ -1223,6 +1243,8 @@ std::vector<uint8_t> Encode(
         }
     }();
 
+    assert(changedCompressed.Bits() <= 901);
+
     result.Write(changedCompressed);
     result.Write(deltas);
 
@@ -1242,9 +1264,8 @@ Frame Decode(
         return base;
     }
 
-    BitStream bits(buffer, buffer.size());
+    BitStream bits(buffer, buffer.size() * 8);
     Frame result;
-    bits.Reset();
 
     auto changed = [&bits, &config]()
     {
@@ -1253,6 +1274,7 @@ Frame Decode(
             default:
             case ChangedArrayEncoding::None:
             {
+                bits.Reset();
                 return bits.ReadArray(Cubes);
             }
 
@@ -1397,11 +1419,11 @@ int main(int, char**)
 
     for (size_t i = FirstBase; i < size; ++i)
     {
-        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::BitPack});
+        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::Exp});
 
         bytes += buffer.size();
 
-        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::BitPack});
+        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::Exp});
 
         assert(back == frames[i]);
 
