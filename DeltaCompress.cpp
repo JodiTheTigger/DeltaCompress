@@ -726,12 +726,12 @@ ByteVector BitPackEncode(const ByteVector& data)
                 break;
             }
 
+            ++i;
+
             if ((startIndex + i) == size)
             {
                 break;
             }
-
-            ++i;
         }
 
         unsigned unRunCount = 1 + (i - run);
@@ -857,7 +857,7 @@ void BitPackTest()
     {
         auto data = ByteVector
         {
-            32,0,0,0,8
+            1,2,3,4,5,0,0
         };
 
         auto encoded = BitPackEncode(data);
@@ -1397,11 +1397,11 @@ int main(int, char**)
 
     for (size_t i = FirstBase; i < size; ++i)
     {
-        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::Rle});
+        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::BitPack});
 
         bytes += buffer.size();
 
-        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::Rle});
+        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::BitPack});
 
         assert(back == frames[i]);
 
