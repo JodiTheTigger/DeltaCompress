@@ -976,6 +976,18 @@ BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
                 {
                     result.Write(previous, 1);
                 }
+
+                if ((run < 2) && (bitsReadCount == size) && (current != previous))
+                {
+                    result.Write(current, 1);
+                }
+            }
+        }
+        else
+        {
+            if (bitsReadCount == size)
+            {
+                result.Write(current, 1);
             }
         }
 
@@ -1011,6 +1023,12 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
         {
             if (result.Bits() == targetBits)
             {
+                break;
+            }
+
+            if (result.Bits() == (targetBits - 1))
+            {
+                result.Write(previous, 1);
                 break;
             }
         }
@@ -1077,6 +1095,11 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
         else
         {
             result.Write(previous, 1);
+
+            if (bitsReadCount == size)
+            {
+                result.Write(current, 1);
+            }
         }
 
         previous = current;
@@ -1087,7 +1110,19 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
 
 void ExponentialBitLevelRunLengthEncodingTest()
 {
-	{
+    for (uint8_t i = 14; i < 32; ++i)
+    {
+        auto data = BitStream(ByteVector
+        {
+            i
+        }, 5);
+
+        auto encoded = ExponentialBitLevelRunLengthEncode(data);
+        auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
+
+        assert(data == decoded);
+    }
+    {
 		auto data = BitStream(ByteVector
 		{
 			0,248,11
@@ -1097,7 +1132,7 @@ void ExponentialBitLevelRunLengthEncodingTest()
 		auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
 
 		assert(data == decoded);
-	}
+    }
     {
         auto data = BitStream(ByteVector
         {
