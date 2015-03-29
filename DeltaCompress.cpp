@@ -995,7 +995,6 @@ BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
             break;
         }
 
-        //result.Write(current, 1);
         previous = current;
     }
 
