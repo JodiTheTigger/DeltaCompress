@@ -905,8 +905,7 @@ void BitPackTest()
 
 static const std::array<unsigned, 8> exponentialBitLevelRunLengthLookup
 {
-    0, 2, 7, 27, 57, 90, 496, 898,
-    //0, 2, 4, 12, 30, 62, 126, 254,
+    0, 2, 10, 27, 57, 90, 256, 898,
 };
 
 BitStream ExponentialBitLevelRunLengthEncode(BitStream data)
