@@ -1087,6 +1087,17 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
 
 void ExponentialBitLevelRunLengthEncodingTest()
 {
+	{
+		auto data = BitStream(ByteVector
+		{
+			0,248,11
+		}, (2 * 8) + 5);
+
+		auto encoded = ExponentialBitLevelRunLengthEncode(data);
+		auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
+
+		assert(data == decoded);
+	}
     {
         auto data = BitStream(ByteVector
         {
