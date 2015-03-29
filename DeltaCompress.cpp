@@ -1108,7 +1108,7 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
 
 void ExponentialBitLevelRunLengthEncodingTest()
 {
-    for (uint8_t i = 14; i < 32; ++i)
+    for (uint8_t i = 0; i < 32; ++i)
     {
         auto data = BitStream(ByteVector
         {
