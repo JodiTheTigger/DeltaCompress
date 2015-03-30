@@ -188,6 +188,7 @@ struct Stats
     MinMaxSum rle;
     MinMaxSum bitpack;
     MinMaxSum bitexprle;
+    MinMaxSum expbitpack;
 };
 
 enum class ChangedArrayEncoding
@@ -195,7 +196,8 @@ enum class ChangedArrayEncoding
     None,
     Rle,
     BitPack,
-    Exp
+    Exp,
+    BitPackExp
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -1165,6 +1167,198 @@ void ExponentialBitLevelRunLengthEncodingTest()
 
 // //////////////////////////////////////////////////////
 
+static const std::array<unsigned, 8> exponentialBitPackLookup
+{
+    1, 4, 8, 30, 60, 90, 256, 900,
+};
+
+BitStream ExponentialBitPackEncode(BitStream data)
+{
+    auto size = data.Bits();
+
+    if (size < 2)
+    {
+        return data;
+    }
+
+    data.Reset();
+    BitStream result;
+
+    unsigned count = size;
+    unsigned read = 0;
+
+    while (count > 7)
+    {
+        auto chunk = data.Read(8);
+        count -= 8;
+        read += 8;
+
+        if ((chunk == 0xFF) || (chunk == 0))
+        {
+            auto previous = chunk & 1;
+            auto current = data.Read(1);
+            auto run = 8u;
+
+            while ((previous == current) && (read != size))
+            {
+                run++;
+                current = data.Read(1);
+                count--;
+                read++;
+            }
+
+            if (read != size)
+            {
+                data.SetOffset(data.Bits() - 1);
+            }
+
+            while (run)
+            {
+                unsigned exp = 0;
+                while (run > exponentialBitPackLookup[exp + 1])
+                {
+                    exp++;
+                    assert(exp < exponentialBitPackLookup.size());
+                }
+
+                result.Write(1,1);
+                result.Write(previous, 1);
+                result.Write(exp, 3);
+                run -= exponentialBitPackLookup[exp];
+            }
+        }
+        else
+        {
+            result.Write(0, 1);
+            result.Write(chunk, 8);
+        }
+    }
+
+    if (count)
+    {
+        auto theRest = data.Read(count);
+        result.Write(0, 1);
+        result.Write(theRest, count);
+        result.Write(0, 8 - count);
+    }
+
+    return result;
+}
+
+BitStream ExponentialBitPackDecode(BitStream& data, unsigned targetBits = 0)
+{
+    auto size = data.Bits();
+
+    if (size < 5)
+    {
+        return data;
+    }
+
+    unsigned bitsReadCount = 0;
+    data.Reset();
+    BitStream result;
+
+    while (bitsReadCount < size)
+    {
+        auto tag = data.Read(1);
+        bitsReadCount++;
+
+        if (tag)
+        {
+            auto repeat = data.Read(1);
+            bitsReadCount++;
+
+            auto lookup = data.Read(3);
+            bitsReadCount += 3;
+
+            auto loop = exponentialBitPackLookup[lookup];
+
+            while(loop--)
+            {
+                result.Write(repeat, 1);
+            }
+        }
+        else
+        {
+            auto toWrite = targetBits ? targetBits - result.Bits() : 8;
+            toWrite = std::min(toWrite, 8lu);
+
+            auto unRun = data.Read(8);
+            bitsReadCount += 8;
+            result.Write(unRun, toWrite);
+        }
+
+        if (targetBits)
+        {
+            if (targetBits == result.Bits())
+            {
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
+void ExponentialBitPackTest()
+{
+    for (uint8_t i = 0; i < 32; ++i)
+    {
+        auto data = BitStream(ByteVector
+        {
+            i
+        }, 5);
+
+        auto encoded = ExponentialBitPackEncode(data);
+        auto decoded = ExponentialBitPackDecode(encoded, 5);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = BitStream(ByteVector
+        {
+            0,248,11
+        }, (2 * 8) + 5);
+
+        auto encoded = ExponentialBitPackEncode(data);
+        auto decoded = ExponentialBitPackDecode(encoded, (2 * 8) + 5);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = BitStream(ByteVector
+        {
+            0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,4,
+        }, 20 * 8);
+
+        auto encoded = ExponentialBitPackEncode(data);
+        auto decoded = ExponentialBitPackDecode(encoded);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = BitStream(ByteVector
+        {
+            0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,
+        }, 19 * 8);
+
+        auto encoded = ExponentialBitPackEncode(data);
+        auto decoded = ExponentialBitPackDecode(encoded);
+
+        assert(data == decoded);
+    }
+    {
+        auto data = BitStream(ByteVector(100, 0), 100 * 8);
+
+        auto encoded = ExponentialBitPackEncode(data);
+        auto decoded = ExponentialBitPackDecode(encoded);
+
+        assert(data == decoded);
+    }
+}
+
+// //////////////////////////////////////////////////////
+
 struct Config
 {
     ChangedArrayEncoding rle;
@@ -1251,14 +1445,17 @@ std::vector<uint8_t> Encode(
     auto rle = RunLengthEncode(changed.Data());
     auto bitpack = BitPackEncode(changed.Data());
     auto bitexprle = ExponentialBitLevelRunLengthEncode(changed);
+    auto expbitpack = ExponentialBitPackEncode(changed);
 
     assert((rle.size() * 8) < Cubes);
     assert((bitpack.size() * 8) < Cubes);
     assert((bitexprle.Bits()) < Cubes);
+    //assert((expbitpack.Bits()) < Cubes);
 
     stats.rle.Update(rle.size() * 8);
     stats.bitpack.Update(bitpack.size() * 8);
     stats.bitexprle.Update(bitexprle.Bits());
+    stats.expbitpack.Update(expbitpack.Bits());
 
     auto changedCompressed = [&changed, &config]()
     {
@@ -1286,10 +1483,15 @@ std::vector<uint8_t> Encode(
             {
                 return ExponentialBitLevelRunLengthEncode(changed);
             }
+
+            case ChangedArrayEncoding::BitPackExp:
+            {
+                return ExponentialBitPackEncode(changed);
+            }
         }
     }();
 
-    assert(changedCompressed.Bits() <= 901);
+    //assert(changedCompressed.Bits() <= 901);
 
     result.Write(changedCompressed);
     result.Write(deltas);
@@ -1348,6 +1550,11 @@ Frame Decode(
             {
                 return ExponentialBitLevelRunLengthDecode(bits, Cubes);
             }
+
+            case ChangedArrayEncoding::BitPackExp:
+            {
+                return ExponentialBitPackDecode(bits, Cubes);
+            }
         }
     }();
 
@@ -1379,6 +1586,7 @@ Frame Decode(
 
 int main(int, char**)
 {
+    ExponentialBitPackTest();
     ExponentialBitLevelRunLengthEncodingTest();
     RunLengthTest();
     BitPackTest();
@@ -1434,6 +1642,7 @@ int main(int, char**)
         {Cubes,0,0},
         {Cubes,0,0},
         {Cubes,0,0},
+        {Cubes,0,0},
     };
 
     for (size_t i = FirstBase; i < size; ++i)
@@ -1465,11 +1674,11 @@ int main(int, char**)
 
     for (size_t i = FirstBase; i < size; ++i)
     {
-        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::Exp});
+        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::BitPackExp});
 
         bytes += buffer.size();
 
-        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::Exp});
+        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::BitPackExp});
 
         assert(back == frames[i]);
 
@@ -1490,6 +1699,7 @@ int main(int, char**)
     float rle               = 100 * (stats.rle.sum / changedBitsTotal);
     float bitpack           = 100 * (stats.bitpack.sum / changedBitsTotal);
     float bitexprle         = 100 * (stats.bitexprle.sum / changedBitsTotal);
+    float expbitpack        = 100 * (stats.expbitpack.sum / changedBitsTotal);
 
     PRINT_FLOAT(rle)
     PRINT_INT(stats.rle.min)
@@ -1500,6 +1710,9 @@ int main(int, char**)
     PRINT_FLOAT(bitexprle)
     PRINT_INT(stats.bitexprle.min)
     PRINT_INT(stats.bitexprle.max)
+    PRINT_FLOAT(expbitpack)
+    PRINT_INT(stats.expbitpack.min)
+    PRINT_INT(stats.expbitpack.max)
 
     for (const auto h : stats.changed0DistanceRunHistogram)
     {
