@@ -1172,6 +1172,9 @@ static const std::array<unsigned, 8> exponentialBitPackLookup
     1, 4, 8, 30, 60, 90, 256, 900,
 };
 
+static const unsigned long expMaxUnrun = 8;
+static const unsigned allSet = (1 << expMaxUnrun) - 1;
+
 BitStream ExponentialBitPackEncode(BitStream data)
 {
     auto size = data.Bits();
@@ -1187,17 +1190,17 @@ BitStream ExponentialBitPackEncode(BitStream data)
     unsigned count = size;
     unsigned read = 0;
 
-    while (count > 7)
+    while (count > (expMaxUnrun - 1))
     {
-        auto chunk = data.Read(8);
-        count -= 8;
-        read += 8;
+        auto chunk = data.Read(expMaxUnrun);
+        count -= expMaxUnrun;
+        read += expMaxUnrun;
 
-        if ((chunk == 0xFF) || (chunk == 0))
+        if ((chunk == allSet) || (chunk == 0))
         {
             auto previous = chunk & 1;
             auto current = data.Read(1);
-            auto run = 8u;
+            auto run = expMaxUnrun;
 
             while ((previous == current) && (read != size))
             {
@@ -1230,7 +1233,7 @@ BitStream ExponentialBitPackEncode(BitStream data)
         else
         {
             result.Write(0, 1);
-            result.Write(chunk, 8);
+            result.Write(chunk, expMaxUnrun);
         }
     }
 
@@ -1239,7 +1242,7 @@ BitStream ExponentialBitPackEncode(BitStream data)
         auto theRest = data.Read(count);
         result.Write(0, 1);
         result.Write(theRest, count);
-        result.Write(0, 8 - count);
+        result.Write(0, expMaxUnrun - count);
     }
 
     return result;
@@ -1280,11 +1283,11 @@ BitStream ExponentialBitPackDecode(BitStream& data, unsigned targetBits = 0)
         }
         else
         {
-            auto toWrite = targetBits ? targetBits - result.Bits() : 8;
-            toWrite = std::min(toWrite, 8lu);
+            auto toWrite = targetBits ? targetBits - result.Bits() : expMaxUnrun;
+            toWrite = std::min(toWrite, expMaxUnrun);
 
-            auto unRun = data.Read(8);
-            bitsReadCount += 8;
+            auto unRun = data.Read(expMaxUnrun);
+            bitsReadCount += expMaxUnrun;
             result.Write(unRun, toWrite);
         }
 
@@ -1332,7 +1335,7 @@ void ExponentialBitPackTest()
         }, 20 * 8);
 
         auto encoded = ExponentialBitPackEncode(data);
-        auto decoded = ExponentialBitPackDecode(encoded);
+        auto decoded = ExponentialBitPackDecode(encoded, 20 * 8);
 
         assert(data == decoded);
     }
@@ -1343,7 +1346,7 @@ void ExponentialBitPackTest()
         }, 19 * 8);
 
         auto encoded = ExponentialBitPackEncode(data);
-        auto decoded = ExponentialBitPackDecode(encoded);
+        auto decoded = ExponentialBitPackDecode(encoded, 20 * 8);
 
         assert(data == decoded);
     }
@@ -1351,7 +1354,7 @@ void ExponentialBitPackTest()
         auto data = BitStream(ByteVector(100, 0), 100 * 8);
 
         auto encoded = ExponentialBitPackEncode(data);
-        auto decoded = ExponentialBitPackDecode(encoded);
+        auto decoded = ExponentialBitPackDecode(encoded, 20 * 8);
 
         assert(data == decoded);
     }
