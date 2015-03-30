@@ -14,6 +14,7 @@
 
 #include <array>
 #include <vector>
+#include <functional>
 
 // //////////////////////////////////////////////////////
 
@@ -659,40 +660,6 @@ ByteVector RunLengthDecode(const ByteVector& data)
     return RunLengthDecode(data, unused);
 }
 
-void RunLengthTest()
-{
-    {
-        auto data = ByteVector
-        {
-            0,1,3,3,4,4,4,4,4,5,6,6,6,5,4,3,3,3,3,4,
-        };
-
-        auto encoded = RunLengthEncode(data);
-        auto decoded = RunLengthDecode(encoded);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = ByteVector
-        {
-            0,1,3,3,4,4,4,4,4,5,6,6,6,5,4,3,3,3,3,
-        };
-
-        auto encoded = RunLengthEncode(data);
-        auto decoded = RunLengthDecode(encoded);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = ByteVector(300, 5);
-
-        auto encoded = RunLengthEncode(data);
-        auto decoded = RunLengthDecode(encoded);
-
-        assert(data == decoded);
-    }
-}
-
 // //////////////////////////////////////////////////////
 
 // http://michael.dipperstein.com/rle/
@@ -701,9 +668,9 @@ ByteVector BitPackEncode(const ByteVector& data)
 {
     auto size = data.size();
 
-    if (size < 1)
+    if (size < 2)
     {
-        return {};
+        return data;
     }
 
     ByteVector  result;
@@ -807,7 +774,7 @@ ByteVector BitPackDecode(
 
     if (size < 2)
     {
-        return {};
+        return data;
     }
 
     ByteVector  result;
@@ -856,52 +823,6 @@ ByteVector BitPackDecode(const ByteVector& data)
     unsigned unused;
     return BitPackDecode(data, unused);
 }
-
-void BitPackTest()
-{
-    {
-        auto data = ByteVector
-        {
-            1,2,3,4,5,0,0
-        };
-
-        auto encoded = BitPackEncode(data);
-        auto decoded = BitPackDecode(encoded);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = ByteVector
-        {
-            0,1,3,3,4,4,4,4,4,5,6,6,6,5,4,3,3,3,3,4,
-        };
-
-        auto encoded = BitPackEncode(data);
-        auto decoded = BitPackDecode(encoded);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = ByteVector
-        {
-            0,1,3,3,4,4,4,4,4,5,6,6,6,5,4,3,3,3,3,
-        };
-
-        auto encoded = BitPackEncode(data);
-        auto decoded = BitPackDecode(encoded);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = ByteVector(300, 5);
-
-        auto encoded = BitPackEncode(data);
-        auto decoded = BitPackDecode(encoded);
-
-        assert(data == decoded);
-    }
-}
-
 
 // //////////////////////////////////////////////////////
 
@@ -1108,63 +1029,6 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
     return result;
 }
 
-void ExponentialBitLevelRunLengthEncodingTest()
-{
-    for (uint8_t i = 0; i < 32; ++i)
-    {
-        auto data = BitStream(ByteVector
-        {
-            i
-        }, 5);
-
-        auto encoded = ExponentialBitLevelRunLengthEncode(data);
-        auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
-
-        assert(data == decoded);
-    }
-    {
-		auto data = BitStream(ByteVector
-		{
-			0,248,11
-		}, (2 * 8) + 5);
-
-		auto encoded = ExponentialBitLevelRunLengthEncode(data);
-		auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
-
-		assert(data == decoded);
-    }
-    {
-        auto data = BitStream(ByteVector
-        {
-            0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,4,
-        }, 20 * 8);
-
-        auto encoded = ExponentialBitLevelRunLengthEncode(data);
-        auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = BitStream(ByteVector
-        {
-            0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,
-        }, 19 * 8);
-
-        auto encoded = ExponentialBitLevelRunLengthEncode(data);
-        auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = BitStream(ByteVector(100, 0), 100 * 8);
-
-        auto encoded = ExponentialBitLevelRunLengthEncode(data);
-        auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
-
-        assert(data == decoded);
-    }
-}
-
 // //////////////////////////////////////////////////////
 
 static const unsigned long expMaxUnrun = 5;
@@ -1285,60 +1149,80 @@ BitStream BitBitPackDecode(BitStream& data, unsigned targetBits = 0)
     return result;
 }
 
-void BitBitPackTest()
+// //////////////////////////////////////////////////////
+
+void RunLengthTests()
 {
+    std::vector<std::function<void(BitStream)>> tests;
+
+    tests.push_back([](BitStream data)
+    {
+        auto encoded = RunLengthEncode(data.Data());
+        auto decoded = RunLengthDecode(encoded);
+
+        assert(data.Data() == decoded);
+    });
+
+    tests.push_back([](BitStream data)
+    {
+        auto encoded = BitPackEncode(data.Data());
+        auto decoded = BitPackDecode(encoded);
+
+        assert(data.Data() == decoded);
+    });
+
+    tests.push_back([](BitStream data)
+    {
+        auto encoded = ExponentialBitLevelRunLengthEncode(data);
+        auto decoded = ExponentialBitLevelRunLengthDecode(encoded);
+
+        assert(data == decoded);
+    });
+
+    tests.push_back([](BitStream data)
+    {
+        auto bits = data.Bits();
+        auto encoded = BitBitPackEncode(data);
+        auto decoded = BitBitPackDecode(encoded, bits);
+
+        assert(data == decoded);
+    });
+
+    std::vector<BitStream> testData;
+
     for (uint8_t i = 0; i < 32; ++i)
     {
-        auto data = BitStream(ByteVector
-        {
-            i
-        }, 5);
-
-        auto encoded = BitBitPackEncode(data);
-        auto decoded = BitBitPackDecode(encoded, 5);
-
-        assert(data == decoded);
+        testData.push_back(BitStream(ByteVector{i}, 5));
     }
+
+    testData.push_back(BitStream(ByteVector{0, 248, 11}, (2 * 8) + 5));
+
+    testData.push_back(BitStream(
+                        ByteVector{1,2,3,4,5,0,0},
+                        7 * 8));
+
+    testData.push_back(BitStream(
+                        ByteVector{0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,4,},
+                        20 * 8));
+
+    testData.push_back(BitStream(
+                        ByteVector{0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,},
+                        19 * 8));
+
+    testData.push_back(BitStream(
+                        ByteVector(100, 0),
+                        100 * 8));
+
+    testData.push_back(BitStream(
+                        ByteVector(300, 5),
+                        300 * 8));
+
+    for (auto tester : tests)
     {
-        auto data = BitStream(ByteVector
+        for (auto data : testData)
         {
-            0,248,11
-        }, (2 * 8) + 5);
-
-        auto encoded = BitBitPackEncode(data);
-        auto decoded = BitBitPackDecode(encoded, (2 * 8) + 5);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = BitStream(ByteVector
-        {
-            0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,4,
-        }, 20 * 8);
-
-        auto encoded = BitBitPackEncode(data);
-        auto decoded = BitBitPackDecode(encoded, 20 * 8);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = BitStream(ByteVector
-        {
-            0,1,3,3,0,0,0,0,0,5,6,6,6,5,4,3,3,3,3,
-        }, 19 * 8);
-
-        auto encoded = BitBitPackEncode(data);
-        auto decoded = BitBitPackDecode(encoded, 19 * 8);
-
-        assert(data == decoded);
-    }
-    {
-        auto data = BitStream(ByteVector(100, 0), 100 * 8);
-
-        auto encoded = BitBitPackEncode(data);
-        auto decoded = BitBitPackDecode(encoded, 100 * 8);
-
-        assert(data == decoded);
+            tester(data);
+        }
     }
 }
 
@@ -1571,10 +1455,7 @@ Frame Decode(
 
 int main(int, char**)
 {
-    BitBitPackTest();
-    ExponentialBitLevelRunLengthEncodingTest();
-    RunLengthTest();
-    BitPackTest();
+    RunLengthTests();
     BitStreamTest();
     ZigZagTest();
 
