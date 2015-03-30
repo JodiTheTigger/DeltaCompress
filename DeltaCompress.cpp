@@ -190,6 +190,7 @@ struct Stats
     MinMaxSum bitpack;
     MinMaxSum bitexprle;
     MinMaxSum bitbitpack;
+    MinMaxSum bitbitfullpack;
 };
 
 enum class ChangedArrayEncoding
@@ -198,7 +199,8 @@ enum class ChangedArrayEncoding
     Rle,
     BitPack,
     Exp,
-    BitBitPack
+    BitBitPack,
+    BitBitFullPack
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -1032,12 +1034,9 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
 // //////////////////////////////////////////////////////
 
 static const unsigned minRun = 4;
-static const unsigned runCountBits = 7;
+static const unsigned runCountBits = 8;
 static const unsigned maxUnrun = 1 + ((1 << (runCountBits - 1)) - 1);
 static const unsigned maxRun = minRun + ((1 << (runCountBits - 1)) - 1);
-
-// RAM: Why redoing the same code? just copy and passte the byte level one
-// change the functions for reading to bit versions.
 
 BitStream BitBitPackFullEncode(BitStream data)
 {
@@ -1048,26 +1047,24 @@ BitStream BitBitPackFullEncode(BitStream data)
         return data;
     }
 
-    unsigned bitsReadCount = 1;
-    data.Reset();
-    auto previous = data.Read(1);
     BitStream result;
-    BitStream unRun;
-    unRun.Write(previous, 1);
+    unsigned startIndex = 0;
 
-    while (bitsReadCount != size)
+    auto BitRead = [&data](unsigned index) -> auto
     {
-        auto current = data.Read(1);
-        bitsReadCount++;
-        unsigned run = 2;
-        unRun.Write(current, 1);
+        data.SetOffset(index);
+        return data.Read(1);
+    };
 
-        while   (
-                    (current != previous) ||
-                    (run < minRun)
-                )
+    while (startIndex < size)
+    {
+        unsigned i = 1;
+        unsigned run = 1;
+
+        while (i != maxUnrun)
         {
-            if (current == previous)
+            auto index = startIndex + i;
+            if (BitRead(index) == BitRead(index - 1))
             {
                 run++;
             }
@@ -1076,148 +1073,145 @@ BitStream BitBitPackFullEncode(BitStream data)
                 run = 1;
             }
 
-            if (bitsReadCount == size)
+            if (run == (minRun + 1))
             {
                 break;
             }
 
-            if (unRun.Bits() == maxUnrun)
+            ++i;
+
+            if ((startIndex + i) == size)
             {
                 break;
             }
-
-            previous = current;
-            current = data.Read(1);
-            bitsReadCount++;
-            unRun.Write(current, 1);
         }
 
-        auto unRunToWrite = unRun.Bits();
+        unsigned unRunCount = 1 + (i - run);
 
-        if (run >= minRun)
+        if (unRunCount)
         {
-            if (run > unRunToWrite)
-            {
-                unRunToWrite = 0;
-            }
-            else
-            {
-                unRunToWrite -= run;
-            }
-        }
-        else
-        {
-            run = 0;
-        }
+            auto header = ZigZag(static_cast<int32_t>(unRunCount) - 1);
 
-        if (unRunToWrite)
-        {
-            result.Write(0, 1);
-            auto zUnRun = ZigZag(static_cast<int>(unRunToWrite - 1));
-            result.Write(zUnRun, runCountBits);            
+            result.Write(header, runCountBits);
 
-            unRun.Reset();
-            while (unRunToWrite--)
+            unsigned index = 0;
+            while (index != unRunCount)
             {
-                result.Write(unRun.Read(1), 1);
+                result.Write(BitRead(startIndex + index),1);
+
+                index++;
             }
         }
 
-        unRun = BitStream();
+        startIndex += unRunCount;
 
-        if (run >= minRun)
+        if (run == (minRun + 1))
         {
-            run--;
-
-            while (current == previous)
+            while (run < (maxRun - minRun))
             {
-                run++;
+                auto index = startIndex + run;
 
-                if (bitsReadCount == size)
+                if ((startIndex + run) == size)
                 {
                     break;
                 }
 
-                if (run == maxRun)
+                if (BitRead(index) != BitRead(index - 1))
                 {
                     break;
                 }
 
-                current = data.Read(1);
-                bitsReadCount++;
+                ++run;
             }
 
-            if (current != previous)
-            {
-                data.SetOffset(data.Bits() - 1);
-                bitsReadCount--;
-                current = previous;
-            }
+            int h = -(static_cast<int32_t>(run - minRun));
+            auto header = ZigZag(h);
 
-            result.Write(1, 1);
-            int codedBits = run - minRun;
-            auto zRun = ZigZag(-codedBits);
-            result.Write(zRun, runCountBits);
-            result.Write(previous, 1);
+            result.Write(header, runCountBits);
+            result.Write(BitRead(startIndex), 1);
+
+            startIndex += run;
         }
 
-        previous = current;
+        if ((startIndex + 1) == size)
+        {
+            auto header = ZigZag(static_cast<int32_t>(0));
+
+            result.Write(header, runCountBits);
+            result.Write(BitRead(startIndex), 1);
+            startIndex++;
+        }
     }
 
     return result;
 }
 
-BitStream BitBitPackFullDecode(BitStream& data, unsigned targetBits = 0)
+
+BitStream BitBitPackFullDecode(
+    BitStream data,
+    unsigned& bytesConsumed,
+    unsigned maxResultBytes = 0)
 {
     auto size = data.Bits();
 
-    if (size < 5)
+    if (size < 2)
     {
         return data;
     }
 
-    unsigned bitsReadCount = 0;
-    data.Reset();
-    BitStream result;
-
-    while (bitsReadCount < size)
+    auto BitRead = [&data](unsigned index, unsigned count = 1) -> auto
     {
-        auto tag = data.Read(1);
-        bitsReadCount++;
+        data.SetOffset(index);
+        return data.Read(count);
+    };
 
-        if (tag)
+    BitStream result;
+    unsigned index = 0;
+    while (index < size)
+    {
+        auto rawHeader = BitRead(index, runCountBits);
+        auto header = ZigZag(static_cast<uint32_t>(rawHeader));
+        index += runCountBits;
+
+        if (header >= 0)
         {
-            auto zCount = data.Read(runCountBits);
-            bitsReadCount += runCountBits;
-            auto runCount = -ZigZag(zCount) + minRun;
-            auto repeat = data.Read(1);
-            bitsReadCount++;
+            auto count = header + 1;
 
-            while(runCount--)
+            while (count--)
             {
-                result.Write(repeat, 1);
+                result.Write(BitRead(index++),1);
             }
         }
         else
         {
-            auto zCount = data.Read(runCountBits);
-            bitsReadCount += runCountBits;
-            auto unRunCount = ZigZag(zCount) + 1;
-            auto unRun = data.ReadArray(unRunCount);
-            bitsReadCount += unRunCount;
-            result.Write(unRun);
+            unsigned count = -header + minRun;
+
+            while (count--)
+            {
+                result.Write(BitRead(index),1);
+            }
+
+            index++;
         }
 
-        if (targetBits)
+        if (maxResultBytes > 0)
         {
-            if (result.Bits() == targetBits)
+            if (result.Bits() == maxResultBytes)
             {
                 break;
             }
         }
     }
 
+    bytesConsumed = index;
+
     return result;
+}
+
+BitStream BitBitPackFullDecode(BitStream data)
+{
+    unsigned unused;
+    return BitBitPackFullDecode(data, unused);
 }
 
 // //////////////////////////////////////////////////////
@@ -1381,9 +1375,10 @@ void RunLengthTests()
 
     tests.push_back([](BitStream data)
     {
+        unsigned unused;
         auto bits = data.Bits();
         auto encoded = BitBitPackFullEncode(data);
-        auto decoded = BitBitPackFullDecode(encoded, bits);
+        auto decoded = BitBitPackFullDecode(encoded, unused, bits);
 
         assert(data == decoded);
     });
@@ -1515,16 +1510,19 @@ std::vector<uint8_t> Encode(
     auto bitpack = BitPackEncode(changed.Data());
     auto bitexprle = ExponentialBitLevelRunLengthEncode(changed);
     auto expbitpack = BitBitPackEncode(changed);
+    auto bitbitpackfull = BitBitPackFullEncode(changed);
 
     assert((rle.size() * 8) < Cubes);
     assert((bitpack.size() * 8) < Cubes);
     assert((bitexprle.Bits()) < Cubes);
     assert((expbitpack.Bits()) < Cubes);
+    //assert((bitbitpackfull.Bits()) < Cubes);
 
     stats.rle.Update(rle.size() * 8);
     stats.bitpack.Update(bitpack.size() * 8);
     stats.bitexprle.Update(bitexprle.Bits());
     stats.bitbitpack.Update(expbitpack.Bits());
+    stats.bitbitfullpack.Update(bitbitpackfull.Bits());
 
     auto changedCompressed = [&changed, &config]()
     {
@@ -1557,10 +1555,15 @@ std::vector<uint8_t> Encode(
             {
                 return BitBitPackEncode(changed);
             }
+
+            case ChangedArrayEncoding::BitBitFullPack:
+            {
+                return BitBitPackFullEncode(changed);
+            }
         }
     }();
 
-    assert(changedCompressed.Bits() <= 901);
+    //assert(changedCompressed.Bits() <= 901);
 
     result.Write(changedCompressed);
     result.Write(deltas);
@@ -1623,6 +1626,14 @@ Frame Decode(
             case ChangedArrayEncoding::BitBitPack:
             {
                 return BitBitPackDecode(bits, Cubes);
+            }
+
+            case ChangedArrayEncoding::BitBitFullPack:
+            {
+                unsigned bytesUsed = 0;
+                auto decode = BitBitPackFullDecode(bits, bytesUsed, Cubes);
+
+                return decode;
             }
         }
     }();
@@ -1709,6 +1720,7 @@ int main(int, char**)
         {Cubes,0,0},
         {Cubes,0,0},
         {Cubes,0,0},
+        {Cubes,0,0},
     };
 
     for (size_t i = FirstBase; i < size; ++i)
@@ -1740,11 +1752,11 @@ int main(int, char**)
 
     for (size_t i = FirstBase; i < size; ++i)
     {
-        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::BitBitPack});
+        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::BitBitFullPack});
 
         bytes += buffer.size();
 
-        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::BitBitPack});
+        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::BitBitFullPack});
 
         assert(back == frames[i]);
 
@@ -1766,6 +1778,7 @@ int main(int, char**)
     float bitpack           = 100 * (stats.bitpack.sum / changedBitsTotal);
     float bitexprle         = 100 * (stats.bitexprle.sum / changedBitsTotal);
     float expbitpack        = 100 * (stats.bitbitpack.sum / changedBitsTotal);
+    float bitbitpackfull    = 100 * (stats.bitbitfullpack.sum / changedBitsTotal);
 
     PRINT_FLOAT(rle)
     PRINT_INT(stats.rle.min)
@@ -1779,6 +1792,9 @@ int main(int, char**)
     PRINT_FLOAT(expbitpack)
     PRINT_INT(stats.bitbitpack.min)
     PRINT_INT(stats.bitbitpack.max)
+    PRINT_FLOAT(bitbitpackfull)
+    PRINT_INT(stats.bitbitfullpack.min)
+    PRINT_INT(stats.bitbitfullpack.max)
 
     for (const auto h : stats.changed0DistanceRunHistogram)
     {
