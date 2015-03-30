@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
+#include <cstdlib>
 
 #include <array>
 #include <vector>
@@ -191,6 +192,15 @@ struct Stats
     MinMaxSum bitexprle;
     MinMaxSum bitbitpack;
     MinMaxSum bitbitfullpack;
+
+    unsigned changed;
+    unsigned quatChangedNoPos;
+    unsigned PosChangedNotQuat;
+    unsigned wtfBothSame;
+    MinMaxSum deltaX;
+    MinMaxSum deltaY;
+    MinMaxSum deltaZ;
+    MinMaxSum deltaTotal;
 };
 
 enum class ChangedArrayEncoding
@@ -1490,14 +1500,77 @@ std::vector<uint8_t> Encode(
             assert(target[i].orientation_b >= 0);
             assert(target[i].orientation_c >= 0);
 
-            // Meh, first time delta, just write the target.
-            deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
-            deltas.Write(target[i].orientation_a, RotationMaxBits);
-            deltas.Write(target[i].orientation_b, RotationMaxBits);
-            deltas.Write(target[i].orientation_c, RotationMaxBits);
-            deltas.Write(ZigZag(target[i].position_x), MaxBitsXY);
-            deltas.Write(ZigZag(target[i].position_y), MaxBitsXY);
-            deltas.Write(target[i].position_z, MaxBitsZ);
+            // Get stats on:
+            // If the quat changes but the position doesn't
+            // if the position changes but the quat doesn't
+            // largest distance change for x,y,z,total
+            bool posSame =
+                    (base[i].position_x == target[i].position_x) &&
+                    (base[i].position_y == target[i].position_y) &&
+                    (base[i].position_z == target[i].position_z);
+
+            bool quatSame =
+                    (base[i].orientation_largest == target[i].orientation_largest) &&
+                    (base[i].orientation_a == target[i].orientation_a) &&
+                    (base[i].orientation_b == target[i].orientation_b) &&
+                    (base[i].orientation_c == target[i].orientation_c);
+
+            if (posSame && quatSame)
+            {
+                ++stats.wtfBothSame;
+            }
+
+            if (!posSame && quatSame)
+            {
+                ++stats.quatChangedNoPos;
+            }
+
+            if (posSame && !quatSame)
+            {
+                ++stats.PosChangedNotQuat;
+            }
+
+            ++stats.changed;
+
+            if (!posSame)
+            {
+                auto dx = abs(base[i].position_x - target[i].position_x);
+                auto dy = abs(base[i].position_y - target[i].position_y);
+                auto dz = abs(base[i].position_z - target[i].position_z);
+
+                stats.deltaX.Update(dx);
+                stats.deltaY.Update(dy);
+                stats.deltaZ.Update(dz);
+
+                stats.deltaTotal.Update(dx + dy + dz);
+            }
+
+            // Only write what's changed
+            if (quatSame)
+            {
+                deltas.Write(0, 1);
+            }
+            else
+            {
+                deltas.Write(1, 1);
+                deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+                deltas.Write(target[i].orientation_a, RotationMaxBits);
+                deltas.Write(target[i].orientation_b, RotationMaxBits);
+                deltas.Write(target[i].orientation_c, RotationMaxBits);
+            }
+
+            if (posSame)
+            {
+                deltas.Write(0, 1);
+            }
+            else
+            {
+                deltas.Write(1, 1);
+                deltas.Write(ZigZag(target[i].position_x), MaxBitsXY);
+                deltas.Write(ZigZag(target[i].position_y), MaxBitsXY);
+                deltas.Write(target[i].position_z, MaxBitsZ);
+            }
+
             deltas.Write(target[i].interacting, 1);
         }
     }
@@ -1646,13 +1719,38 @@ Frame Decode(
     {
         if (changed.Read(1))
         {
-            result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
-            result[i].orientation_a         = bits.Read(RotationMaxBits);
-            result[i].orientation_b         = bits.Read(RotationMaxBits);
-            result[i].orientation_c         = bits.Read(RotationMaxBits);
-            result[i].position_x            = ZigZag(bits.Read(MaxBitsXY));
-            result[i].position_y            = ZigZag(bits.Read(MaxBitsXY));
-            result[i].position_z            = bits.Read(MaxBitsZ);
+            bool quadChanged = bits.Read(1);
+
+            if (quadChanged)
+            {
+                result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
+                result[i].orientation_a         = bits.Read(RotationMaxBits);
+                result[i].orientation_b         = bits.Read(RotationMaxBits);
+                result[i].orientation_c         = bits.Read(RotationMaxBits);
+            }
+            else
+            {
+                result[i].orientation_largest   = base[i].orientation_largest;
+                result[i].orientation_a         = base[i].orientation_a;
+                result[i].orientation_b         = base[i].orientation_b;
+                result[i].orientation_c         = base[i].orientation_c;
+            }
+
+            bool posChanged = bits.Read(1);
+
+            if (posChanged)
+            {
+                result[i].position_x            = ZigZag(bits.Read(MaxBitsXY));
+                result[i].position_y            = ZigZag(bits.Read(MaxBitsXY));
+                result[i].position_z            = bits.Read(MaxBitsZ);
+            }
+            else
+            {
+                result[i].position_x            = base[i].position_x;
+                result[i].position_y            = base[i].position_y;
+                result[i].position_z            = base[i].position_z;
+            }
+
             result[i].interacting           = bits.Read(1);
         }
         else
@@ -1723,6 +1821,14 @@ int main(int, char**)
         {Cubes,0,0},
         {Cubes,0,0},
         {Cubes,0,0},
+        0,
+        0,
+        0,
+        0,
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0},
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0},
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0},
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0},
     };
 
     for (size_t i = FirstBase; i < size; ++i)
@@ -1754,11 +1860,11 @@ int main(int, char**)
 
     for (size_t i = FirstBase; i < size; ++i)
     {
-        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::BitBitFullPack});
+        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::Exp});
 
         bytes += buffer.size();
 
-        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::BitBitFullPack});
+        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::Exp});
 
         assert(back == frames[i]);
 
@@ -1809,6 +1915,20 @@ int main(int, char**)
         printf("%d, ", h);
     }
     printf("\n");
+    printf("\n");
+    PRINT_INT(stats.deltaX.min)
+    PRINT_INT(stats.deltaX.max)
+    PRINT_INT(stats.deltaY.min)
+    PRINT_INT(stats.deltaY.max)
+    PRINT_INT(stats.deltaZ.min)
+    PRINT_INT(stats.deltaZ.max)
+    PRINT_INT(stats.deltaTotal.min)
+    PRINT_INT(stats.deltaTotal.max)
+    PRINT_FLOAT(MaxPositionChangePerSnapshot*6)
+    PRINT_INT(stats.quatChangedNoPos)
+    PRINT_INT(stats.PosChangedNotQuat)
+    PRINT_INT(stats.wtfBothSame)
+    PRINT_INT(stats.changed)
 
     return 0;
 }
