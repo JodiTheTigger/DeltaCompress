@@ -1031,6 +1031,197 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
 
 // //////////////////////////////////////////////////////
 
+static const unsigned minRun = 4;
+static const unsigned runCountBits = 7;
+static const unsigned maxUnrun = 1 + ((1 << (runCountBits - 1)) - 1);
+static const unsigned maxRun = minRun + ((1 << (runCountBits - 1)) - 1);
+
+// RAM: Why redoing the same code? just copy and passte the byte level one
+// change the functions for reading to bit versions.
+
+BitStream BitBitPackFullEncode(BitStream data)
+{
+    auto size = data.Bits();
+
+    if (size < 2)
+    {
+        return data;
+    }
+
+    unsigned bitsReadCount = 1;
+    data.Reset();
+    auto previous = data.Read(1);
+    BitStream result;
+    BitStream unRun;
+    unRun.Write(previous, 1);
+
+    while (bitsReadCount != size)
+    {
+        auto current = data.Read(1);
+        bitsReadCount++;
+        unsigned run = 2;
+        unRun.Write(current, 1);
+
+        while   (
+                    (current != previous) ||
+                    (run < minRun)
+                )
+        {
+            if (current == previous)
+            {
+                run++;
+            }
+            else
+            {
+                run = 1;
+            }
+
+            if (bitsReadCount == size)
+            {
+                break;
+            }
+
+            if (unRun.Bits() == maxUnrun)
+            {
+                break;
+            }
+
+            previous = current;
+            current = data.Read(1);
+            bitsReadCount++;
+            unRun.Write(current, 1);
+        }
+
+        auto unRunToWrite = unRun.Bits();
+
+        if (run >= minRun)
+        {
+            if (run > unRunToWrite)
+            {
+                unRunToWrite = 0;
+            }
+            else
+            {
+                unRunToWrite -= run;
+            }
+        }
+        else
+        {
+            run = 0;
+        }
+
+        if (unRunToWrite)
+        {
+            result.Write(0, 1);
+            auto zUnRun = ZigZag(static_cast<int>(unRunToWrite - 1));
+            result.Write(zUnRun, runCountBits);            
+
+            unRun.Reset();
+            while (unRunToWrite--)
+            {
+                result.Write(unRun.Read(1), 1);
+            }
+        }
+
+        unRun = BitStream();
+
+        if (run >= minRun)
+        {
+            run--;
+
+            while (current == previous)
+            {
+                run++;
+
+                if (bitsReadCount == size)
+                {
+                    break;
+                }
+
+                if (run == maxRun)
+                {
+                    break;
+                }
+
+                current = data.Read(1);
+                bitsReadCount++;
+            }
+
+            if (current != previous)
+            {
+                data.SetOffset(data.Bits() - 1);
+                bitsReadCount--;
+                current = previous;
+            }
+
+            result.Write(1, 1);
+            int codedBits = run - minRun;
+            auto zRun = ZigZag(-codedBits);
+            result.Write(zRun, runCountBits);
+            result.Write(previous, 1);
+        }
+
+        previous = current;
+    }
+
+    return result;
+}
+
+BitStream BitBitPackFullDecode(BitStream& data, unsigned targetBits = 0)
+{
+    auto size = data.Bits();
+
+    if (size < 5)
+    {
+        return data;
+    }
+
+    unsigned bitsReadCount = 0;
+    data.Reset();
+    BitStream result;
+
+    while (bitsReadCount < size)
+    {
+        auto tag = data.Read(1);
+        bitsReadCount++;
+
+        if (tag)
+        {
+            auto zCount = data.Read(runCountBits);
+            bitsReadCount += runCountBits;
+            auto runCount = -ZigZag(zCount) + minRun;
+            auto repeat = data.Read(1);
+            bitsReadCount++;
+
+            while(runCount--)
+            {
+                result.Write(repeat, 1);
+            }
+        }
+        else
+        {
+            auto zCount = data.Read(runCountBits);
+            bitsReadCount += runCountBits;
+            auto unRunCount = ZigZag(zCount) + 1;
+            auto unRun = data.ReadArray(unRunCount);
+            bitsReadCount += unRunCount;
+            result.Write(unRun);
+        }
+
+        if (targetBits)
+        {
+            if (result.Bits() == targetBits)
+            {
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
+// //////////////////////////////////////////////////////
+
 static const unsigned long expMaxUnrun = 5;
 static const unsigned allSet = (1 << expMaxUnrun) - 1;
 
@@ -1184,6 +1375,15 @@ void RunLengthTests()
         auto bits = data.Bits();
         auto encoded = BitBitPackEncode(data);
         auto decoded = BitBitPackDecode(encoded, bits);
+
+        assert(data == decoded);
+    });
+
+    tests.push_back([](BitStream data)
+    {
+        auto bits = data.Bits();
+        auto encoded = BitBitPackFullEncode(data);
+        auto decoded = BitBitPackFullDecode(encoded, bits);
 
         assert(data == decoded);
     });
