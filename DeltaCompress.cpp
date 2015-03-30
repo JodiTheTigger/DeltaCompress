@@ -188,7 +188,7 @@ struct Stats
     MinMaxSum rle;
     MinMaxSum bitpack;
     MinMaxSum bitexprle;
-    MinMaxSum expbitpack;
+    MinMaxSum bitbitpack;
 };
 
 enum class ChangedArrayEncoding
@@ -1167,7 +1167,7 @@ void ExponentialBitLevelRunLengthEncodingTest()
 
 // //////////////////////////////////////////////////////
 
-static const unsigned long expMaxUnrun = 8;
+static const unsigned long expMaxUnrun = 5;
 static const unsigned allSet = (1 << expMaxUnrun) - 1;
 
 BitStream BitBitPackEncode(BitStream data)
@@ -1328,7 +1328,7 @@ void BitBitPackTest()
         }, 19 * 8);
 
         auto encoded = BitBitPackEncode(data);
-        auto decoded = BitBitPackDecode(encoded, 20 * 8);
+        auto decoded = BitBitPackDecode(encoded, 19 * 8);
 
         assert(data == decoded);
     }
@@ -1336,7 +1336,7 @@ void BitBitPackTest()
         auto data = BitStream(ByteVector(100, 0), 100 * 8);
 
         auto encoded = BitBitPackEncode(data);
-        auto decoded = BitBitPackDecode(encoded, 20 * 8);
+        auto decoded = BitBitPackDecode(encoded, 100 * 8);
 
         assert(data == decoded);
     }
@@ -1440,7 +1440,7 @@ std::vector<uint8_t> Encode(
     stats.rle.Update(rle.size() * 8);
     stats.bitpack.Update(bitpack.size() * 8);
     stats.bitexprle.Update(bitexprle.Bits());
-    stats.expbitpack.Update(expbitpack.Bits());
+    stats.bitbitpack.Update(expbitpack.Bits());
 
     auto changedCompressed = [&changed, &config]()
     {
@@ -1684,7 +1684,7 @@ int main(int, char**)
     float rle               = 100 * (stats.rle.sum / changedBitsTotal);
     float bitpack           = 100 * (stats.bitpack.sum / changedBitsTotal);
     float bitexprle         = 100 * (stats.bitexprle.sum / changedBitsTotal);
-    float expbitpack        = 100 * (stats.expbitpack.sum / changedBitsTotal);
+    float expbitpack        = 100 * (stats.bitbitpack.sum / changedBitsTotal);
 
     PRINT_FLOAT(rle)
     PRINT_INT(stats.rle.min)
@@ -1696,8 +1696,8 @@ int main(int, char**)
     PRINT_INT(stats.bitexprle.min)
     PRINT_INT(stats.bitexprle.max)
     PRINT_FLOAT(expbitpack)
-    PRINT_INT(stats.expbitpack.min)
-    PRINT_INT(stats.expbitpack.max)
+    PRINT_INT(stats.bitbitpack.min)
+    PRINT_INT(stats.bitbitpack.max)
 
     for (const auto h : stats.changed0DistanceRunHistogram)
     {
