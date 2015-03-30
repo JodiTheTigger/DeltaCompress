@@ -1033,8 +1033,8 @@ BitStream ExponentialBitLevelRunLengthDecode(BitStream& data, unsigned targetBit
 
 // //////////////////////////////////////////////////////
 
-static const unsigned minRun = 4;
-static const unsigned runCountBits = 8;
+static const unsigned minRun = 8;
+static const unsigned runCountBits = 7;
 static const unsigned maxUnrun = 1 + ((1 << (runCountBits - 1)) - 1);
 static const unsigned maxRun = minRun + ((1 << (runCountBits - 1)) - 1);
 
@@ -1516,7 +1516,7 @@ std::vector<uint8_t> Encode(
     assert((bitpack.size() * 8) < Cubes);
     assert((bitexprle.Bits()) < Cubes);
     assert((expbitpack.Bits()) < Cubes);
-    //assert((bitbitpackfull.Bits()) < Cubes);
+    assert((bitbitpackfull.Bits()) < Cubes);
 
     stats.rle.Update(rle.size() * 8);
     stats.bitpack.Update(bitpack.size() * 8);
@@ -1563,7 +1563,7 @@ std::vector<uint8_t> Encode(
         }
     }();
 
-    //assert(changedCompressed.Bits() <= 901);
+    assert(changedCompressed.Bits() <= 901);
 
     result.Write(changedCompressed);
     result.Write(deltas);
