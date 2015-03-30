@@ -1630,8 +1630,10 @@ Frame Decode(
 
             case ChangedArrayEncoding::BitBitFullPack:
             {
-                unsigned bytesUsed = 0;
-                auto decode = BitBitPackFullDecode(bits, bytesUsed, Cubes);
+                unsigned bitsUsed = 0;
+                auto decode = BitBitPackFullDecode(bits, bitsUsed, Cubes);
+
+                bits.SetOffset(bitsUsed);
 
                 return decode;
             }
