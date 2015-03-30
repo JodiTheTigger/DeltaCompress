@@ -165,12 +165,14 @@ struct MinMaxSum
     unsigned min;
     unsigned max;
     unsigned sum;
+    unsigned count;
 
     void Update(unsigned value)
     {
         min = std::min(min, value);
         max = std::max(max, value);
         sum += value;
+        ++count;
     }
 };
 
@@ -1441,6 +1443,7 @@ struct Config
 std::vector<uint8_t> Encode(
     const Frame& base,
     const Frame& target,
+    unsigned,// frameDelta,
     Stats& stats,
     Config config = {ChangedArrayEncoding::None})
 {
@@ -1649,6 +1652,7 @@ std::vector<uint8_t> Encode(
 Frame Decode(
     const Frame& base,
     std::vector<uint8_t>& buffer,
+    unsigned,// frameDelta,
     Config config = {ChangedArrayEncoding::None})
 {
     // A.
@@ -1816,19 +1820,19 @@ int main(int, char**)
         0,
         {0},
         {0},
-        {Cubes,0,0},
-        {Cubes,0,0},
-        {Cubes,0,0},
-        {Cubes,0,0},
-        {Cubes,0,0},
+        {Cubes,0,0,0},
+        {Cubes,0,0,0},
+        {Cubes,0,0,0},
+        {Cubes,0,0,0},
+        {Cubes,0,0,0},
         0,
         0,
         0,
         0,
-        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0},
-        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0},
-        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0},
-        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0},
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
     };
 
     for (size_t i = FirstBase; i < size; ++i)
@@ -1857,14 +1861,24 @@ int main(int, char**)
     // Lets actually do the stuff.
     unsigned bytes = 0;
     unsigned packetsCoded = 0;
+    Config rleCoding = {ChangedArrayEncoding::Exp};
 
     for (size_t i = FirstBase; i < size; ++i)
     {
-        auto buffer = Encode(frames[i-FirstBase], frames[i], stats, {ChangedArrayEncoding::Exp});
+        auto buffer = Encode(
+            frames[i-FirstBase],
+            frames[i],
+            FirstBase,
+            stats,
+            rleCoding);
 
         bytes += buffer.size();
 
-        auto back = Decode(frames[i-FirstBase], buffer, {ChangedArrayEncoding::Exp});
+        auto back = Decode(
+            frames[i-FirstBase],
+            buffer,
+            FirstBase,
+            rleCoding);
 
         assert(back == frames[i]);
 
@@ -1916,12 +1930,20 @@ int main(int, char**)
     }
     printf("\n");
     printf("\n");
+    auto dxa =  stats.deltaX.sum / (float) stats.deltaX.count;
+    auto dya =  stats.deltaY.sum / (float) stats.deltaY.count;
+    auto dza =  stats.deltaZ.sum / (float) stats.deltaZ.count;
+    auto dta =  stats.deltaTotal.sum / (float) stats.deltaTotal.count;
+    PRINT_FLOAT(dxa)
     PRINT_INT(stats.deltaX.min)
     PRINT_INT(stats.deltaX.max)
+    PRINT_FLOAT(dya)
     PRINT_INT(stats.deltaY.min)
     PRINT_INT(stats.deltaY.max)
+    PRINT_FLOAT(dza)
     PRINT_INT(stats.deltaZ.min)
     PRINT_INT(stats.deltaZ.max)
+    PRINT_FLOAT(dta)
     PRINT_INT(stats.deltaTotal.min)
     PRINT_INT(stats.deltaTotal.max)
     PRINT_FLOAT(MaxPositionChangePerSnapshot*6)
