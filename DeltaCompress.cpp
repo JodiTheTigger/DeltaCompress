@@ -569,6 +569,63 @@ unsigned MinBits(unsigned value)
     return result;
 }
 
+// //////////////////////////////////////////////////////
+
+void TruncateEncode(unsigned value, unsigned maxValue, BitStream& target)
+{
+    // http://en.wikipedia.org/wiki/Truncated_binary_encoding
+    auto bits = MinBits(maxValue);
+    auto k = bits - 1;
+    auto u = (1u << bits) - maxValue;
+
+    if (value < u)
+    {
+        target.Write(value, k);
+    }
+    else
+    {
+        value += u;
+        target.Write(value, bits);
+    }
+}
+
+unsigned TruncateDecode(unsigned maxValue, BitStream& source)
+{
+    auto bits = MinBits(maxValue);
+    auto u = (1u << bits) - maxValue;
+
+    // Bah, by bitstream is the wrong endianess, so I have to
+    // do this a hacky way.
+    auto value = source.Read(bits);
+    auto valueU = value & (((1 << bits) - 1)  - 1);
+
+    if (valueU < u)
+    {
+        source.SetOffset(source.Bits() - 1);
+        return value;
+    }
+
+    value -= u;
+    return value;
+}
+
+void TestTruncate()
+{
+    const unsigned max = 10;
+
+    for (unsigned i = 0; i < max; ++i)
+    {
+        BitStream coded;
+        TruncateEncode(i, max, coded);
+        coded.Reset();
+        auto result = TruncateDecode(max, coded);
+
+        assert(result == i);
+    }
+}
+
+// //////////////////////////////////////////////////////
+
 struct IntVec3
 {
     int x;
@@ -2249,6 +2306,7 @@ Frame Decode(
 
 int main(int, char**)
 {
+    TestTruncate();
     BitVector3Tests();
     RunLengthTests();
     BitStreamTest();
