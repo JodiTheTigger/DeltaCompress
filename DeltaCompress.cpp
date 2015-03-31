@@ -233,7 +233,8 @@ enum class PosVector3Packer
 {
     None,
     BitVector3,
-    BitVector3_2BitExpPrefix
+    BitVector3_2BitExpPrefix,
+    BitVector3Truncated
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -571,49 +572,74 @@ unsigned MinBits(unsigned value)
 
 // //////////////////////////////////////////////////////
 
-void TruncateEncode(unsigned value, unsigned maxValue, BitStream& target)
+// Unneeded if we change the endianess of our bitvector.
+unsigned Flip(unsigned value, unsigned bits)
 {
+    unsigned result = 0;
+
+    while (bits--)
+    {
+        if (value & 1)
+        {
+            result |= 1 << bits;
+        }
+
+        value >>= 1;
+    }
+
+    return result;
+}
+
+unsigned TruncateEncode(unsigned value, unsigned maxValue, BitStream& target)
+{
+    // assume 0-maxValue inclusive.
+    unsigned count = maxValue + 1;
+
     // http://en.wikipedia.org/wiki/Truncated_binary_encoding
-    auto bits = MinBits(maxValue);
+    auto bits = MinBits(count);
     auto k = bits - 1;
-    auto u = (1u << bits) - maxValue;
+    auto u = (1u << bits) - count;
 
     if (value < u)
     {
-        target.Write(value, k);
+        target.Write(Flip(value, k), k);
+        return k;
     }
     else
     {
         value += u;
-        target.Write(value, bits);
+        target.Write(Flip(value, bits), bits);
+        return bits;
     }
 }
 
 unsigned TruncateDecode(unsigned maxValue, BitStream& source)
 {
-    auto bits = MinBits(maxValue);
-    auto u = (1u << bits) - maxValue;
+    unsigned count = maxValue + 1;
+    auto bits = MinBits(count);
+    auto k = bits - 1;
+    auto u = (1u << bits) - count;
 
     // Bah, by bitstream is the wrong endianess, so I have to
     // do this a hacky way.
-    auto value = source.Read(bits);
-    auto valueU = value & (((1 << bits) - 1)  - 1);
+    auto value = Flip(source.Read(k), k);
 
-    if (valueU < u)
+    if (value < u)
     {
-        source.SetOffset(source.Bits() - 1);
         return value;
     }
 
-    value -= u;
-    return value;
+    value <<= 1;
+    value |= source.Read(1);
+    return value - u;
 }
 
 void TestTruncate()
 {
-    const unsigned max = 10;
+    const unsigned count = 10;
+    const unsigned max = count - 1;
 
-    for (unsigned i = 0; i < max; ++i)
+    for (unsigned i = 0; i < count; ++i)
     {
         BitStream coded;
         TruncateEncode(i, max, coded);
@@ -740,6 +766,127 @@ IntVec3 BitVector3Decode(
     maxPrefixSize = MinBits(maxBitsRequired);
 
     auto bitsY = source.Read(maxPrefixSize);
+    if (bitsY)
+    {
+        auto zy = source.Read(bitsY - 1);
+        zy |= 1 << (bitsY - 1);
+        result.y = ZigZag(zy);
+    }
+
+    next = maxMagnitude * maxMagnitude;
+    next -= result.y * result.y;
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    //maxPrefixSize = MinBits(maxBitsRequired);
+
+    //auto bitsZ = source.Read(maxPrefixSize);
+    auto zz = source.Read(maxBitsRequired);
+    result.z = ZigZag(zz);
+
+    return result;
+}
+
+unsigned BitVector3TruncatedEncode(
+        IntVec3 vec,
+        unsigned maxMagnitude,
+        BitStream& target)
+{
+    unsigned bitsUsed = 0;
+
+    // +1 for the sign bit.
+    unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    assert(abs(vec.x) <= static_cast<int>(maxMagnitude));
+    auto zx = ZigZag(vec.x);
+
+    unsigned bitsForzx = MinBits(zx);
+    bitsUsed += TruncateEncode(bitsForzx, maxBitsRequired, target);
+
+    // Don't need to send the top bit, as we know it's set since
+    // otherwise bitsForzx would be smaller.
+    if (bitsForzx)
+    {
+        zx &= (1 << (bitsForzx - 1)) - 1;
+        target.Write(zx, bitsForzx - 1);
+        bitsUsed += bitsForzx - 1;
+    }
+
+    float next = maxMagnitude * maxMagnitude;
+    next -= vec.x * vec.x;
+    assert(next >= 0);
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    assert(abs(vec.y) <= static_cast<int>(maxMagnitude));
+    auto zy = ZigZag(vec.y);
+
+    unsigned bitsForzy = MinBits(zy);
+    bitsUsed += TruncateEncode(bitsForzy, maxBitsRequired, target);
+
+    if (bitsForzy)
+    {
+        zy &= (1 << (bitsForzy - 1)) - 1;
+        target.Write(zy, bitsForzy - 1);
+        bitsUsed += bitsForzy - 1;
+    }
+
+    next = maxMagnitude * maxMagnitude;
+    next -= vec.y * vec.y;
+    assert(next >= 0);
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    //maxPrefixSize = MinBits(maxBitsRequired);
+
+    assert(abs(vec.z) <= static_cast<int>(maxMagnitude));
+    auto zz = ZigZag(vec.z);
+
+    //unsigned bitsForzz = MinBits(zz);
+
+    //target.Write(bitsForzz, maxPrefixSize);
+    target.Write(zz, maxBitsRequired);
+    bitsUsed += maxBitsRequired;
+
+    return bitsUsed;
+}
+
+IntVec3 BitVector3TruncatedDecode(
+        unsigned maxMagnitude,
+        BitStream& source)
+{
+    IntVec3 result = {0,0,0};
+
+    // +1 for the sign bit.
+    unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    auto bitsX = TruncateDecode(maxBitsRequired, source);
+
+    if (bitsX)
+    {
+        auto zx = source.Read(bitsX - 1);
+        // Don't need to send the top bit, as we know it's set since
+        // otherwise bitsForzx would be smaller.
+        zx |= 1 << (bitsX - 1);
+        result.x = ZigZag(zx);
+    }
+
+    float next = maxMagnitude * maxMagnitude;
+    next -= result.x * result.x;
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    auto bitsY = TruncateDecode(maxBitsRequired, source);
     if (bitsY)
     {
         auto zy = source.Read(bitsY - 1);
@@ -905,10 +1052,10 @@ void BitVector3Tests()
 
     std::vector<Test> tests;
 
-    tests.push_back(Test
+    tests.push_back(
     {
-        BitVector3Encode,
-        BitVector3Decode,
+        BitVector3TruncatedEncode,
+        BitVector3TruncatedDecode,
     });
 
     tests.push_back(
@@ -917,9 +1064,63 @@ void BitVector3Tests()
         BitVector3Decode2BitExpPrefix,
     });
 
+    tests.push_back(
+    {
+        BitVector3Encode,
+        BitVector3Decode,
+    });
+
     int const max = (MaxPositionChangePerSnapshot) * 6 + 1;
     for (const auto& test : tests)
     {
+        {
+            IntVec3 data =
+            {
+                -1,
+                -1586,
+                0,
+            };
+
+            BitStream encoded;
+
+            test.encode(
+                data,
+                max,
+                encoded);
+
+            encoded.Reset();
+
+            auto decoded = test.decode(max, encoded);
+
+            assert(data.x == decoded.x);
+            assert(data.y == decoded.y);
+            assert(data.z == decoded.z);
+        }
+
+        {
+            IntVec3 data =
+            {
+                0,
+                0,
+                1,
+            };
+
+            BitStream encoded;
+
+            test.encode(
+                data,
+                max,
+                encoded);
+
+            encoded.Reset();
+
+            auto decoded = test.decode(max, encoded);
+
+            assert(data.x == decoded.x);
+            assert(data.y == decoded.y);
+            assert(data.z == decoded.z);
+        }
+
         for (auto i = 5 - max; i < max; i+=23)
         {
             for (auto j = 53 - max; j < max; j+=37)
@@ -956,30 +1157,6 @@ void BitVector3Tests()
                     assert(data.z == decoded.z);
                 }
             }
-        }
-
-        {
-            IntVec3 data =
-            {
-                0,
-                0,
-                1,
-            };
-
-            BitStream encoded;
-
-            test.encode(
-                data,
-                max,
-                encoded);
-
-            encoded.Reset();
-
-            auto decoded = test.decode(max, encoded);
-
-            assert(data.x == decoded.x);
-            assert(data.y == decoded.y);
-            assert(data.z == decoded.z);
         }
     }
 }
@@ -2035,6 +2212,7 @@ std::vector<uint8_t> Encode(
 
                     case PosVector3Packer::BitVector3:
                     case PosVector3Packer::BitVector3_2BitExpPrefix:
+                    case PosVector3Packer::BitVector3Truncated:
                     {
                         // GLEE, actually writing a delta this time!
                         auto vec = IntVec3
@@ -2048,21 +2226,39 @@ std::vector<uint8_t> Encode(
                         auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
                         assert(mag < maxMagnitude);
 
-                        unsigned bitsWritten ;
-                        if (config.posPacker == PosVector3Packer::BitVector3)
+                        unsigned bitsWritten;
+                        switch (config.posPacker)
                         {
-                            bitsWritten = BitVector3Encode(
-                                vec,
-                                maxMagnitude,
-                                deltas);
-                        }
-                        else
-                        {
+                            default:
+                            case PosVector3Packer::BitVector3:
+                            {
+                                bitsWritten = BitVector3Encode(
+                                    vec,
+                                    maxMagnitude,
+                                    deltas);
 
-                            bitsWritten = BitVector3Encode2BitExpPrefix(
-                                vec,
-                                maxMagnitude,
-                                deltas);
+                                break;
+                            }
+
+                            case PosVector3Packer::BitVector3_2BitExpPrefix:
+                            {
+                                bitsWritten = BitVector3Encode2BitExpPrefix(
+                                    vec,
+                                    maxMagnitude,
+                                    deltas);
+
+                                break;
+                            }
+
+                            case PosVector3Packer::BitVector3Truncated:
+                            {
+                                bitsWritten = BitVector3TruncatedEncode(
+                                    vec,
+                                    maxMagnitude,
+                                    deltas);
+
+                                break;
+                            }
                         }
 
                         assert(bitsWritten < ((MaxBitsXY * 2) + MaxBitsZ));
@@ -2255,22 +2451,41 @@ Frame Decode(
 
                     case PosVector3Packer::BitVector3:
                     case PosVector3Packer::BitVector3_2BitExpPrefix:
+                    case PosVector3Packer::BitVector3Truncated:
                     {
                         auto maxMagnitude = MaxPositionChangePerSnapshot * frameDelta;
 
                         IntVec3 vec;
 
-                        if (config.posPacker == PosVector3Packer::BitVector3)
+                        switch (config.posPacker)
                         {
-                            vec = BitVector3Decode(
-                                maxMagnitude,
-                                bits);
-                        }
-                        else
-                        {
-                            vec = BitVector3Decode2BitExpPrefix(
-                                maxMagnitude,
-                                bits);
+                            default:
+                            case PosVector3Packer::BitVector3:
+                            {
+                                vec = BitVector3Decode(
+                                    maxMagnitude,
+                                    bits);
+
+                                break;
+                            }
+
+                            case PosVector3Packer::BitVector3_2BitExpPrefix:
+                            {
+                                vec = BitVector3Decode2BitExpPrefix(
+                                    maxMagnitude,
+                                    bits);
+
+                                break;
+                            }
+
+                            case PosVector3Packer::BitVector3Truncated:
+                            {
+                                vec = BitVector3TruncatedDecode(
+                                    maxMagnitude,
+                                    bits);
+
+                                break;
+                            }
                         }
 
                         auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
@@ -2404,7 +2619,7 @@ int main(int, char**)
     Config config
     {
         ChangedArrayEncoding::Exp,
-        PosVector3Packer::BitVector3,
+        PosVector3Packer::BitVector3Truncated,
     };
 
     for (size_t i = FirstBase; i < size; ++i)
