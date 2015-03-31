@@ -175,6 +175,12 @@ struct MinMaxSum
         sum += value;
         ++count;
     }
+
+    float Average()
+    {
+        assert(count > 0);
+        return sum / count;
+    }
 };
 
 struct Stats
@@ -204,6 +210,9 @@ struct Stats
     MinMaxSum deltaY;
     MinMaxSum deltaZ;
     MinMaxSum deltaTotal;
+
+    unsigned posDeltaUnpackedBitCount;
+    MinMaxSum posDeltaPackedBitCount;
 };
 
 enum class ChangedArrayEncoding
@@ -570,10 +579,18 @@ unsigned BitVector3Encode(
 
     unsigned bitsForzx = MinBits(zx);
 
-    // NOTE: Use truncation binary encoding to shave off a few bits.
+    // TODO: Use truncation binary encoding to shave off a few bits.
     target.Write(bitsForzx, maxPrefixSize);
-    target.Write(zx, bitsForzx);
-    bitsUsed += maxPrefixSize + bitsForzx;
+    bitsUsed += maxPrefixSize;
+
+    // Don't need to send the top bit, as we know it's set since
+    // otherwise bitsForzx would be smaller.
+    if (bitsForzx)
+    {
+        zx &= (1 << (bitsForzx - 1)) - 1;
+        target.Write(zx, bitsForzx - 1);
+        bitsUsed += bitsForzx - 1;
+    }
 
     float next = maxMagnitude * maxMagnitude;
     next -= vec.x * vec.x;
@@ -591,8 +608,14 @@ unsigned BitVector3Encode(
     unsigned bitsForzy = MinBits(zy);
 
     target.Write(bitsForzy, maxPrefixSize);
-    target.Write(zy, bitsForzy);
-    bitsUsed += maxPrefixSize + bitsForzy;
+    bitsUsed += maxPrefixSize;
+
+    if (bitsForzy)
+    {
+        zy &= (1 << (bitsForzy - 1)) - 1;
+        target.Write(zy, bitsForzy - 1);
+        bitsUsed += bitsForzy - 1;
+    }
 
     next = maxMagnitude * maxMagnitude;
     next -= vec.y * vec.y;
@@ -620,14 +643,21 @@ IntVec3 BitVector3Decode(
         unsigned maxMagnitude,
         BitStream& source)
 {
-    IntVec3 result;
+    IntVec3 result = {0,0,0};
 
     unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
     unsigned maxPrefixSize = MinBits(maxBitsRequired);
 
     auto bitsX = source.Read(maxPrefixSize);
-    auto zx = source.Read(bitsX);
-    result.x = ZigZag(zx);
+
+    if (bitsX)
+    {
+        auto zx = source.Read(bitsX - 1);
+        // Don't need to send the top bit, as we know it's set since
+        // otherwise bitsForzx would be smaller.
+        zx |= 1 << (bitsX - 1);
+        result.x = ZigZag(zx);
+    }
 
     float next = maxMagnitude * maxMagnitude;
     next -= result.x * result.x;
@@ -639,8 +669,12 @@ IntVec3 BitVector3Decode(
     maxPrefixSize = MinBits(maxBitsRequired);
 
     auto bitsY = source.Read(maxPrefixSize);
-    auto zy = source.Read(bitsY);
-    result.y = ZigZag(zy);
+    if (bitsY)
+    {
+        auto zy = source.Read(bitsY - 1);
+        zy |= 1 << (bitsY - 1);
+        result.y = ZigZag(zy);
+    }
 
     next = maxMagnitude * maxMagnitude;
     next -= result.y * result.y;
@@ -697,6 +731,30 @@ void BitVector3Tests()
                 assert(data.z == decoded.z);
             }
         }
+    }
+
+    {
+        IntVec3 data =
+        {
+            0,
+            0,
+            1,
+        };
+
+        BitStream encoded;
+
+        BitVector3Encode(
+            data,
+            max,
+            encoded);
+
+        encoded.Reset();
+
+        auto decoded = BitVector3Decode(max, encoded);
+
+        assert(data.x == decoded.x);
+        assert(data.y == decoded.y);
+        assert(data.z == decoded.z);
     }
 }
 
@@ -1754,6 +1812,9 @@ std::vector<uint8_t> Encode(
                     deltas);
 
                 assert(bitsWritten < ((MaxBitsXY * 2) + MaxBitsZ));
+
+                stats.posDeltaUnpackedBitCount += ((MaxBitsXY * 2) + MaxBitsZ);
+                stats.posDeltaPackedBitCount.Update(bitsWritten);
             }
 
             deltas.Write(target[i].interacting, 1);
@@ -2025,6 +2086,8 @@ int main(int, char**)
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
+        0,
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
     };
 
     for (size_t i = FirstBase; i < size; ++i)
@@ -2122,10 +2185,10 @@ int main(int, char**)
     }
     printf("\n");
     printf("\n");
-    auto dxa =  stats.deltaX.sum / (float) stats.deltaX.count;
-    auto dya =  stats.deltaY.sum / (float) stats.deltaY.count;
-    auto dza =  stats.deltaZ.sum / (float) stats.deltaZ.count;
-    auto dta =  stats.deltaTotal.sum / (float) stats.deltaTotal.count;
+    auto dxa =  stats.deltaX.Average();
+    auto dya =  stats.deltaY.Average();
+    auto dza =  stats.deltaZ.Average();
+    auto dta =  stats.deltaTotal.Average();
     PRINT_FLOAT(dxa)
     PRINT_INT(stats.deltaX.min)
     PRINT_INT(stats.deltaX.max)
@@ -2143,6 +2206,11 @@ int main(int, char**)
     PRINT_INT(stats.PosChangedNotQuat)
     PRINT_INT(stats.wtfBothSame)
     PRINT_INT(stats.changed)
+
+    auto posPackedAvg = stats.posDeltaPackedBitCount.Average();
+    PRINT_FLOAT(posPackedAvg)
+    PRINT_INT(stats.posDeltaPackedBitCount.min)
+    PRINT_INT(stats.posDeltaPackedBitCount.max)
 
     return 0;
 }
