@@ -1609,7 +1609,7 @@ struct Config
 std::vector<uint8_t> Encode(
     const Frame& base,
     const Frame& target,
-    unsigned,// frameDelta,
+    unsigned frameDelta,
     Stats& stats,
     Config config = {ChangedArrayEncoding::None})
 {
@@ -1735,9 +1735,25 @@ std::vector<uint8_t> Encode(
             else
             {
                 deltas.Write(1, 1);
-                deltas.Write(ZigZag(target[i].position_x), MaxBitsXY);
-                deltas.Write(ZigZag(target[i].position_y), MaxBitsXY);
-                deltas.Write(target[i].position_z, MaxBitsZ);
+
+                // GLEE, actually writing a delta this time!
+                auto vec = IntVec3
+                {
+                    target[i].position_x - base[i].position_x,
+                    target[i].position_y - base[i].position_y,
+                    target[i].position_z - base[i].position_z,
+                };
+
+                auto maxMagnitude = MaxPositionChangePerSnapshot * frameDelta;
+                auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
+                assert(mag < maxMagnitude);
+
+                auto bitsWritten = BitVector3Encode(
+                    vec,
+                    maxMagnitude,
+                    deltas);
+
+                assert(bitsWritten < ((MaxBitsXY * 2) + MaxBitsZ));
             }
 
             deltas.Write(target[i].interacting, 1);
@@ -1818,7 +1834,7 @@ std::vector<uint8_t> Encode(
 Frame Decode(
     const Frame& base,
     std::vector<uint8_t>& buffer,
-    unsigned,// frameDelta,
+    unsigned frameDelta,
     Config config = {ChangedArrayEncoding::None})
 {
     // A.
@@ -1910,9 +1926,18 @@ Frame Decode(
 
             if (posChanged)
             {
-                result[i].position_x            = ZigZag(bits.Read(MaxBitsXY));
-                result[i].position_y            = ZigZag(bits.Read(MaxBitsXY));
-                result[i].position_z            = bits.Read(MaxBitsZ);
+                auto maxMagnitude = MaxPositionChangePerSnapshot * frameDelta;
+
+                auto vec = BitVector3Decode(
+                    maxMagnitude,
+                    bits);
+
+                auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
+                assert(mag < maxMagnitude);
+
+                result[i].position_x = vec.x + base[i].position_x;
+                result[i].position_y = vec.y + base[i].position_y;
+                result[i].position_z = vec.z + base[i].position_z;
             }
             else
             {
