@@ -16,6 +16,7 @@
 #include <array>
 #include <vector>
 #include <functional>
+#include <cmath>
 
 // //////////////////////////////////////////////////////
 
@@ -532,6 +533,171 @@ void BitStreamTest()
     assert(aj == 46);
     assert(bj == 666);
     assert(cj == 169);
+}
+
+// //////////////////////////////////////////////////////
+
+unsigned MinBits(unsigned value)
+{
+    unsigned result = 0;
+
+    while ((1u << result) <= value)
+    {
+        ++result;
+    }
+
+    return result;
+}
+
+struct IntVec3
+{
+    int x;
+    int y;
+    int z;
+};
+
+unsigned BitVector3Encode(
+        IntVec3 vec,
+        unsigned maxMagnitude,
+        BitStream& target)
+{
+    unsigned bitsUsed = 0;
+    unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
+    unsigned maxPrefixSize = MinBits(maxBitsRequired);
+
+    assert(abs(vec.x) <= static_cast<int>(maxMagnitude));
+    auto zx = ZigZag(vec.x);
+
+    unsigned bitsForzx = MinBits(zx);
+
+    // NOTE: Use truncation binary encoding to shave off a few bits.
+    target.Write(bitsForzx, maxPrefixSize);
+    target.Write(zx, bitsForzx);
+    bitsUsed += maxPrefixSize + bitsForzx;
+
+    float next = maxMagnitude * maxMagnitude;
+    next -= vec.x * vec.x;
+    assert(next >= 0);
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    maxPrefixSize = MinBits(maxBitsRequired);
+
+    assert(abs(vec.y) <= static_cast<int>(maxMagnitude));
+    auto zy = ZigZag(vec.y);
+
+    unsigned bitsForzy = MinBits(zy);
+
+    target.Write(bitsForzy, maxPrefixSize);
+    target.Write(zy, bitsForzy);
+    bitsUsed += maxPrefixSize + bitsForzy;
+
+    next = maxMagnitude * maxMagnitude;
+    next -= vec.y * vec.y;
+    assert(next >= 0);
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    //maxPrefixSize = MinBits(maxBitsRequired);
+
+    assert(abs(vec.z) <= static_cast<int>(maxMagnitude));
+    auto zz = ZigZag(vec.z);
+
+    //unsigned bitsForzz = MinBits(zz);
+
+    //target.Write(bitsForzz, maxPrefixSize);
+    target.Write(zz, maxBitsRequired);
+    bitsUsed += maxBitsRequired;
+
+    return bitsUsed;
+}
+
+IntVec3 BitVector3Decode(
+        unsigned maxMagnitude,
+        BitStream& source)
+{
+    IntVec3 result;
+
+    unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
+    unsigned maxPrefixSize = MinBits(maxBitsRequired);
+
+    auto bitsX = source.Read(maxPrefixSize);
+    auto zx = source.Read(bitsX);
+    result.x = ZigZag(zx);
+
+    float next = maxMagnitude * maxMagnitude;
+    next -= result.x * result.x;
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    maxPrefixSize = MinBits(maxBitsRequired);
+
+    auto bitsY = source.Read(maxPrefixSize);
+    auto zy = source.Read(bitsY);
+    result.y = ZigZag(zy);
+
+    next = maxMagnitude * maxMagnitude;
+    next -= result.y * result.y;
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    //maxPrefixSize = MinBits(maxBitsRequired);
+
+    //auto bitsZ = source.Read(maxPrefixSize);
+    auto zz = source.Read(maxBitsRequired);
+    result.z = ZigZag(zz);
+
+    return result;
+}
+
+void BitVector3Tests()
+{
+    int const max = (MaxPositionChangePerSnapshot) * 6 + 1;
+    for (auto i = 5 - max; i < max; i+=23)
+    {
+        for (auto j = 53 - max; j < max; j+=37)
+        {
+            for (auto k = 0; k < max; k+=17)
+            {
+                auto mag = sqrt(i*i + j*j + k*k);
+
+                if (mag > max)
+                {
+                    continue;
+                }
+
+                IntVec3 data =
+                {
+                    i,
+                    j,
+                    k,
+                };
+
+                BitStream encoded;
+
+                BitVector3Encode(
+                    data,
+                    max,
+                    encoded);
+
+                encoded.Reset();
+
+                auto decoded = BitVector3Decode(max, encoded);
+
+                assert(data.x == decoded.x);
+                assert(data.y == decoded.y);
+                assert(data.z == decoded.z);
+            }
+        }
+    }
 }
 
 // //////////////////////////////////////////////////////
@@ -1770,6 +1936,7 @@ Frame Decode(
 
 int main(int, char**)
 {
+    BitVector3Tests();
     RunLengthTests();
     BitStreamTest();
     ZigZagTest();
