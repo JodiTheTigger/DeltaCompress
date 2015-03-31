@@ -178,7 +178,11 @@ struct MinMaxSum
 
     float Average()
     {
-        assert(count > 0);
+        if (!count)
+        {
+            return 0;
+        }
+
         return sum / count;
     }
 };
@@ -223,6 +227,13 @@ enum class ChangedArrayEncoding
     Exp,
     BitBitPack,
     BitBitFullPack
+};
+
+enum class PosVector3Packer
+{
+    None,
+    BitVector3,
+    BitVector3_2BitExpPrefix
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -571,6 +582,8 @@ unsigned BitVector3Encode(
         BitStream& target)
 {
     unsigned bitsUsed = 0;
+
+    // +1 for the sign bit.
     unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
     unsigned maxPrefixSize = MinBits(maxBitsRequired);
 
@@ -645,6 +658,7 @@ IntVec3 BitVector3Decode(
 {
     IntVec3 result = {0,0,0};
 
+    // +1 for the sign bit.
     unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
     unsigned maxPrefixSize = MinBits(maxBitsRequired);
 
@@ -692,69 +706,224 @@ IntVec3 BitVector3Decode(
     return result;
 }
 
-void BitVector3Tests()
+static const unsigned prefixBits = 2;
+
+unsigned ShiftsRequired(unsigned value, unsigned maxBits)
 {
-    int const max = (MaxPositionChangePerSnapshot) * 6 + 1;
-    for (auto i = 5 - max; i < max; i+=23)
+    assert(value < (1u << maxBits));
+
+    unsigned maxShift = ((1u << prefixBits) - 1u);
+    unsigned shifts = 1;
+
+    if (!value)
     {
-        for (auto j = 53 - max; j < max; j+=37)
-        {
-            for (auto k = 0; k < max; k+=17)
-            {
-                auto mag = sqrt(i*i + j*j + k*k);
-
-                if (mag > max)
-                {
-                    continue;
-                }
-
-                IntVec3 data =
-                {
-                    i,
-                    j,
-                    k,
-                };
-
-                BitStream encoded;
-
-                BitVector3Encode(
-                    data,
-                    max,
-                    encoded);
-
-                encoded.Reset();
-
-                auto decoded = BitVector3Decode(max, encoded);
-
-                assert(data.x == decoded.x);
-                assert(data.y == decoded.y);
-                assert(data.z == decoded.z);
-            }
-        }
+        return maxShift;
     }
 
+    while (value < (1u << (maxBits >> shifts)))
     {
-        IntVec3 data =
+        shifts++;
+    }
+
+    shifts--;
+
+    if (shifts > maxShift)
+    {
+        shifts = maxShift;
+    }
+
+    return shifts;
+}
+
+unsigned BitVector3Encode2BitExpPrefix(
+        IntVec3 vec,
+        unsigned maxMagnitude,
+        BitStream& target)
+{
+    unsigned bitsUsed = 0;
+    unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    assert(abs(vec.x) <= static_cast<int>(maxMagnitude));
+    auto zx = ZigZag(vec.x);
+
+    unsigned shiftsForzx = ShiftsRequired(zx, maxBitsRequired);
+
+    target.Write(shiftsForzx, prefixBits);
+    bitsUsed += prefixBits;
+
+    target.Write(zx, maxBitsRequired >> shiftsForzx);
+    bitsUsed += maxBitsRequired >> shiftsForzx;
+
+    float next = maxMagnitude * maxMagnitude;
+    next -= vec.x * vec.x;
+    assert(next >= 0);
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    assert(abs(vec.y) <= static_cast<int>(maxMagnitude));
+    auto zy = ZigZag(vec.y);
+
+    unsigned shiftsForzy = ShiftsRequired(zy, maxBitsRequired);
+
+    target.Write(shiftsForzy, prefixBits);
+    bitsUsed += prefixBits;
+
+    target.Write(zy, maxBitsRequired >> shiftsForzy);
+    bitsUsed += maxBitsRequired >> shiftsForzy;
+
+    next = maxMagnitude * maxMagnitude;
+    next -= vec.y * vec.y;
+    assert(next >= 0);
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    //maxPrefixSize = MinBits(maxBitsRequired);
+
+    assert(abs(vec.z) <= static_cast<int>(maxMagnitude));
+    auto zz = ZigZag(vec.z);
+
+    //unsigned bitsForzz = MinBits(zz);
+
+    //target.Write(bitsForzz, maxPrefixSize);
+    target.Write(zz, maxBitsRequired);
+    bitsUsed += maxBitsRequired;
+
+    return bitsUsed;
+}
+
+IntVec3 BitVector3Decode2BitExpPrefix(
+        unsigned maxMagnitude,
+        BitStream& source)
+{
+    IntVec3 result = {0,0,0};
+
+    unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    auto shiftX = source.Read(prefixBits);
+
+    auto zx = source.Read(maxBitsRequired >> shiftX);
+    result.x = ZigZag(zx);
+
+    float next = maxMagnitude * maxMagnitude;
+    next -= result.x * result.x;
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    auto shiftY = source.Read(prefixBits);
+
+    auto zy = source.Read(maxBitsRequired >> shiftY);
+    result.y = ZigZag(zy);
+
+    next = maxMagnitude * maxMagnitude;
+    next -= result.y * result.y;
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    //maxPrefixSize = MinBits(maxBitsRequired);
+
+    //auto bitsZ = source.Read(maxPrefixSize);
+    auto zz = source.Read(maxBitsRequired);
+    result.z = ZigZag(zz);
+
+    return result;
+}
+
+void BitVector3Tests()
+{
+    struct Test
+    {
+        std::function<unsigned(IntVec3, unsigned, BitStream&)> encode;
+        std::function<IntVec3(unsigned, BitStream&)> decode;
+    };
+
+    std::vector<Test> tests;
+
+    tests.push_back(Test
+    {
+        BitVector3Encode,
+        BitVector3Decode,
+    });
+
+    tests.push_back(
+    {
+        BitVector3Encode2BitExpPrefix,
+        BitVector3Decode2BitExpPrefix,
+    });
+
+    int const max = (MaxPositionChangePerSnapshot) * 6 + 1;
+    for (const auto& test : tests)
+    {
+        for (auto i = 5 - max; i < max; i+=23)
         {
-            0,
-            0,
-            1,
-        };
+            for (auto j = 53 - max; j < max; j+=37)
+            {
+                for (auto k = 0; k < max; k+=17)
+                {
+                    auto mag = sqrt(i*i + j*j + k*k);
 
-        BitStream encoded;
+                    if (mag > max)
+                    {
+                        continue;
+                    }
 
-        BitVector3Encode(
-            data,
-            max,
-            encoded);
+                    IntVec3 data =
+                    {
+                        i,
+                        j,
+                        k,
+                    };
 
-        encoded.Reset();
+                    BitStream encoded;
 
-        auto decoded = BitVector3Decode(max, encoded);
+                    test.encode(
+                        data,
+                        max,
+                        encoded);
 
-        assert(data.x == decoded.x);
-        assert(data.y == decoded.y);
-        assert(data.z == decoded.z);
+                    encoded.Reset();
+
+                    auto decoded = test.decode(max, encoded);
+
+                    assert(data.x == decoded.x);
+                    assert(data.y == decoded.y);
+                    assert(data.z == decoded.z);
+                }
+            }
+        }
+
+        {
+            IntVec3 data =
+            {
+                0,
+                0,
+                1,
+            };
+
+            BitStream encoded;
+
+            test.encode(
+                data,
+                max,
+                encoded);
+
+            encoded.Reset();
+
+            auto decoded = test.decode(max, encoded);
+
+            assert(data.x == decoded.x);
+            assert(data.y == decoded.y);
+            assert(data.z == decoded.z);
+        }
     }
 }
 
@@ -1661,7 +1830,8 @@ void RunLengthTests()
 
 struct Config
 {
-    ChangedArrayEncoding rle;
+    ChangedArrayEncoding    rle;
+    PosVector3Packer        posPacker;
 };
 
 std::vector<uint8_t> Encode(
@@ -1669,7 +1839,7 @@ std::vector<uint8_t> Encode(
     const Frame& target,
     unsigned frameDelta,
     Stats& stats,
-    Config config = {ChangedArrayEncoding::None})
+    Config config = {ChangedArrayEncoding::None, PosVector3Packer::None})
 {
     const auto count = base.size();
 
@@ -1793,28 +1963,56 @@ std::vector<uint8_t> Encode(
             else
             {
                 deltas.Write(1, 1);
-
-                // GLEE, actually writing a delta this time!
-                auto vec = IntVec3
-                {
-                    target[i].position_x - base[i].position_x,
-                    target[i].position_y - base[i].position_y,
-                    target[i].position_z - base[i].position_z,
-                };
-
-                auto maxMagnitude = MaxPositionChangePerSnapshot * frameDelta;
-                auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
-                assert(mag < maxMagnitude);
-
-                auto bitsWritten = BitVector3Encode(
-                    vec,
-                    maxMagnitude,
-                    deltas);
-
-                assert(bitsWritten < ((MaxBitsXY * 2) + MaxBitsZ));
-
                 stats.posDeltaUnpackedBitCount += ((MaxBitsXY * 2) + MaxBitsZ);
-                stats.posDeltaPackedBitCount.Update(bitsWritten);
+
+                switch (config.posPacker)
+                {
+                    default:
+                    case PosVector3Packer::None:
+                    {
+                        deltas.Write(ZigZag(target[i].position_x), MaxBitsXY);
+                        deltas.Write(ZigZag(target[i].position_y), MaxBitsXY);
+                        deltas.Write(target[i].position_z, MaxBitsZ);
+                        break;
+                    }
+
+                    case PosVector3Packer::BitVector3:
+                    case PosVector3Packer::BitVector3_2BitExpPrefix:
+                    {
+                        // GLEE, actually writing a delta this time!
+                        auto vec = IntVec3
+                        {
+                            target[i].position_x - base[i].position_x,
+                            target[i].position_y - base[i].position_y,
+                            target[i].position_z - base[i].position_z,
+                        };
+
+                        auto maxMagnitude = MaxPositionChangePerSnapshot * frameDelta;
+                        auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
+                        assert(mag < maxMagnitude);
+
+                        unsigned bitsWritten ;
+                        if (config.posPacker == PosVector3Packer::BitVector3)
+                        {
+                            bitsWritten = BitVector3Encode(
+                                vec,
+                                maxMagnitude,
+                                deltas);
+                        }
+                        else
+                        {
+
+                            bitsWritten = BitVector3Encode2BitExpPrefix(
+                                vec,
+                                maxMagnitude,
+                                deltas);
+                        }
+
+                        assert(bitsWritten < ((MaxBitsXY * 2) + MaxBitsZ));
+                        stats.posDeltaPackedBitCount.Update(bitsWritten);
+                        break;
+                    }
+                }
             }
 
             deltas.Write(target[i].interacting, 1);
@@ -1896,7 +2094,7 @@ Frame Decode(
     const Frame& base,
     std::vector<uint8_t>& buffer,
     unsigned frameDelta,
-    Config config = {ChangedArrayEncoding::None})
+    Config config = {ChangedArrayEncoding::None, PosVector3Packer::None})
 {
     // A.
     if (buffer.empty())
@@ -1987,18 +2185,47 @@ Frame Decode(
 
             if (posChanged)
             {
-                auto maxMagnitude = MaxPositionChangePerSnapshot * frameDelta;
+                switch (config.posPacker)
+                {
+                    default:
+                    case PosVector3Packer::None:
+                    {
+                        result[i].position_x = ZigZag(bits.Read(MaxBitsXY));
+                        result[i].position_y = ZigZag(bits.Read(MaxBitsXY));
+                        result[i].position_z = bits.Read(MaxBitsZ);
+                        break;
+                    }
 
-                auto vec = BitVector3Decode(
-                    maxMagnitude,
-                    bits);
+                    case PosVector3Packer::BitVector3:
+                    case PosVector3Packer::BitVector3_2BitExpPrefix:
+                    {
+                        auto maxMagnitude = MaxPositionChangePerSnapshot * frameDelta;
 
-                auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
-                assert(mag < maxMagnitude);
+                        IntVec3 vec;
 
-                result[i].position_x = vec.x + base[i].position_x;
-                result[i].position_y = vec.y + base[i].position_y;
-                result[i].position_z = vec.z + base[i].position_z;
+                        if (config.posPacker == PosVector3Packer::BitVector3)
+                        {
+                            vec = BitVector3Decode(
+                                maxMagnitude,
+                                bits);
+                        }
+                        else
+                        {
+                            vec = BitVector3Decode2BitExpPrefix(
+                                maxMagnitude,
+                                bits);
+                        }
+
+                        auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
+                        assert(mag < maxMagnitude);
+
+                        result[i].position_x = vec.x + base[i].position_x;
+                        result[i].position_y = vec.y + base[i].position_y;
+                        result[i].position_z = vec.z + base[i].position_z;
+
+                        break;
+                    }
+                }
             }
             else
             {
@@ -2116,7 +2343,11 @@ int main(int, char**)
     // Lets actually do the stuff.
     unsigned bytes = 0;
     unsigned packetsCoded = 0;
-    Config rleCoding = {ChangedArrayEncoding::Exp};
+    Config config
+    {
+        ChangedArrayEncoding::Exp,
+        PosVector3Packer::BitVector3,
+    };
 
     for (size_t i = FirstBase; i < size; ++i)
     {
@@ -2125,7 +2356,7 @@ int main(int, char**)
             frames[i],
             FirstBase,
             stats,
-            rleCoding);
+            config);
 
         bytes += buffer.size();
 
@@ -2133,7 +2364,7 @@ int main(int, char**)
             frames[i-FirstBase],
             buffer,
             FirstBase,
-            rleCoding);
+            config);
 
         assert(back == frames[i]);
 
