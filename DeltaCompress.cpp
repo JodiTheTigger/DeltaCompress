@@ -119,8 +119,7 @@ static const unsigned   MaxBitsXY         = 18;
 
 static const unsigned   MaxSnapshotsPerSecond = 60;
 
-static const unsigned   FirstBase           = 6;
-static const unsigned   PacketDelta         = 6;
+static const unsigned   PacketDelta           = 6;
 
 // This one is important
 static const float      MaxPositionChangePerSnapshot =
@@ -183,12 +182,14 @@ struct MinMaxSum
             return 0;
         }
 
-        return sum / count;
+        return sum / (float) count;
     }
 };
 
 struct Stats
 {
+    MinMaxSum bytesPerPacket;
+
     unsigned itemCount;
 
     unsigned notChangedCount;
@@ -215,8 +216,18 @@ struct Stats
     MinMaxSum deltaZ;
     MinMaxSum deltaTotal;
 
+    unsigned quatChanged;
+    unsigned largestDifferent;
+    MinMaxSum deltaA;
+    MinMaxSum deltaB;
+    MinMaxSum deltaC;
+    MinMaxSum deltaABC;
+
     unsigned posDeltaUnpackedBitCount;
     MinMaxSum posDeltaPackedBitCount;
+
+    unsigned quatDeltaUnpackedBitCount;
+    MinMaxSum quatDeltaPackedBitCount;
 };
 
 enum class ChangedArrayEncoding
@@ -235,6 +246,12 @@ enum class PosVector3Packer
     BitVector3,
     BitVector3_2BitExpPrefix,
     BitVector3Truncated
+};
+
+enum class QuatPacker
+{
+    None,
+    BitVector3Unrelated,
 };
 
 void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
@@ -675,7 +692,6 @@ unsigned BitVector3Encode(
 
     unsigned bitsForzx = MinBits(zx);
 
-    // TODO: Use truncation binary encoding to shave off a few bits.
     target.Write(bitsForzx, maxPrefixSize);
     bitsUsed += maxPrefixSize;
 
@@ -1042,6 +1058,106 @@ IntVec3 BitVector3Decode2BitExpPrefix(
     return result;
 }
 
+unsigned BitVector3UnrelatedEncode(
+        IntVec3 vec,
+        unsigned maxMagnitude,
+        BitStream& target)
+{
+    unsigned bitsUsed = 0;
+    unsigned maxBitsPerComponent = 1 + MinBits(maxMagnitude);
+
+    auto zx = ZigZag(vec.x);
+    assert(zx < (1u << maxBitsPerComponent));
+
+    unsigned bitsForzx = MinBits(zx);
+    bitsUsed += TruncateEncode(bitsForzx, maxBitsPerComponent, target);
+
+    // Don't need to send the top bit, as we know it's set since
+    // otherwise bitsForzx would be smaller.
+    if (bitsForzx)
+    {
+        zx &= (1 << (bitsForzx - 1)) - 1;
+        target.Write(zx, bitsForzx - 1);
+        bitsUsed += bitsForzx - 1;
+    }
+
+    // //////////////////////////////////////////
+
+    auto zy = ZigZag(vec.y);
+    assert(zy < (1u << maxBitsPerComponent));
+
+    unsigned bitsForzy = MinBits(zy);
+    bitsUsed += TruncateEncode(bitsForzy, maxBitsPerComponent, target);
+
+    if (bitsForzy)
+    {
+        zy &= (1 << (bitsForzy - 1)) - 1;
+        target.Write(zy, bitsForzy - 1);
+        bitsUsed += bitsForzy - 1;
+    }
+
+    // //////////////////////////////////////////
+
+    auto zz = ZigZag(vec.z);
+    assert(zz < (1u << maxBitsPerComponent));
+
+    unsigned bitsForzz = MinBits(zz);
+    bitsUsed += TruncateEncode(bitsForzz, maxBitsPerComponent, target);
+
+    if (bitsForzz)
+    {
+        zz &= (1 << (bitsForzz - 1)) - 1;
+        target.Write(zz, bitsForzz - 1);
+        bitsUsed += bitsForzz - 1;
+    }
+
+    return bitsUsed;
+}
+
+IntVec3 BitVector3UnrelatedDecode(
+        unsigned maxMagnitude,
+        BitStream& source)
+{
+    IntVec3 result = {0,0,0};
+
+    unsigned maxBitsPerComponent = 1 + MinBits(maxMagnitude);
+
+    auto bitsX = TruncateDecode(maxBitsPerComponent, source);
+
+    if (bitsX)
+    {
+        auto zx = source.Read(bitsX - 1);
+        // Don't need to send the top bit, as we know it's set since
+        // otherwise bitsForzx would be smaller.
+        zx |= 1 << (bitsX - 1);
+        result.x = ZigZag(zx);
+    }
+
+    // //////////////////////////////////////////
+
+    auto bitsY = TruncateDecode(maxBitsPerComponent, source);
+
+    if (bitsY)
+    {
+        auto zy = source.Read(bitsY - 1);
+        zy |= 1 << (bitsY - 1);
+        result.y = ZigZag(zy);
+    }
+
+    // //////////////////////////////////////////
+
+    auto bitsZ = TruncateDecode(maxBitsPerComponent, source);
+
+    if (bitsZ)
+    {
+        auto zz = source.Read(bitsZ - 1);
+        zz |= 1 << (bitsZ - 1);
+        result.z = ZigZag(zz);
+    }
+
+    return result;
+}
+
 void BitVector3Tests()
 {
     struct Test
@@ -1051,6 +1167,12 @@ void BitVector3Tests()
     };
 
     std::vector<Test> tests;
+
+    tests.push_back(
+    {
+        BitVector3UnrelatedEncode,
+        BitVector3UnrelatedDecode,
+    });
 
     tests.push_back(
     {
@@ -2066,6 +2188,7 @@ struct Config
 {
     ChangedArrayEncoding    rle;
     PosVector3Packer        posPacker;
+    QuatPacker              quatPacker;
 };
 
 std::vector<uint8_t> Encode(
@@ -2073,7 +2196,12 @@ std::vector<uint8_t> Encode(
     const Frame& target,
     unsigned frameDelta,
     Stats& stats,
-    Config config = {ChangedArrayEncoding::None, PosVector3Packer::None})
+    Config config =
+    {
+        ChangedArrayEncoding::None,
+        PosVector3Packer::None,
+        QuatPacker::None,
+    })
 {
     const auto count = base.size();
 
@@ -2184,10 +2312,86 @@ std::vector<uint8_t> Encode(
             else
             {
                 deltas.Write(1, 1);
-                deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
-                deltas.Write(target[i].orientation_a, RotationMaxBits);
-                deltas.Write(target[i].orientation_b, RotationMaxBits);
-                deltas.Write(target[i].orientation_c, RotationMaxBits);
+
+                const auto vec3BitsUncompressed = (RotationMaxBits * 3);
+                stats.quatDeltaUnpackedBitCount +=
+                    (vec3BitsUncompressed + RotationIndexMaxBits);
+
+                ++stats.quatChanged;
+                if (target[i].orientation_largest != base[i].orientation_largest)
+                {
+                    ++stats.largestDifferent;
+                }
+
+                auto da = abs(target[i].orientation_a - base[i].orientation_a);
+                auto db = abs(target[i].orientation_b - base[i].orientation_b);
+                auto dc = abs(target[i].orientation_c - base[i].orientation_c);
+                auto dSum = da + db + dc;
+
+                stats.deltaA.Update(da);
+                stats.deltaB.Update(db);
+                stats.deltaC.Update(dc);
+
+                // yea, ignore the case when only the laargest 3 index chagnes.
+                if (dSum)
+                {
+                    stats.deltaABC.Update(dSum);
+                }
+
+                switch (config.quatPacker)
+                {
+                    default:
+                    case QuatPacker::None:
+                    {
+                        deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+                        deltas.Write(target[i].orientation_a, RotationMaxBits);
+                        deltas.Write(target[i].orientation_b, RotationMaxBits);
+                        deltas.Write(target[i].orientation_c, RotationMaxBits);
+                        break;
+                    }
+
+                    case QuatPacker::BitVector3Unrelated:
+                    {
+                        unsigned bitsWritten = 2;
+                        deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+
+                        auto vec = IntVec3
+                        {
+                            target[i].orientation_a - base[i].orientation_a,
+                            target[i].orientation_b - base[i].orientation_b,
+                            target[i].orientation_c - base[i].orientation_c,
+                        };
+
+                        BitStream encoded;
+
+                        auto codedBits = BitVector3UnrelatedEncode(
+                            vec,
+                            (1 << RotationMaxBits) - 1,
+                            encoded);
+
+                        if (codedBits < vec3BitsUncompressed)
+                        {
+                            deltas.Write(1, 1);
+                            deltas.Write(encoded);
+
+                            bitsWritten += 1 + codedBits;
+                        }
+                        else
+                        {
+                            deltas.Write(0, 1);
+                            deltas.Write(target[i].orientation_a, RotationMaxBits);
+                            deltas.Write(target[i].orientation_b, RotationMaxBits);
+                            deltas.Write(target[i].orientation_c, RotationMaxBits);
+
+                            bitsWritten += 1 + vec3BitsUncompressed;
+                        }
+
+                        // *sniff* worst case == vec3BitsUncompressed + 1.
+                        //assert(bitsWritten < vec3BitsUncompressed);
+                        stats.quatDeltaPackedBitCount.Update(bitsWritten);
+                        break;
+                    }
+                }
             }
 
             if (posSame)
@@ -2347,7 +2551,12 @@ Frame Decode(
     const Frame& base,
     std::vector<uint8_t>& buffer,
     unsigned frameDelta,
-    Config config = {ChangedArrayEncoding::None, PosVector3Packer::None})
+    Config config =
+    {
+        ChangedArrayEncoding::None,
+        PosVector3Packer::None,
+        QuatPacker::None,
+    })
 {
     // A.
     if (buffer.empty())
@@ -2421,10 +2630,47 @@ Frame Decode(
 
             if (quadChanged)
             {
-                result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
-                result[i].orientation_a         = bits.Read(RotationMaxBits);
-                result[i].orientation_b         = bits.Read(RotationMaxBits);
-                result[i].orientation_c         = bits.Read(RotationMaxBits);
+                switch (config.quatPacker)
+                {
+                    default:
+                    case QuatPacker::None:
+                    {
+                        result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
+                        result[i].orientation_a         = bits.Read(RotationMaxBits);
+                        result[i].orientation_b         = bits.Read(RotationMaxBits);
+                        result[i].orientation_c         = bits.Read(RotationMaxBits);
+                        break;
+                    }
+
+                    case QuatPacker::BitVector3Unrelated:
+                    {
+                        result[i].orientation_largest =
+                                bits.Read(RotationIndexMaxBits);
+
+                        auto compressed = bits.Read(1);
+
+                        if (compressed)
+                        {
+                            IntVec3 vec;
+
+                            vec = BitVector3UnrelatedDecode(
+                                (1 << RotationMaxBits) - 1,
+                                bits);
+
+                            result[i].orientation_a = vec.x + base[i].orientation_a;
+                            result[i].orientation_b = vec.y + base[i].orientation_b;
+                            result[i].orientation_c = vec.z + base[i].orientation_c;
+                        }
+                        else
+                        {
+                            result[i].orientation_a = bits.Read(RotationMaxBits);
+                            result[i].orientation_b = bits.Read(RotationMaxBits);
+                            result[i].orientation_c = bits.Read(RotationMaxBits);
+                        }
+
+                        break;
+                    }
+                }
             }
             else
             {
@@ -2566,6 +2812,7 @@ int main(int, char**)
     auto size = frames.size();
     Stats stats
     {
+        {1024*1024,0,0,0},
         0,
         0,
         0,
@@ -2585,14 +2832,22 @@ int main(int, char**)
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
+        {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
+        0,
+        0,
+        {static_cast<unsigned>(1 << RotationMaxBits),0,0,0},
+        {static_cast<unsigned>(1 << RotationMaxBits),0,0,0},
+        {static_cast<unsigned>(1 << RotationMaxBits),0,0,0},
+        {static_cast<unsigned>(1 << RotationMaxBits),0,0,0},
+        0,
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
         0,
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
     };
 
-    for (size_t i = FirstBase; i < size; ++i)
+    for (size_t i = PacketDelta; i < size; ++i)
     {
-         DoSomeStats(frames[i-FirstBase], frames[i], stats);
+         DoSomeStats(frames[i-PacketDelta], frames[i], stats);
     }
 
     #define PRINT_INT(x) printf("%-32s\t%d\n", #x, x);
@@ -2620,23 +2875,25 @@ int main(int, char**)
     {
         ChangedArrayEncoding::Exp,
         PosVector3Packer::BitVector3Truncated,
+        QuatPacker::BitVector3Unrelated,
     };
 
-    for (size_t i = FirstBase; i < size; ++i)
+    for (size_t i = PacketDelta; i < size; ++i)
     {
         auto buffer = Encode(
-            frames[i-FirstBase],
+            frames[i-PacketDelta],
             frames[i],
-            FirstBase,
+            PacketDelta,
             stats,
             config);
 
         bytes += buffer.size();
+        stats.bytesPerPacket.Update(buffer.size());
 
         auto back = Decode(
-            frames[i-FirstBase],
+            frames[i-PacketDelta],
             buffer,
-            FirstBase,
+            PacketDelta,
             config);
 
         assert(back == frames[i]);
@@ -2644,7 +2901,7 @@ int main(int, char**)
         packetsCoded++;
     }
 
-    float packetSizeAverge = ((float) bytes) / (size - FirstBase);
+    float packetSizeAverge = ((float) bytes) / (size - PacketDelta);
     float bytesPerSecondAverage = packetSizeAverge * 60.0f;
     float kbps = bytesPerSecondAverage * 8 / 1000.0f;
 
@@ -2677,18 +2934,20 @@ int main(int, char**)
     PRINT_INT(stats.bitbitfullpack.min)
     PRINT_INT(stats.bitbitfullpack.max)
 
-    for (const auto h : stats.changed0DistanceRunHistogram)
-    {
-        printf("%d, ", h);
-    }
+//    for (const auto h : stats.changed0DistanceRunHistogram)
+//    {
+//        printf("%d, ", h);
+//    }
+//    printf("\n");
+
+//    for (const auto h : stats.changed1DistanceRunHistogram)
+//    {
+//        printf("%d, ", h);
+//    }
+
+    printf("\n");
     printf("\n");
 
-    for (const auto h : stats.changed1DistanceRunHistogram)
-    {
-        printf("%d, ", h);
-    }
-    printf("\n");
-    printf("\n");
     auto dxa =  stats.deltaX.Average();
     auto dya =  stats.deltaY.Average();
     auto dza =  stats.deltaZ.Average();
@@ -2715,6 +2974,44 @@ int main(int, char**)
     PRINT_FLOAT(posPackedAvg)
     PRINT_INT(stats.posDeltaPackedBitCount.min)
     PRINT_INT(stats.posDeltaPackedBitCount.max)
+
+    printf("\n");
+    PRINT_INT(stats.quatChanged)
+    PRINT_INT(stats.largestDifferent)
+
+    auto daa = stats.deltaA.Average();
+    auto dba = stats.deltaB.Average();
+    auto dca = stats.deltaC.Average();
+    auto dalla = stats.deltaABC.Average();
+    PRINT_FLOAT(daa)
+    PRINT_INT(stats.deltaA.min)
+    PRINT_INT(stats.deltaA.max)
+    PRINT_FLOAT(dba)
+    PRINT_INT(stats.deltaB.min)
+    PRINT_INT(stats.deltaB.max)
+    PRINT_FLOAT(dca)
+    PRINT_INT(stats.deltaC.min)
+    PRINT_INT(stats.deltaC.max)
+    PRINT_FLOAT(dalla)
+    PRINT_INT(stats.deltaABC.min)
+    PRINT_INT(stats.deltaABC.max)
+
+    printf("\n");
+    auto quatPackedAvg = stats.quatDeltaPackedBitCount.Average();
+    PRINT_FLOAT(quatPackedAvg)
+    PRINT_INT(stats.quatDeltaPackedBitCount.min)
+    PRINT_INT(stats.quatDeltaPackedBitCount.max)
+
+    printf("\n");
+    auto bytesAvg = stats.bytesPerPacket.Average();
+    PRINT_FLOAT(bytesAvg)
+    PRINT_INT(stats.bytesPerPacket.min)
+    PRINT_INT(stats.bytesPerPacket.max)
+
+    printf("\n");
+    printf("\n");
+
+    PRINT_FLOAT(kbps)
 
     return 0;
 }
