@@ -235,6 +235,8 @@ struct Stats
     unsigned bitStream01;
     unsigned bitStream10;
     unsigned bitStream11;
+
+	std::array<unsigned, RotationMaxBits + 2> quatMinBitCounts;
 };
 
 enum class ChangedArrayEncoding
@@ -2339,11 +2341,39 @@ std::vector<uint8_t> Encode(
                 stats.deltaB.Update(db);
                 stats.deltaC.Update(dc);
 
-                // yea, ignore the case when only the laargest 3 index chagnes.
+                // yea, ignore the case when only the largest 3 index chagnes.
                 if (dSum)
                 {
                     stats.deltaABC.Update(dSum);
                 }
+
+				// More stats on how many bits are needed to encode the non-delta quat.
+				//auto a = target[i].orientation_a;
+				//auto b = target[i].orientation_b;
+				//auto c = target[i].orientation_c;
+
+				auto a = ZigZag(target[i].orientation_a - base[i].orientation_a);
+				auto b = ZigZag(target[i].orientation_b - base[i].orientation_b);
+				auto c = ZigZag(target[i].orientation_c - base[i].orientation_c);
+
+				assert(a >= 0);
+				assert(b >= 0);
+				assert(c >= 0);
+
+				for (auto j = 0; j <= RotationMaxBits + 1; ++j)
+				{
+					auto max = (1u << j) - 1;
+
+					if	(
+							(a <= max) &&
+							(b <= max) &&
+							(c <= max)
+						)
+					{
+						++stats.quatMinBitCounts[j];
+						break;
+					}
+				}
 
                 switch (config.quatPacker)
                 {
@@ -2816,11 +2846,11 @@ Frame Decode(
 
 int main(int, char**)
 {
-    TestTruncate();
-    BitVector3Tests();
-    RunLengthTests();
-    BitStreamTest();
-    ZigZagTest();
+    //TestTruncate();
+    //BitVector3Tests();
+    //RunLengthTests();
+    //BitStreamTest();
+    //ZigZagTest();
 
     // //////////////////////////////////////////////////////
 
@@ -2898,6 +2928,7 @@ int main(int, char**)
         0,
         0,
         0,
+		{0},
     };
 
     for (size_t i = PacketDelta; i < size; ++i)
@@ -3072,7 +3103,20 @@ int main(int, char**)
     PRINT_INT(stats.bitStream10)
     PRINT_INT(stats.bitStream11)
 
-    printf("\n");
+    printf("\n"); 
+
+	PRINT_INT(stats.quatMinBitCounts[0])
+	PRINT_INT(stats.quatMinBitCounts[1])
+	PRINT_INT(stats.quatMinBitCounts[2])
+	PRINT_INT(stats.quatMinBitCounts[3])
+	PRINT_INT(stats.quatMinBitCounts[4])
+	PRINT_INT(stats.quatMinBitCounts[5])
+	PRINT_INT(stats.quatMinBitCounts[6])
+	PRINT_INT(stats.quatMinBitCounts[7])
+	PRINT_INT(stats.quatMinBitCounts[8])
+	PRINT_INT(stats.quatMinBitCounts[9])
+
+	printf("\n");
     printf("\n");
 
     PRINT_FLOAT(kbps)
