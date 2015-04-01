@@ -711,7 +711,7 @@ unsigned BitVector3Encode(
         bitsUsed += bitsForzx - 1;
     }
 
-    float next = maxMagnitude * maxMagnitude;
+    float next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= vec.x * vec.x;
     assert(next >= 0);
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
@@ -736,7 +736,7 @@ unsigned BitVector3Encode(
         bitsUsed += bitsForzy - 1;
     }
 
-    next = maxMagnitude * maxMagnitude;
+    next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= vec.y * vec.y;
     assert(next >= 0);
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
@@ -779,7 +779,7 @@ IntVec3 BitVector3Decode(
         result.x = ZigZag(zx);
     }
 
-    float next = maxMagnitude * maxMagnitude;
+    float next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= result.x * result.x;
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
 
@@ -796,7 +796,7 @@ IntVec3 BitVector3Decode(
         result.y = ZigZag(zy);
     }
 
-    next = maxMagnitude * maxMagnitude;
+    next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= result.y * result.y;
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
 
@@ -837,7 +837,7 @@ unsigned BitVector3TruncatedEncode(
         bitsUsed += bitsForzx - 1;
     }
 
-    float next = maxMagnitude * maxMagnitude;
+    float next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= vec.x * vec.x;
     assert(next >= 0);
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
@@ -859,7 +859,7 @@ unsigned BitVector3TruncatedEncode(
         bitsUsed += bitsForzy - 1;
     }
 
-    next = maxMagnitude * maxMagnitude;
+    next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= vec.y * vec.y;
     assert(next >= 0);
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
@@ -901,7 +901,7 @@ IntVec3 BitVector3TruncatedDecode(
         result.x = ZigZag(zx);
     }
 
-    float next = maxMagnitude * maxMagnitude;
+    float next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= result.x * result.x;
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
 
@@ -917,7 +917,7 @@ IntVec3 BitVector3TruncatedDecode(
         result.y = ZigZag(zy);
     }
 
-    next = maxMagnitude * maxMagnitude;
+    next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= result.y * result.y;
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
 
@@ -981,7 +981,7 @@ unsigned BitVector3Encode2BitExpPrefix(
     target.Write(zx, maxBitsRequired >> shiftsForzx);
     bitsUsed += maxBitsRequired >> shiftsForzx;
 
-    float next = maxMagnitude * maxMagnitude;
+    float next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= vec.x * vec.x;
     assert(next >= 0);
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
@@ -1001,7 +1001,7 @@ unsigned BitVector3Encode2BitExpPrefix(
     target.Write(zy, maxBitsRequired >> shiftsForzy);
     bitsUsed += maxBitsRequired >> shiftsForzy;
 
-    next = maxMagnitude * maxMagnitude;
+    next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= vec.y * vec.y;
     assert(next >= 0);
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
@@ -1036,7 +1036,7 @@ IntVec3 BitVector3Decode2BitExpPrefix(
     auto zx = source.Read(maxBitsRequired >> shiftX);
     result.x = ZigZag(zx);
 
-    float next = maxMagnitude * maxMagnitude;
+    float next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= result.x * result.x;
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
 
@@ -1049,7 +1049,7 @@ IntVec3 BitVector3Decode2BitExpPrefix(
     auto zy = source.Read(maxBitsRequired >> shiftY);
     result.y = ZigZag(zy);
 
-    next = maxMagnitude * maxMagnitude;
+    next = static_cast<float>(maxMagnitude * maxMagnitude);
     next -= result.y * result.y;
     maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
 
@@ -1199,7 +1199,7 @@ void BitVector3Tests()
         BitVector3Decode,
     });
 
-    int const max = (MaxPositionChangePerSnapshot) * 6 + 1;
+    int const max = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
     for (const auto& test : tests)
     {
         {
@@ -2433,7 +2433,7 @@ std::vector<uint8_t> Encode(
                             target[i].position_z - base[i].position_z,
                         };
 
-                        auto maxMagnitude = MaxPositionChangePerSnapshot * frameDelta;
+                        unsigned maxMagnitude = 1 + static_cast<unsigned>(MaxPositionChangePerSnapshot * frameDelta);
                         auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
                         assert(mag < maxMagnitude);
 
@@ -2549,13 +2549,13 @@ std::vector<uint8_t> Encode(
     {
         // do some research to see if probabilites of
         // bits to bits are non-random.
-        auto count = changedCompressed.Bits();
+        auto countBits = changedCompressed.Bits();
 
         changedCompressed.Reset();
 
         auto last = changedCompressed.Read(1);
 
-        while (changedCompressed.Bits() < count)
+        while (changedCompressed.Bits() < countBits)
         {
             if (last)
             {
@@ -2675,7 +2675,7 @@ Frame Decode(
     {
         if (changed.Read(1))
         {
-            bool quadChanged = bits.Read(1);
+            auto quadChanged = bits.Read(1);
 
             if (quadChanged)
             {
@@ -2729,7 +2729,7 @@ Frame Decode(
                 result[i].orientation_c         = base[i].orientation_c;
             }
 
-            bool posChanged = bits.Read(1);
+            auto posChanged = bits.Read(1);
 
             if (posChanged)
             {
@@ -2748,7 +2748,7 @@ Frame Decode(
                     case PosVector3Packer::BitVector3_2BitExpPrefix:
                     case PosVector3Packer::BitVector3Truncated:
                     {
-                        auto maxMagnitude = MaxPositionChangePerSnapshot * frameDelta;
+                        unsigned maxMagnitude = 1 + static_cast<unsigned>(MaxPositionChangePerSnapshot * frameDelta);
 
                         IntVec3 vec;
 
@@ -2835,7 +2835,7 @@ int main(int, char**)
         SCOPED_EXIT(fclose(fileHandle));
 
         fseek(fileHandle, 0, SEEK_END);
-        const auto size = ftell(fileHandle);s
+        const auto size = ftell(fileHandle);
         fseek(fileHandle, 0, SEEK_SET);
 
         const auto frameCount = size / sizeof(Frame);
