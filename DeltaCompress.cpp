@@ -228,6 +228,13 @@ struct Stats
 
     unsigned quatDeltaUnpackedBitCount;
     MinMaxSum quatDeltaPackedBitCount;
+
+    unsigned bitStream0;
+    unsigned bitStream1;
+    unsigned bitStream00;
+    unsigned bitStream01;
+    unsigned bitStream10;
+    unsigned bitStream11;
 };
 
 enum class ChangedArrayEncoding
@@ -2539,6 +2546,48 @@ std::vector<uint8_t> Encode(
 
     assert(changedCompressed.Bits() <= 901);
 
+    {
+        // do some research to see if probabilites of
+        // bits to bits are non-random.
+        auto count = changedCompressed.Bits();
+
+        changedCompressed.Reset();
+
+        auto last = changedCompressed.Read(1);
+
+        while (changedCompressed.Bits() < count)
+        {
+            if (last)
+            {
+                ++stats.bitStream1;
+
+                last = changedCompressed.Read(1);
+                if (last)
+                {
+                    ++stats.bitStream11;
+                }
+                else
+                {
+                    ++stats.bitStream10;
+                }
+            }
+            else
+            {
+                ++stats.bitStream0;
+
+                last = changedCompressed.Read(1);
+                if (last)
+                {
+                    ++stats.bitStream01;
+                }
+                else
+                {
+                    ++stats.bitStream00;
+                }
+            }
+        }
+    }
+
     result.Write(changedCompressed);
     result.Write(deltas);
 
@@ -2786,7 +2835,7 @@ int main(int, char**)
         SCOPED_EXIT(fclose(fileHandle));
 
         fseek(fileHandle, 0, SEEK_END);
-        const auto size = ftell(fileHandle);
+        const auto size = ftell(fileHandle);s
         fseek(fileHandle, 0, SEEK_SET);
 
         const auto frameCount = size / sizeof(Frame);
@@ -2843,6 +2892,12 @@ int main(int, char**)
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
         0,
         {static_cast<unsigned>(MaxPositionChangePerSnapshot * 20),0,0,0},
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
     };
 
     for (size_t i = PacketDelta; i < size; ++i)
@@ -2901,7 +2956,7 @@ int main(int, char**)
         packetsCoded++;
     }
 
-    float packetSizeAverge = ((float) bytes) / (size - PacketDelta);
+    float packetSizeAverge = ((float) bytes) / packetsCoded;
     float bytesPerSecondAverage = packetSizeAverge * 60.0f;
     float kbps = bytesPerSecondAverage * 8 / 1000.0f;
 
@@ -3007,6 +3062,15 @@ int main(int, char**)
     PRINT_FLOAT(bytesAvg)
     PRINT_INT(stats.bytesPerPacket.min)
     PRINT_INT(stats.bytesPerPacket.max)
+
+    printf("\n");
+
+    PRINT_INT(stats.bitStream0)
+    PRINT_INT(stats.bitStream1)
+    PRINT_INT(stats.bitStream00)
+    PRINT_INT(stats.bitStream01)
+    PRINT_INT(stats.bitStream10)
+    PRINT_INT(stats.bitStream11)
 
     printf("\n");
     printf("\n");
