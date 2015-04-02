@@ -21,8 +21,8 @@
 // //////////////////////////////////////////////////////
 
 bool doTests        = false;
-bool doStats        = false;
-bool doCompression  = true;
+bool doStats        = true;
+bool doCompression  = false;
 
 // //////////////////////////////////////////////////////
 
@@ -249,6 +249,8 @@ struct Stats
 
     std::array<unsigned, RotationMaxBits + 2> quatMinBitCounts;
     std::array<unsigned, RotationMaxBits + 2> quatFullEncodeBits;
+
+    std::array<unsigned, 1 << 12> quantCommonHistogram;
 };
 
 enum class ChangedArrayEncoding
@@ -2585,6 +2587,22 @@ std::vector<uint8_t> EncodeStats(
                             target[i].position_z - base[i].position_z,
                         };
 
+                        // Get stats so I can get the most common quats
+                        // for a lookup dictionary.
+                        {
+                            auto za = ZigZag(vec.x);
+                            auto zb = ZigZag(vec.y);
+                            auto zc = ZigZag(vec.z);
+
+                            // for stats, only keep the top 4 bits.
+                            za >>= ((RotationMaxBits + 1) - 4);
+                            zb >>= ((RotationMaxBits + 1) - 4);
+                            zc >>= ((RotationMaxBits + 1) - 4);
+
+                            unsigned hash = za + (zb << 4) + (zc << 8);
+                            ++stats.quantCommonHistogram[hash];
+                        }
+
                         unsigned maxMagnitude = 1 + static_cast<unsigned>(MaxPositionChangePerSnapshot * frameDelta);
                         auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
                         assert(mag < maxMagnitude);
@@ -3076,7 +3094,6 @@ Frame Decode(
         QuatPacker::None,
     })
 {
-    // A.
     if (buffer.empty())
     {
         return base;
@@ -3352,6 +3369,7 @@ void CalculateStats(std::vector<Frame>& frames)
         0,
         {0},
         {0},
+        {0},
     };
 
     // Lets actually do the stuff.
@@ -3519,6 +3537,12 @@ void CalculateStats(std::vector<Frame>& frames)
     printf("\n");
 
     printf("\n==============================================\n");
+
+    auto histoSize = stats.quantCommonHistogram.size();
+    for (unsigned i = 0; i < histoSize; ++i)
+    {
+        printf("%d, %d\n", i, stats.quantCommonHistogram[i]);
+    }
 }
 
 // //////////////////////////////////////////////////////
