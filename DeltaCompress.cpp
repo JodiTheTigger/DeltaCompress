@@ -21,8 +21,8 @@
 // //////////////////////////////////////////////////////
 
 bool doTests        = false;
-bool doStats        = true;
-bool doCompression  = false;
+bool doStats        = false;
+bool doCompression  = true;
 
 // //////////////////////////////////////////////////////
 
@@ -92,6 +92,9 @@ static_assert(Cubes < ((1 << CubeBits) - 1), "CubeBits is too small.");
 // With this technique I’ve found that minimum sufficient precision for
 // my simulation is 9 bits per-smallest component. This gives a result
 // of 2 + 9 + 9 + 9 = 29 bits per-orientation (originally 128!).
+
+// NOTE: All quanternion values are positive even though they are stored
+//       as ints.
 
 static const unsigned RotationMaxBits = 9;
 static const unsigned RotationIndexMaxBits = 2;
@@ -272,41 +275,6 @@ enum class QuatPacker
     BitVector3Unrelated,
     BitVector3BitCount,
 };
-
-void DoSomeStats(const Frame& base, const Frame& target, Stats& stats)
-{
-    assert(base.size() == target.size());
-    assert(!base.empty());
-
-    auto size = base.size();
-    for (size_t i = 0; i < size; ++i)
-    {
-        stats.itemCount++;
-
-        if (base[i] == target[i])
-        {
-            stats.notChangedCount++;
-        }
-
-        if (base[i].interacting)
-        {
-            stats.interactingTotal++;
-
-            if (base[i].interacting == target[i].interacting)
-            {
-                stats.interactingNotChanged++;
-            }
-        }
-
-        if (!base[i].interacting)
-        {
-            if (base[i].interacting == target[i].interacting)
-            {
-                stats.notInteractingNotChanged++;
-            }
-        }
-    }
-}
 
 // //////////////////////////////////////////////////////
 
@@ -2317,25 +2285,19 @@ struct Config
     QuatPacker              quatPacker;
 };
 
-std::vector<uint8_t> Encode(
+// //////////////////////////////////////////////////////
+
+std::vector<uint8_t> EncodeStats(
     const Frame& base,
     const Frame& target,
     unsigned frameDelta,
     Stats& stats,
-    Config config =
-    {
-        ChangedArrayEncoding::None,
-        PosVector3Packer::None,
-        QuatPacker::None,
-    })
+    Config config)
 {
     const auto count = base.size();
 
     assert(count > 0);
     assert(count == target.size());
-
-    // ////////////////////////////////
-    // A. If nothing changed, don't send anything at all.
 
     bool same = true;
     size_t firstChanged = 0;
@@ -2464,25 +2426,25 @@ std::vector<uint8_t> Encode(
                     stats.deltaABC.Update(dSum);
                 }
 
-				// More stats on how many bits are needed to encode the non-delta quat.
+                // More stats on how many bits are needed to encode the non-delta quat.
                 auto a = ZigZag(target[i].orientation_a - base[i].orientation_a);
-				auto b = ZigZag(target[i].orientation_b - base[i].orientation_b);
-				auto c = ZigZag(target[i].orientation_c - base[i].orientation_c);
+                auto b = ZigZag(target[i].orientation_b - base[i].orientation_b);
+                auto c = ZigZag(target[i].orientation_c - base[i].orientation_c);
 
                 for (unsigned j = 0; j <= RotationMaxBits + 1; ++j)
-				{
-					auto max = (1u << j) - 1;
+                {
+                    auto max = (1u << j) - 1;
 
-					if	(
-							(a <= max) &&
-							(b <= max) &&
-							(c <= max)
-						)
-					{
-						++stats.quatMinBitCounts[j];
-						break;
-					}
-				}
+                    if	(
+                            (a <= max) &&
+                            (b <= max) &&
+                            (c <= max)
+                        )
+                    {
+                        ++stats.quatMinBitCounts[j];
+                        break;
+                    }
+                }
 
                 switch (config.quatPacker)
                 {
@@ -2786,6 +2748,323 @@ std::vector<uint8_t> Encode(
     return result.Data();
 }
 
+// //////////////////////////////////////////////////////
+
+std::vector<uint8_t> Encode(
+    const Frame& base,
+    const Frame& target,
+    unsigned frameDelta,
+    Config config =
+    {
+        ChangedArrayEncoding::None,
+        PosVector3Packer::None,
+        QuatPacker::None,
+    })
+{
+    const auto count = base.size();
+
+    assert(count > 0);
+    assert(count == target.size());
+
+    bool same = true;
+    size_t firstChanged = 0;
+    for (;firstChanged < count; ++firstChanged)
+    {
+        if (base[firstChanged] != target[firstChanged])
+        {
+            same = false;
+            break;
+        }
+    }
+
+    if (same)
+    {
+        return {};
+    }
+
+    // ////////////////////////////////
+
+    BitStream result;
+
+    BitStream changed;
+    BitStream deltas;
+
+    unsigned runLength0 = 0;
+    unsigned runLength1 = 0;
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (base[i] == target[i])
+        {
+            changed.Write(0, 1);
+            ++runLength0;
+
+            runLength1 = 0;
+        }
+        else
+        {
+            changed.Write(1, 1);
+            ++runLength1;
+
+            runLength0 = 0;
+
+            assert(target[i].orientation_a >= 0);
+            assert(target[i].orientation_b >= 0);
+            assert(target[i].orientation_c >= 0);
+
+            bool posSame =
+                    (base[i].position_x == target[i].position_x) &&
+                    (base[i].position_y == target[i].position_y) &&
+                    (base[i].position_z == target[i].position_z);
+
+            bool quatSame =
+                    (base[i].orientation_largest == target[i].orientation_largest) &&
+                    (base[i].orientation_a == target[i].orientation_a) &&
+                    (base[i].orientation_b == target[i].orientation_b) &&
+                    (base[i].orientation_c == target[i].orientation_c);
+
+            // Only write what's changed
+            if (quatSame)
+            {
+                deltas.Write(0, 1);
+            }
+            else
+            {
+                deltas.Write(1, 1);
+
+                const auto vec3BitsUncompressed = (RotationMaxBits * 3);
+
+                switch (config.quatPacker)
+                {
+                    default:
+                    case QuatPacker::None:
+                    {
+                        deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+                        deltas.Write(target[i].orientation_a, RotationMaxBits);
+                        deltas.Write(target[i].orientation_b, RotationMaxBits);
+                        deltas.Write(target[i].orientation_c, RotationMaxBits);
+                        break;
+                    }
+
+                    case QuatPacker::BitVector3Unrelated:
+                    case QuatPacker::BitVector3BitCount:
+                    {
+                        unsigned bitsWritten = 2;
+                        deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+
+                        auto vec = IntVec3
+                        {
+                            target[i].orientation_a - base[i].orientation_a,
+                            target[i].orientation_b - base[i].orientation_b,
+                            target[i].orientation_c - base[i].orientation_c,
+                        };
+
+                        BitStream encoded;
+                        unsigned codedBits = 0;
+
+                        if (config.quatPacker == QuatPacker::BitVector3Unrelated)
+                        {
+                            codedBits = BitVector3UnrelatedEncode(
+                                vec,
+                                (1 << RotationMaxBits) - 1,
+                                encoded);
+
+                            if (codedBits < vec3BitsUncompressed)
+                            {
+                                deltas.Write(0, 1);
+                                deltas.Write(encoded);
+
+                                bitsWritten += 1 + codedBits;
+                            }
+                            else
+                            {
+                                deltas.Write(1, 1);
+                                deltas.Write(target[i].orientation_a, RotationMaxBits);
+                                deltas.Write(target[i].orientation_b, RotationMaxBits);
+                                deltas.Write(target[i].orientation_c, RotationMaxBits);
+
+                                bitsWritten += 1 + vec3BitsUncompressed;
+                            }
+                        }
+                        else
+                        {
+                            auto a = ZigZag(vec.x);
+                            auto b = ZigZag(vec.y);
+                            auto c = ZigZag(vec.z);
+
+                            auto ba = MinBits(a);
+                            auto bb = MinBits(b);
+                            auto bc = MinBits(c);
+
+                            auto minBits = std::max(ba, bb);
+                            minBits = std::max(minBits, bc);
+
+                            // Even though I would save 3 bits for 8, it'll
+                            // cost me and extra bit for smaller minBits
+                            // prefixes, which taking into consideration the
+                            // probabilites, ends up using more bits in total.
+                            if (minBits >= QuanternionUncompressedBitThreshold)
+                            {
+                                deltas.Write(1, 1);
+                                deltas.Write(target[i].orientation_a, RotationMaxBits);
+                                deltas.Write(target[i].orientation_b, RotationMaxBits);
+                                deltas.Write(target[i].orientation_c, RotationMaxBits);
+
+                                bitsWritten += 1 + vec3BitsUncompressed;
+                            }
+                            else
+                            {
+                                deltas.Write(0, 1);
+
+                                // -2 == -1 for the largest value, then
+                                // -1 to account that we already count the sign
+                                // bit.
+                                codedBits = BitVector3BitCountEncode(
+                                    vec,
+                                    (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
+                                    encoded);
+
+                                deltas.Write(encoded);
+                                bitsWritten += 1 + codedBits;
+                            }
+                        }
+
+                        // *sniff* worst case == vec3BitsUncompressed + 1.
+                        //assert(bitsWritten < vec3BitsUncompressed);
+                        break;
+                    }
+                }
+            }
+
+            if (posSame)
+            {
+                deltas.Write(0, 1);
+            }
+            else
+            {
+                deltas.Write(1, 1);
+
+                switch (config.posPacker)
+                {
+                    default:
+                    case PosVector3Packer::None:
+                    {
+                        deltas.Write(ZigZag(target[i].position_x), MaxBitsXY);
+                        deltas.Write(ZigZag(target[i].position_y), MaxBitsXY);
+                        deltas.Write(target[i].position_z, MaxBitsZ);
+                        break;
+                    }
+
+                    case PosVector3Packer::BitVector3:
+                    case PosVector3Packer::BitVector3_2BitExpPrefix:
+                    case PosVector3Packer::BitVector3Truncated:
+                    {
+                        // GLEE, actually writing a delta this time!
+                        auto vec = IntVec3
+                        {
+                            target[i].position_x - base[i].position_x,
+                            target[i].position_y - base[i].position_y,
+                            target[i].position_z - base[i].position_z,
+                        };
+
+                        unsigned maxMagnitude = 1 + static_cast<unsigned>(MaxPositionChangePerSnapshot * frameDelta);
+                        auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
+                        assert(mag < maxMagnitude);
+
+                        unsigned bitsWritten;
+                        switch (config.posPacker)
+                        {
+                            default:
+                            case PosVector3Packer::BitVector3:
+                            {
+                                bitsWritten = BitVector3Encode(
+                                    vec,
+                                    maxMagnitude,
+                                    deltas);
+
+                                break;
+                            }
+
+                            case PosVector3Packer::BitVector3_2BitExpPrefix:
+                            {
+                                bitsWritten = BitVector3Encode2BitExpPrefix(
+                                    vec,
+                                    maxMagnitude,
+                                    deltas);
+
+                                break;
+                            }
+
+                            case PosVector3Packer::BitVector3Truncated:
+                            {
+                                bitsWritten = BitVector3TruncatedEncode(
+                                    vec,
+                                    maxMagnitude,
+                                    deltas);
+
+                                break;
+                            }
+                        }
+
+                        assert(bitsWritten < ((MaxBitsXY * 2) + MaxBitsZ));
+                        break;
+                    }
+                }
+            }
+
+            deltas.Write(target[i].interacting, 1);
+        }
+    }
+
+    auto changedCompressed = [&changed, &config]()
+    {
+        switch (config.rle)
+        {
+            default:
+            case ChangedArrayEncoding::None:
+            {
+                return changed;
+            }
+
+            case ChangedArrayEncoding::Rle:
+            {
+                auto result = RunLengthEncode(changed.Data());
+                return BitStream(result, result.size() * 8);
+            }
+
+            case ChangedArrayEncoding::BitPack:
+            {
+                auto result = BitPackEncode(changed.Data());
+                return BitStream(result, result.size() * 8);
+            }
+
+            case ChangedArrayEncoding::Exp:
+            {
+                return ExponentialBitLevelRunLengthEncode(changed);
+            }
+
+            case ChangedArrayEncoding::BitBitPack:
+            {
+                return BitBitPackEncode(changed);
+            }
+
+            case ChangedArrayEncoding::BitBitFullPack:
+            {
+                return BitBitPackFullEncode(changed);
+            }
+        }
+    }();
+
+    assert(changedCompressed.Bits() <= Cubes);
+
+    result.Write(changedCompressed);
+    result.Write(deltas);
+
+    result.TrimZerosFromBack();
+
+    return result.Data();
+}
+
 Frame Decode(
     const Frame& base,
     std::vector<uint8_t>& buffer,
@@ -3075,26 +3354,6 @@ void CalculateStats(std::vector<Frame>& frames)
         {0},
     };
 
-    for (size_t i = PacketDelta; i < size; ++i)
-    {
-         DoSomeStats(frames[i-PacketDelta], frames[i], stats);
-    }
-
-
-    PRINT_INT(stats.itemCount)
-    PRINT_INT(stats.notChangedCount)
-    PRINT_INT(stats.interactingTotal)
-    PRINT_INT(stats.interactingNotChanged)
-    PRINT_INT(stats.notInteractingNotChanged)
-
-    auto percentUnchanged = (100.0f * stats.notChangedCount) / stats.itemCount;
-    auto percentIUnchanged = (100.0f * stats.interactingNotChanged) / stats.interactingTotal;
-    auto percentSUnchanged = (100.0f * stats.notInteractingNotChanged) / (stats.itemCount - stats.interactingTotal);
-
-    PRINT_FLOAT(percentUnchanged)
-    PRINT_FLOAT(percentIUnchanged)
-    PRINT_FLOAT(percentSUnchanged)
-
     // Lets actually do the stuff.
     unsigned bytes = 0;
     unsigned packetsCoded = 0;
@@ -3107,7 +3366,7 @@ void CalculateStats(std::vector<Frame>& frames)
 
     for (size_t i = PacketDelta; i < size; ++i)
     {
-        auto buffer = Encode(
+        auto buffer = EncodeStats(
             frames[i-PacketDelta],
             frames[i],
             PacketDelta,
@@ -3277,20 +3536,15 @@ void Compress(std::vector<Frame>& frames)
         QuatPacker::BitVector3BitCount,
     };
 
-    // RAM: TOREMOVE
-    Stats stats;
-
     for (size_t i = PacketDelta; i < packets; ++i)
     {
         auto buffer = Encode(
             frames[i-PacketDelta],
             frames[i],
             PacketDelta,
-            stats,
             config);
 
         bytes += buffer.size();
-        stats.bytesPerPacket.Update(buffer.size());
 
         auto back = Decode(
             frames[i-PacketDelta],
