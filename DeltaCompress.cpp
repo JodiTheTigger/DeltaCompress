@@ -20,6 +20,12 @@
 
 // //////////////////////////////////////////////////////
 
+bool doTests        = false;
+bool doStats        = true;
+bool doCompression  = false;
+
+// //////////////////////////////////////////////////////
+
 // http://the-witness.net/news/2012/11/scopeexit-in-c11/
 
 template <typename F>
@@ -3008,49 +3014,22 @@ Frame Decode(
 
 // //////////////////////////////////////////////////////
 
-int main(int, char**)
+void Tests()
 {
-//    TestTruncate();
-//    BitVector3Tests();
-//    RunLengthTests();
-//    BitStreamTest();
-//    ZigZagTest();
+    TestTruncate();
+    BitVector3Tests();
+    RunLengthTests();
+    BitStreamTest();
+    ZigZagTest();
+}
 
-    // //////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////
 
-    auto frames = []() -> std::vector<Frame>
-    {
-        const auto fileHandle = fopen("delta_data.bin", "rb");
-        if (!fileHandle)
-        {
-            printf("ERROR: Cannot open 'delta_data.bin' for reading.\n");
-            return {};
-        }
-        SCOPED_EXIT(fclose(fileHandle));
+#define PRINT_INT(x) printf("%-32s\t%d\n", #x, x);
+#define PRINT_FLOAT(x) printf("%-32s\t%f\n", #x, x);
 
-        fseek(fileHandle, 0, SEEK_END);
-        const auto size = ftell(fileHandle);
-        fseek(fileHandle, 0, SEEK_SET);
-
-        const auto frameCount = size / sizeof(Frame);
-
-        // I really hate how I cannot make an array without initilising it first.
-        std::vector<Frame> frames(frameCount);
-
-        fread(
-            frames.data(),
-            sizeof(Frame),
-            frameCount,
-            fileHandle);
-
-        return frames;
-    }();
-
-    if (frames.empty())
-    {
-        return 1;
-    }
-
+void CalculateStats(std::vector<Frame>& frames)
+{
     // Lets do some research
     auto size = frames.size();
     Stats stats
@@ -3101,7 +3080,6 @@ int main(int, char**)
          DoSomeStats(frames[i-PacketDelta], frames[i], stats);
     }
 
-    #define PRINT_INT(x) printf("%-32s\t%d\n", #x, x);
 
     PRINT_INT(stats.itemCount)
     PRINT_INT(stats.notChangedCount)
@@ -3112,8 +3090,6 @@ int main(int, char**)
     auto percentUnchanged = (100.0f * stats.notChangedCount) / stats.itemCount;
     auto percentIUnchanged = (100.0f * stats.interactingNotChanged) / stats.interactingTotal;
     auto percentSUnchanged = (100.0f * stats.notInteractingNotChanged) / (stats.itemCount - stats.interactingTotal);
-
-    #define PRINT_FLOAT(x) printf("%-32s\t%f\n", #x, x);
 
     PRINT_FLOAT(percentUnchanged)
     PRINT_FLOAT(percentIUnchanged)
@@ -3141,26 +3117,11 @@ int main(int, char**)
         bytes += buffer.size();
         stats.bytesPerPacket.Update(buffer.size());
 
-        auto back = Decode(
-            frames[i-PacketDelta],
-            buffer,
-            PacketDelta,
-            config);
-
-        assert(back == frames[i]);
-
         packetsCoded++;
     }
 
-    float packetSizeAverge = ((float) bytes) / packetsCoded;
-    float bytesPerSecondAverage = packetSizeAverge * 60.0f;
-    float kbps = bytesPerSecondAverage * 8 / 1000.0f;
 
-    PRINT_INT(bytes)
-    PRINT_INT(packetsCoded)
-    PRINT_FLOAT(packetSizeAverge)
-    PRINT_FLOAT(bytesPerSecondAverage)
-    PRINT_FLOAT(kbps)
+    printf("== Statistics ================================\n\n");
 
     float changedBitsTotal  = (901.0f * packetsCoded);
     float rle               = 100 * (stats.rle.sum / changedBitsTotal);
@@ -3268,21 +3229,21 @@ int main(int, char**)
     PRINT_INT(stats.bitStream10)
     PRINT_INT(stats.bitStream11)
 
-    printf("\n"); 
+    printf("\n");
 
-	PRINT_INT(stats.quatMinBitCounts[0])
-	PRINT_INT(stats.quatMinBitCounts[1])
-	PRINT_INT(stats.quatMinBitCounts[2])
-	PRINT_INT(stats.quatMinBitCounts[3])
-	PRINT_INT(stats.quatMinBitCounts[4])
-	PRINT_INT(stats.quatMinBitCounts[5])
-	PRINT_INT(stats.quatMinBitCounts[6])
-	PRINT_INT(stats.quatMinBitCounts[7])
+    PRINT_INT(stats.quatMinBitCounts[0])
+    PRINT_INT(stats.quatMinBitCounts[1])
+    PRINT_INT(stats.quatMinBitCounts[2])
+    PRINT_INT(stats.quatMinBitCounts[3])
+    PRINT_INT(stats.quatMinBitCounts[4])
+    PRINT_INT(stats.quatMinBitCounts[5])
+    PRINT_INT(stats.quatMinBitCounts[6])
+    PRINT_INT(stats.quatMinBitCounts[7])
     PRINT_INT(stats.quatMinBitCounts[8])
     PRINT_INT(stats.quatMinBitCounts[9])
     PRINT_INT(stats.quatMinBitCounts[10])
 
-	printf("\n");
+    printf("\n");
 
     PRINT_INT(stats.quatFullEncodeBits[0])
     PRINT_INT(stats.quatFullEncodeBits[1])
@@ -3297,9 +3258,118 @@ int main(int, char**)
     PRINT_INT(stats.quatFullEncodeBits[10])
 
     printf("\n");
-    printf("\n");
 
+    printf("\n==============================================\n");
+}
+
+// //////////////////////////////////////////////////////
+
+void Compress(std::vector<Frame>& frames)
+{
+    auto packets = frames.size();
+    unsigned bytes = 0;
+    unsigned packetsCoded = 0;
+
+    Config config
+    {
+        ChangedArrayEncoding::Exp,
+        PosVector3Packer::BitVector3Truncated,
+        QuatPacker::BitVector3BitCount,
+    };
+
+    // RAM: TOREMOVE
+    Stats stats;
+
+    for (size_t i = PacketDelta; i < packets; ++i)
+    {
+        auto buffer = Encode(
+            frames[i-PacketDelta],
+            frames[i],
+            PacketDelta,
+            stats,
+            config);
+
+        bytes += buffer.size();
+        stats.bytesPerPacket.Update(buffer.size());
+
+        auto back = Decode(
+            frames[i-PacketDelta],
+            buffer,
+            PacketDelta,
+            config);
+
+        assert(back == frames[i]);
+
+        packetsCoded++;
+    }
+
+    float packetSizeAverge = ((float) bytes) / packetsCoded;
+    float bytesPerSecondAverage = packetSizeAverge * 60.0f;
+    float kbps = bytesPerSecondAverage * 8 / 1000.0f;
+
+    printf("\n");
+    printf("== Compression ===============================\n\n");
+
+    PRINT_INT(packetsCoded)
+    PRINT_INT(bytes)
+    PRINT_FLOAT(bytesPerSecondAverage)
+    PRINT_FLOAT(packetSizeAverge)
     PRINT_FLOAT(kbps)
+
+    printf("\n==============================================\n");
+}
+
+int main(int, char**)
+{
+    auto frames = []() -> std::vector<Frame>
+    {
+        const auto fileHandle = fopen("delta_data.bin", "rb");
+        if (!fileHandle)
+        {
+            printf("ERROR: Cannot open 'delta_data.bin' for reading.\n");
+            return {};
+        }
+        SCOPED_EXIT(fclose(fileHandle));
+
+        fseek(fileHandle, 0, SEEK_END);
+        const auto size = ftell(fileHandle);
+        fseek(fileHandle, 0, SEEK_SET);
+
+        const auto frameCount = size / sizeof(Frame);
+
+        // I really hate how I cannot make an array without initilising it first.
+        std::vector<Frame> frames(frameCount);
+
+        fread(
+            frames.data(),
+            sizeof(Frame),
+            frameCount,
+            fileHandle);
+
+        return frames;
+    }();
+
+    if (frames.empty())
+    {
+        return 1;
+    }
+
+    // //////////////////////////////////////////////////////
+
+    if (doTests)
+    {
+        Tests();
+    }
+
+    if (doStats)
+    {
+        CalculateStats(frames);
+    }
+
+    if (doCompression)
+    {
+        Compress(frames);
+    }
 
     return 0;
 }
