@@ -197,6 +197,8 @@ struct MinMaxSum
     }
 };
 
+static const unsigned quantHistogramBitsPerComponent = 3;
+
 struct Stats
 {
     MinMaxSum bytesPerPacket;
@@ -250,7 +252,10 @@ struct Stats
     std::array<unsigned, RotationMaxBits + 2> quatMinBitCounts;
     std::array<unsigned, RotationMaxBits + 2> quatFullEncodeBits;
 
-    std::array<unsigned, 1 << 12> quantCommonHistogram;
+    std::array<unsigned, 8> quantWhichIsBigger;
+
+    std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogram;
+    std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogramTooBig;
 };
 
 enum class ChangedArrayEncoding
@@ -2473,6 +2478,40 @@ std::vector<uint8_t> EncodeStats(
                             target[i].orientation_c - base[i].orientation_c,
                         };
 
+                        // Get stats so I can get the most common quats
+                        // for a lookup dictionary.
+                        {
+                            // top 8 common, then after those the
+                            // next set is an order of magnitude less
+                            // c, b, a
+                            // 1496, 16911 = 10000 10000 01111
+                            // 1342, 16879 = 10000 01111 01111
+                            // 1252, 16912 = 10000 10000 10000
+                            // 1142, 15888 = 01111 10000 10000
+                            // 1113, 15855 = 01111 01111 01111
+                            // 1106, 15856 = 01111 01111 10000
+                            // 1037, 15887 = 01111 10000 01111
+                            // 1021, 16880 = 10000 01111 10000
+                            auto za = target[i].orientation_a;
+                            auto zb = target[i].orientation_b;
+                            auto zc = target[i].orientation_c;
+
+                            // for stats, only keep the top 4 bits.
+                            auto shift =
+                                RotationMaxBits -
+                                quantHistogramBitsPerComponent;
+                            auto sza = za >> shift;
+                            auto szb = zb >> shift;
+                            auto szc = zc >> shift;
+
+                            unsigned hash =
+                                    sza +
+                                    (szb << quantHistogramBitsPerComponent) +
+                                    (szc << (quantHistogramBitsPerComponent * 2));
+
+                            ++stats.quantCommonHistogram[hash];
+                        }
+
                         BitStream encoded;
                         unsigned codedBits = 0;
 
@@ -2529,6 +2568,75 @@ std::vector<uint8_t> EncodeStats(
                                 deltas.Write(target[i].orientation_c, RotationMaxBits);
 
                                 bitsWritten += 1 + vec3BitsUncompressed;
+
+                                {
+                                    auto whosBigger = 0;
+                                    if (ba >= QuanternionUncompressedBitThreshold)
+                                    {
+                                        whosBigger |= 1;
+                                    }
+                                    if (bb >= QuanternionUncompressedBitThreshold)
+                                    {
+                                        whosBigger |= 2;
+                                    }
+                                    if (bc >= QuanternionUncompressedBitThreshold)
+                                    {
+                                        whosBigger |= 4;
+                                    }
+
+                                    ++stats.quantWhichIsBigger[whosBigger];
+                                }
+
+                                {
+                                    static unsigned countD = 0;
+
+                                    if (countD < 100)
+                                    {
+                                        countD++;
+
+                                        printf("-------------------\n");
+
+                                        printf(
+                                            "%d - %d = %d\n",
+                                            target[i].orientation_a,
+                                            base[i].orientation_a,
+                                            target[i].orientation_a - base[i].orientation_a);
+                                        printf(
+                                            "%d - %d = %d\n",
+                                            target[i].orientation_b,
+                                            base[i].orientation_b,
+                                            target[i].orientation_b - base[i].orientation_b);
+                                        printf(
+                                            "%d - %d = %d\n",
+                                            target[i].orientation_c,
+                                            base[i].orientation_c,
+                                            target[i].orientation_c - base[i].orientation_c);
+                                    }
+                                }
+
+
+                                // Get stats so I can get the most common quats
+                                // for a lookup dictionary.
+                                {
+                                    auto za = target[i].orientation_a;
+                                    auto zb = target[i].orientation_b;
+                                    auto zc = target[i].orientation_c;
+
+                                    // for stats, only keep the top 4 bits.
+                                    auto shift =
+                                        RotationMaxBits -
+                                        quantHistogramBitsPerComponent;
+                                    auto sza = za >> shift;
+                                    auto szb = zb >> shift;
+                                    auto szc = zc >> shift;
+
+                                    unsigned hash =
+                                            sza +
+                                            (szb << quantHistogramBitsPerComponent) +
+                                            (szc << (quantHistogramBitsPerComponent * 2));
+
+                                    ++stats.quantCommonHistogramTooBig[hash];
+                                }
                             }
                             else
                             {
@@ -2586,22 +2694,6 @@ std::vector<uint8_t> EncodeStats(
                             target[i].position_y - base[i].position_y,
                             target[i].position_z - base[i].position_z,
                         };
-
-                        // Get stats so I can get the most common quats
-                        // for a lookup dictionary.
-                        {
-                            auto za = ZigZag(vec.x);
-                            auto zb = ZigZag(vec.y);
-                            auto zc = ZigZag(vec.z);
-
-                            // for stats, only keep the top 4 bits.
-                            za >>= ((RotationMaxBits + 1) - 4);
-                            zb >>= ((RotationMaxBits + 1) - 4);
-                            zc >>= ((RotationMaxBits + 1) - 4);
-
-                            unsigned hash = za + (zb << 4) + (zc << 8);
-                            ++stats.quantCommonHistogram[hash];
-                        }
 
                         unsigned maxMagnitude = 1 + static_cast<unsigned>(MaxPositionChangePerSnapshot * frameDelta);
                         auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
@@ -3370,6 +3462,8 @@ void CalculateStats(std::vector<Frame>& frames)
         {0},
         {0},
         {0},
+        {0},
+        {0},
     };
 
     // Lets actually do the stuff.
@@ -3536,13 +3630,38 @@ void CalculateStats(std::vector<Frame>& frames)
 
     printf("\n");
 
+    PRINT_INT(stats.quantWhichIsBigger[0]);
+    PRINT_INT(stats.quantWhichIsBigger[1]);
+    PRINT_INT(stats.quantWhichIsBigger[2]);
+    PRINT_INT(stats.quantWhichIsBigger[3]);
+    PRINT_INT(stats.quantWhichIsBigger[4]);
+    PRINT_INT(stats.quantWhichIsBigger[5]);
+    PRINT_INT(stats.quantWhichIsBigger[6]);
+    PRINT_INT(stats.quantWhichIsBigger[7]);
+
     printf("\n==============================================\n");
 
     auto histoSize = stats.quantCommonHistogram.size();
+//    for (unsigned i = 0; i < histoSize; ++i)
+//    {
+//        printf("%d, %d\n", stats.quantCommonHistogram[i], i);
+//    }
+
     for (unsigned i = 0; i < histoSize; ++i)
     {
-        printf("%d, %d\n", i, stats.quantCommonHistogram[i]);
+        auto value = stats.quantCommonHistogramTooBig[i];
+        unsigned a = (i & 31) << 4;
+        unsigned b = ((i >> quantHistogramBitsPerComponent) & 31) << 4;
+        unsigned c = ((i >> (2 * quantHistogramBitsPerComponent)) & 31) << 4;
+        printf(
+            "%d, %d, %d, %d, %d\n",
+            value,
+            i,
+            a,
+            b,
+            c);
     }
+
 }
 
 // //////////////////////////////////////////////////////
