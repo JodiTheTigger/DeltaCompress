@@ -20,8 +20,8 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = false;
-bool doStats        = true;
+bool doTests        = true;
+bool doStats        = false;
 bool doCompression  = false;
 
 // //////////////////////////////////////////////////////
@@ -295,6 +295,74 @@ inline constexpr int32_t ZigZag(uint32_t n)
     return (n >> 1) ^ (-(static_cast<int>(n) & 1));
 }
 
+uint32_t ZigZagEncode(unsigned target, unsigned base, unsigned maxBits)
+{
+    {
+        unsigned max = 1 << maxBits;
+        unsigned half = max >> 1;
+        int diff = static_cast<int>(target) - base;
+        int iBase = static_cast<int>(base);
+
+        if (base == half)
+        {
+            return ZigZag(diff);
+        }
+
+        if (base < half)
+        {
+            if ((diff < iBase) && (diff >= -iBase))
+            {
+                return ZigZag(diff);
+            }
+
+            return diff + base;
+        }
+
+        int antiBase = (max - base);
+
+        if ((diff < antiBase) && (diff >= -antiBase))
+        {
+            return ZigZag(diff);
+        }
+
+        return (antiBase - 1) + -diff;
+    }
+}
+
+uint32_t ZigZagDecode(unsigned value, unsigned base, unsigned maxBits)
+{
+    {
+        unsigned max = 1 << maxBits;
+        unsigned half = max >> 1;
+        int iBase = static_cast<int>(base);
+        int wtf = ((iBase - 1) * 2) + 1;
+
+        if (half == base)
+        {
+            return iBase + ZigZag(value);
+        }
+
+        if (base < half)
+        {
+            if (static_cast<int>(value) <= wtf)
+            {
+                return iBase + ZigZag(value);
+            }
+
+            return value;
+        }
+
+        unsigned antiBase = (((max - 1) - base) * 2) + 1;
+
+        if (value < antiBase)
+        {
+            return iBase + ZigZag(value);
+        }
+
+        return (max - 1) - value;
+    }
+}
+
 void ZigZagTest()
 {
     assert(42 == ZigZag(ZigZag(42)));
@@ -303,6 +371,24 @@ void ZigZagTest()
     assert(-12345 == ZigZag(ZigZag(-12345)));
     assert(30654 == ZigZag(ZigZag(30654)));
     assert(-31654 == ZigZag(ZigZag(-31654)));
+
+    {
+        auto encoded = ZigZagEncode(9, 7, 4);
+        auto decoded = ZigZagDecode(encoded, 7, 4);
+
+        assert(decoded == 9);
+    }
+
+    for (unsigned i = 0; i < 16; ++i)
+    {
+        for (unsigned j = 0; j < 16; j++)
+        {
+            auto encoded = ZigZagEncode(i, j, 4);
+            auto decoded = ZigZagDecode(encoded, j, 4);
+
+            assert(decoded == i);
+        }
+    }
 }
 
 // //////////////////////////////////////////////////////
@@ -3404,11 +3490,11 @@ Frame Decode(
 
 void Tests()
 {
+    ZigZagTest();
     TestTruncate();
     BitVector3Tests();
     RunLengthTests();
     BitStreamTest();
-    ZigZagTest();
 }
 
 // //////////////////////////////////////////////////////
@@ -3649,10 +3735,14 @@ void CalculateStats(std::vector<Frame>& frames)
 
     for (unsigned i = 0; i < histoSize; ++i)
     {
+        unsigned mask = (1 << quantHistogramBitsPerComponent) - 1;
+        unsigned shift =
+                RotationMaxBits -
+                quantHistogramBitsPerComponent;
         auto value = stats.quantCommonHistogramTooBig[i];
-        unsigned a = (i & 31) << 4;
-        unsigned b = ((i >> quantHistogramBitsPerComponent) & 31) << 4;
-        unsigned c = ((i >> (2 * quantHistogramBitsPerComponent)) & 31) << 4;
+        unsigned a = (i & mask) << shift;
+        unsigned b = ((i >> quantHistogramBitsPerComponent) & mask) << shift;
+        unsigned c = ((i >> (2 * quantHistogramBitsPerComponent)) & mask) << shift;
         printf(
             "%d, %d, %d, %d, %d\n",
             value,
