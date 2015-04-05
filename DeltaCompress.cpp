@@ -3481,9 +3481,9 @@ Frame Decode(
                                     bits);
                             }
 
-                            result[i].orientation_a = vec.x + base[i].orientation_a;
-                            result[i].orientation_b = vec.y + base[i].orientation_b;
-                            result[i].orientation_c = vec.z + base[i].orientation_c;
+                            result[i].orientation_a = vec.x;// + base[i].orientation_a;
+                            result[i].orientation_b = vec.y;// + base[i].orientation_b;
+                            result[i].orientation_c = vec.z;// + base[i].orientation_c;
                         }
                         else
                         {
