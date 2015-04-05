@@ -22,7 +22,7 @@
 
 bool doTests        = false;
 bool doStats        = true;
-bool doCompression  = true;
+bool doCompression  = false;
 
 // //////////////////////////////////////////////////////
 
@@ -2677,9 +2677,22 @@ std::vector<uint8_t> EncodeStats(
                         }
                         else
                         {
-                            auto a = ZigZag(vec.x);
-                            auto b = ZigZag(vec.y);
-                            auto c = ZigZag(vec.z);
+//                            auto a = ZigZag(vec.x);
+//                            auto b = ZigZag(vec.y);
+//                            auto c = ZigZag(vec.z);
+
+                            auto a = ZigZagEncode(
+                                        target[i].orientation_a,
+                                        base[i].orientation_a,
+                                        RotationMaxBits);
+                            auto b = ZigZagEncode(
+                                        target[i].orientation_b,
+                                        base[i].orientation_b,
+                                        RotationMaxBits);
+                            auto c = ZigZagEncode(
+                                        target[i].orientation_c,
+                                        base[i].orientation_c,
+                                        RotationMaxBits);
 
                             auto ba = MinBits(a);
                             auto bb = MinBits(b);
