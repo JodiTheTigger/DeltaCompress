@@ -1243,18 +1243,17 @@ IntVec3 BitVector3UnrelatedDecode(
 // //////////////////////////////////////////////////////
 
 unsigned BitVector3BitCountEncode(
-        IntVec3 vec,
+        IntVec3 toEncode,
+        IntVec3 base,
         unsigned maxMagnitude,
         BitStream& target)
 {
     unsigned bitsUsed = 0;
+    unsigned maxBitsPerComponent = MinBits(maxMagnitude);
 
-    // +1 for the sign bit.
-    unsigned maxBitsPerComponent = 1 + MinBits(maxMagnitude);
-
-    auto zx = ZigZag(vec.x);
-    auto zy = ZigZag(vec.y);
-    auto zz = ZigZag(vec.z);
+    auto zx = ZigZagEncode(toEncode.x, base.x, maxBitsPerComponent);
+    auto zy = ZigZagEncode(toEncode.y, base.y, maxBitsPerComponent);
+    auto zz = ZigZagEncode(toEncode.z, base.z, maxBitsPerComponent);
 
     auto minBits = std::max(MinBits(zx), MinBits(zy));
     minBits = std::max(minBits, MinBits(zz));
@@ -1299,12 +1298,13 @@ unsigned BitVector3BitCountEncode(
 }
 
 IntVec3 BitVector3BitCountDecode(
+        IntVec3 base,
         unsigned maxMagnitude,
         BitStream& source)
 {
     IntVec3 result = {0,0,0};
 
-    unsigned maxBitsPerComponent = 1 + MinBits(maxMagnitude);
+    unsigned maxBitsPerComponent = MinBits(maxMagnitude);
 
     unsigned prefixCount = 0;
     while (!source.Read(1))
@@ -1322,17 +1322,17 @@ IntVec3 BitVector3BitCountDecode(
     // //////////////////////////////////////////
 
     auto zx = source.Read(maxBitsPerComponent);
-    result.x = ZigZag(zx);
+    result.x = ZigZagDecode(zx, base.x, maxBitsPerComponent);
 
     // //////////////////////////////////////////
 
     auto zy = source.Read(maxBitsPerComponent);
-    result.y = ZigZag(zy);
+    result.y = ZigZagDecode(zy, base.y, maxBitsPerComponent);
 
     // //////////////////////////////////////////
 
     auto zz = source.Read(maxBitsPerComponent);
-    result.z = ZigZag(zz);
+    result.z = ZigZagDecode(zz, base.z, maxBitsPerComponent);
 
     return result;
 }
@@ -1349,11 +1349,49 @@ void BitVector3Tests()
 
     std::vector<Test> tests;
 
-    tests.push_back(
+// Ugh, too much of a special case now :-/
+//    tests.push_back(
+//    {
+//        BitVector3BitCountEncode,
+//        BitVector3BitCountDecode,
+//    });
+
+    auto zzMax = 16;
+    for (auto i = 0; i < zzMax; ++i)
     {
-        BitVector3BitCountEncode,
-        BitVector3BitCountDecode,
-    });
+        for (auto j = 0; j < zzMax; ++j)
+        {
+            for (auto k = 0; k < zzMax; ++k)
+            {
+                for (auto b = 0; b < zzMax; ++b)
+                {
+                    IntVec3 base =
+                    {
+                        b,
+                        zzMax - b,
+                        b / 2,
+                    };
+
+                    IntVec3 target =
+                    {
+                        i,
+                        j,
+                        k,
+                    };
+
+                    BitStream encoded;
+
+                    BitVector3BitCountEncode(target, base, 4, encoded);
+                    encoded.Reset();
+                    auto decoded = BitVector3BitCountDecode(base, 4, encoded);
+
+                    assert(i == decoded.x);
+                    assert(j == decoded.y);
+                    assert(k == decoded.z);
+                }
+            }
+        }
+    }
 
     tests.push_back(
     {
@@ -2673,32 +2711,32 @@ std::vector<uint8_t> EncodeStats(
                                     ++stats.quantWhichIsBigger[whosBigger];
                                 }
 
-                                {
-                                    static unsigned countD = 0;
+//                                {
+//                                    static unsigned countD = 0;
 
-                                    if (countD < 100)
-                                    {
-                                        countD++;
+//                                    if (countD < 100)
+//                                    {
+//                                        countD++;
 
-                                        printf("-------------------\n");
+//                                        printf("-------------------\n");
 
-                                        printf(
-                                            "%d - %d = %d\n",
-                                            target[i].orientation_a,
-                                            base[i].orientation_a,
-                                            target[i].orientation_a - base[i].orientation_a);
-                                        printf(
-                                            "%d - %d = %d\n",
-                                            target[i].orientation_b,
-                                            base[i].orientation_b,
-                                            target[i].orientation_b - base[i].orientation_b);
-                                        printf(
-                                            "%d - %d = %d\n",
-                                            target[i].orientation_c,
-                                            base[i].orientation_c,
-                                            target[i].orientation_c - base[i].orientation_c);
-                                    }
-                                }
+//                                        printf(
+//                                            "%d - %d = %d\n",
+//                                            target[i].orientation_a,
+//                                            base[i].orientation_a,
+//                                            target[i].orientation_a - base[i].orientation_a);
+//                                        printf(
+//                                            "%d - %d = %d\n",
+//                                            target[i].orientation_b,
+//                                            base[i].orientation_b,
+//                                            target[i].orientation_b - base[i].orientation_b);
+//                                        printf(
+//                                            "%d - %d = %d\n",
+//                                            target[i].orientation_c,
+//                                            base[i].orientation_c,
+//                                            target[i].orientation_c - base[i].orientation_c);
+//                                    }
+//                                }
 
 
                                 // Get stats so I can get the most common quats
@@ -2728,11 +2766,26 @@ std::vector<uint8_t> EncodeStats(
                             {
                                 deltas.Write(0, 1);
 
+                                IntVec3 toEncode =
+                                {
+                                    target[i].orientation_a,
+                                    target[i].orientation_b,
+                                    target[i].orientation_c,
+                                };
+
+                                IntVec3 baseVec =
+                                {
+                                    base[i].orientation_a,
+                                    base[i].orientation_b,
+                                    base[i].orientation_c,
+                                };
+
                                 // -2 == -1 for the largest value, then
                                 // -1 to account that we already count the sign
                                 // bit.
                                 codedBits = BitVector3BitCountEncode(
-                                    vec,
+                                    toEncode,
+                                     baseVec,
                                     (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
                                     encoded);
 
@@ -3084,9 +3137,22 @@ std::vector<uint8_t> Encode(
                         }
                         else
                         {
-                            auto a = ZigZag(vec.x);
-                            auto b = ZigZag(vec.y);
-                            auto c = ZigZag(vec.z);
+//                            auto a = ZigZag(vec.x);
+//                            auto b = ZigZag(vec.y);
+//                            auto c = ZigZag(vec.z);
+
+                            auto a = ZigZagEncode(
+                                        target[i].orientation_a,
+                                        base[i].orientation_a,
+                                        RotationMaxBits);
+                            auto b = ZigZagEncode(
+                                        target[i].orientation_b,
+                                        base[i].orientation_b,
+                                        RotationMaxBits);
+                            auto c = ZigZagEncode(
+                                        target[i].orientation_c,
+                                        base[i].orientation_c,
+                                        RotationMaxBits);
 
                             auto ba = MinBits(a);
                             auto bb = MinBits(b);
@@ -3112,11 +3178,26 @@ std::vector<uint8_t> Encode(
                             {
                                 deltas.Write(0, 1);
 
+                                IntVec3 toEncode =
+                                {
+                                    target[i].orientation_a,
+                                    target[i].orientation_b,
+                                    target[i].orientation_c,
+                                };
+
+                                IntVec3 baseVec =
+                                {
+                                    base[i].orientation_a,
+                                    base[i].orientation_b,
+                                    base[i].orientation_c,
+                                };
+
                                 // -2 == -1 for the largest value, then
                                 // -1 to account that we already count the sign
                                 // bit.
                                 codedBits = BitVector3BitCountEncode(
-                                    vec,
+                                    toEncode,
+                                     baseVec,
                                     (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
                                     encoded);
 
@@ -3375,7 +3456,15 @@ Frame Decode(
                             }
                             else
                             {
+                                IntVec3 baseVec =
+                                {
+                                    base[i].orientation_a,
+                                    base[i].orientation_b,
+                                    base[i].orientation_c,
+                                };
+
                                 vec = BitVector3BitCountDecode(
+                                    baseVec,
                                     (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
                                     bits);
                             }
@@ -3727,30 +3816,30 @@ void CalculateStats(std::vector<Frame>& frames)
 
     printf("\n==============================================\n");
 
-    auto histoSize = stats.quantCommonHistogram.size();
+//    auto histoSize = stats.quantCommonHistogram.size();
 //    for (unsigned i = 0; i < histoSize; ++i)
 //    {
 //        printf("%d, %d\n", stats.quantCommonHistogram[i], i);
 //    }
 
-    for (unsigned i = 0; i < histoSize; ++i)
-    {
-        unsigned mask = (1 << quantHistogramBitsPerComponent) - 1;
-        unsigned shift =
-                RotationMaxBits -
-                quantHistogramBitsPerComponent;
-        auto value = stats.quantCommonHistogramTooBig[i];
-        unsigned a = (i & mask) << shift;
-        unsigned b = ((i >> quantHistogramBitsPerComponent) & mask) << shift;
-        unsigned c = ((i >> (2 * quantHistogramBitsPerComponent)) & mask) << shift;
-        printf(
-            "%d, %d, %d, %d, %d\n",
-            value,
-            i,
-            a,
-            b,
-            c);
-    }
+//    for (unsigned i = 0; i < histoSize; ++i)
+//    {
+//        unsigned mask = (1 << quantHistogramBitsPerComponent) - 1;
+//        unsigned shift =
+//                RotationMaxBits -
+//                quantHistogramBitsPerComponent;
+//        auto value = stats.quantCommonHistogramTooBig[i];
+//        unsigned a = (i & mask) << shift;
+//        unsigned b = ((i >> quantHistogramBitsPerComponent) & mask) << shift;
+//        unsigned c = ((i >> (2 * quantHistogramBitsPerComponent)) & mask) << shift;
+//        printf(
+//            "%d, %d, %d, %d, %d\n",
+//            value,
+//            i,
+//            a,
+//            b,
+//            c);
+//    }
 
 }
 
