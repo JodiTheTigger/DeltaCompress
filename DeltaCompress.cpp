@@ -20,9 +20,9 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
-bool doStats        = false;
-bool doCompression  = false;
+bool doTests        = false;
+bool doStats        = true;
+bool doCompression  = true;
 
 // //////////////////////////////////////////////////////
 
@@ -379,9 +379,16 @@ void ZigZagTest()
         assert(decoded == 9);
     }
 
+    {
+        auto encoded = ZigZagEncode(8, 15, 4);
+        auto decoded = ZigZagDecode(encoded, 15, 4);
+
+        assert(decoded == 8);
+    }
+
     for (unsigned i = 0; i < 16; ++i)
     {
-        for (unsigned j = 0; j < 16; j++)
+        for (unsigned j = 0; j < 16; ++j)
         {
             auto encoded = ZigZagEncode(i, j, 4);
             auto decoded = ZigZagDecode(encoded, j, 4);
@@ -1316,23 +1323,26 @@ IntVec3 BitVector3BitCountDecode(
 
     if (!maxBitsPerComponent)
     {
+        result.x = ZigZagDecode(0, base.x, maxBitsPerComponent + prefixCount);
+        result.y = ZigZagDecode(0, base.y, maxBitsPerComponent + prefixCount);
+        result.z = ZigZagDecode(0, base.z, maxBitsPerComponent + prefixCount);
         return result;
     }
 
     // //////////////////////////////////////////
 
     auto zx = source.Read(maxBitsPerComponent);
-    result.x = ZigZagDecode(zx, base.x, maxBitsPerComponent);
+    result.x = ZigZagDecode(zx, base.x, maxBitsPerComponent + prefixCount);
 
     // //////////////////////////////////////////
 
     auto zy = source.Read(maxBitsPerComponent);
-    result.y = ZigZagDecode(zy, base.y, maxBitsPerComponent);
+    result.y = ZigZagDecode(zy, base.y, maxBitsPerComponent + prefixCount);
 
     // //////////////////////////////////////////
 
     auto zz = source.Read(maxBitsPerComponent);
-    result.z = ZigZagDecode(zz, base.z, maxBitsPerComponent);
+    result.z = ZigZagDecode(zz, base.z, maxBitsPerComponent + prefixCount);
 
     return result;
 }
@@ -1368,7 +1378,7 @@ void BitVector3Tests()
                     IntVec3 base =
                     {
                         b,
-                        zzMax - b,
+                        (zzMax - b) - 1,
                         b / 2,
                     };
 
@@ -1381,9 +1391,11 @@ void BitVector3Tests()
 
                     BitStream encoded;
 
-                    BitVector3BitCountEncode(target, base, 4, encoded);
+                    auto maxMag = (1u << 4) - 1;
+
+                    BitVector3BitCountEncode(target, base, maxMag, encoded);
                     encoded.Reset();
-                    auto decoded = BitVector3BitCountDecode(base, 4, encoded);
+                    auto decoded = BitVector3BitCountDecode(base, maxMag, encoded);
 
                     assert(i == decoded.x);
                     assert(j == decoded.y);
@@ -2786,7 +2798,7 @@ std::vector<uint8_t> EncodeStats(
                                 codedBits = BitVector3BitCountEncode(
                                     toEncode,
                                      baseVec,
-                                    (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
+                                    (1 << (QuanternionUncompressedBitThreshold - 1)) - 1,
                                     encoded);
 
                                 deltas.Write(encoded);
@@ -3198,7 +3210,7 @@ std::vector<uint8_t> Encode(
                                 codedBits = BitVector3BitCountEncode(
                                     toEncode,
                                      baseVec,
-                                    (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
+                                    (1 << (QuanternionUncompressedBitThreshold - 1)) - 1,
                                     encoded);
 
                                 deltas.Write(encoded);
@@ -3465,7 +3477,7 @@ Frame Decode(
 
                                 vec = BitVector3BitCountDecode(
                                     baseVec,
-                                    (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
+                                    (1 << (QuanternionUncompressedBitThreshold - 1)) - 1,
                                     bits);
                             }
 
