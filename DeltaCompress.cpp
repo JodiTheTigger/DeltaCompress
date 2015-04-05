@@ -2798,7 +2798,7 @@ std::vector<uint8_t> EncodeStats(
                                 codedBits = BitVector3BitCountEncode(
                                     toEncode,
                                      baseVec,
-                                    (1 << (QuanternionUncompressedBitThreshold - 1)) - 1,
+                                    (1 << RotationMaxBits) - 1,
                                     encoded);
 
                                 deltas.Write(encoded);
@@ -3210,7 +3210,7 @@ std::vector<uint8_t> Encode(
                                 codedBits = BitVector3BitCountEncode(
                                     toEncode,
                                      baseVec,
-                                    (1 << (QuanternionUncompressedBitThreshold - 1)) - 1,
+                                    (1 << RotationMaxBits) - 1,
                                     encoded);
 
                                 deltas.Write(encoded);
@@ -3477,7 +3477,7 @@ Frame Decode(
 
                                 vec = BitVector3BitCountDecode(
                                     baseVec,
-                                    (1 << (QuanternionUncompressedBitThreshold - 1)) - 1,
+                                    (1 << RotationMaxBits) - 1,
                                     bits);
                             }
 
