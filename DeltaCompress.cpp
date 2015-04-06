@@ -22,7 +22,7 @@
 
 bool doTests        = false;
 bool doStats        = true;
-bool doCompression  = false;
+bool doCompression  = true;
 
 // //////////////////////////////////////////////////////
 
@@ -281,6 +281,7 @@ enum class QuatPacker
     None,
     BitVector3Unrelated,
     BitVector3BitCount,
+    BitVector3ModifiedZigZag,
 };
 
 // //////////////////////////////////////////////////////
@@ -1250,6 +1251,103 @@ IntVec3 BitVector3UnrelatedDecode(
 // //////////////////////////////////////////////////////
 
 unsigned BitVector3BitCountEncode(
+        IntVec3 vec,
+        unsigned maxMagnitude,
+        BitStream& target)
+{
+    unsigned bitsUsed = 0;
+
+    // +1 for the sign bit.
+    unsigned maxBitsPerComponent = 1 + MinBits(maxMagnitude);
+
+    auto zx = ZigZag(vec.x);
+    auto zy = ZigZag(vec.y);
+    auto zz = ZigZag(vec.z);
+
+    auto minBits = std::max(MinBits(zx), MinBits(zy));
+    minBits = std::max(minBits, MinBits(zz));
+    auto prefixBitCount = maxBitsPerComponent - minBits;
+    maxBitsPerComponent = minBits;
+
+    while (prefixBitCount--)
+    {
+        target.Write(0,1);
+        bitsUsed++;
+    }
+    target.Write(1,1);
+    bitsUsed++;
+
+    if (!maxBitsPerComponent)
+    {
+        return bitsUsed;
+    }
+
+    // //////////////////////////////////////////
+
+    assert(zx < (1u << maxBitsPerComponent));
+
+    target.Write(zx, maxBitsPerComponent);
+    bitsUsed += maxBitsPerComponent;
+
+    // //////////////////////////////////////////
+
+    assert(zy < (1u << maxBitsPerComponent));
+
+    target.Write(zy, maxBitsPerComponent);
+    bitsUsed += maxBitsPerComponent;
+
+    // //////////////////////////////////////////
+
+    assert(zz < (1u << maxBitsPerComponent));
+
+    target.Write(zz, maxBitsPerComponent);
+    bitsUsed += maxBitsPerComponent;
+
+    return bitsUsed;
+}
+
+IntVec3 BitVector3BitCountDecode(
+        unsigned maxMagnitude,
+        BitStream& source)
+{
+    IntVec3 result = {0,0,0};
+
+    unsigned maxBitsPerComponent = 1 + MinBits(maxMagnitude);
+
+    unsigned prefixCount = 0;
+    while (!source.Read(1))
+    {
+        prefixCount++;
+    }
+
+    maxBitsPerComponent -= prefixCount;
+
+    if (!maxBitsPerComponent)
+    {
+        return result;
+    }
+
+    // //////////////////////////////////////////
+
+    auto zx = source.Read(maxBitsPerComponent);
+    result.x = ZigZag(zx);
+
+    // //////////////////////////////////////////
+
+    auto zy = source.Read(maxBitsPerComponent);
+    result.y = ZigZag(zy);
+
+    // //////////////////////////////////////////
+
+    auto zz = source.Read(maxBitsPerComponent);
+    result.z = ZigZag(zz);
+
+    return result;
+}
+
+// //////////////////////////////////////////////////////
+
+unsigned BitVector3BitCountZigZagEncode(
         IntVec3 toEncode,
         IntVec3 base,
         unsigned maxMagnitude,
@@ -1304,7 +1402,7 @@ unsigned BitVector3BitCountEncode(
     return bitsUsed;
 }
 
-IntVec3 BitVector3BitCountDecode(
+IntVec3 BitVector3BitCountZigZagDecode(
         IntVec3 base,
         unsigned maxMagnitude,
         BitStream& source)
@@ -1359,51 +1457,11 @@ void BitVector3Tests()
 
     std::vector<Test> tests;
 
-// Ugh, too much of a special case now :-/
-//    tests.push_back(
-//    {
-//        BitVector3BitCountEncode,
-//        BitVector3BitCountDecode,
-//    });
-
-    auto zzMax = 16;
-    for (auto i = 0; i < zzMax; ++i)
+    tests.push_back(
     {
-        for (auto j = 0; j < zzMax; ++j)
-        {
-            for (auto k = 0; k < zzMax; ++k)
-            {
-                for (auto b = 0; b < zzMax; ++b)
-                {
-                    IntVec3 base =
-                    {
-                        b,
-                        (zzMax - b) - 1,
-                        b / 2,
-                    };
-
-                    IntVec3 target =
-                    {
-                        i,
-                        j,
-                        k,
-                    };
-
-                    BitStream encoded;
-
-                    auto maxMag = (1u << 4) - 1;
-
-                    BitVector3BitCountEncode(target, base, maxMag, encoded);
-                    encoded.Reset();
-                    auto decoded = BitVector3BitCountDecode(base, maxMag, encoded);
-
-                    assert(i == decoded.x);
-                    assert(j == decoded.y);
-                    assert(k == decoded.z);
-                }
-            }
-        }
-    }
+        BitVector3BitCountEncode,
+        BitVector3BitCountDecode,
+    });
 
     tests.push_back(
     {
@@ -1514,6 +1572,49 @@ void BitVector3Tests()
                     assert(data.x == decoded.x);
                     assert(data.y == decoded.y);
                     assert(data.z == decoded.z);
+                }
+            }
+        }
+    }
+
+    // //////////////////////////////////////////////////
+
+    {
+        auto zzMax = 16;
+        for (auto i = 0; i < zzMax; ++i)
+        {
+            for (auto j = 0; j < zzMax; ++j)
+            {
+                for (auto k = 0; k < zzMax; ++k)
+                {
+                    for (auto b = 0; b < zzMax; ++b)
+                    {
+                        IntVec3 base =
+                        {
+                            b,
+                            (zzMax - b) - 1,
+                            b / 2,
+                        };
+
+                        IntVec3 target =
+                        {
+                            i,
+                            j,
+                            k,
+                        };
+
+                        BitStream encoded;
+
+                        auto maxMag = (1u << 4) - 1;
+
+                        BitVector3BitCountZigZagEncode(target, base, maxMag, encoded);
+                        encoded.Reset();
+                        auto decoded = BitVector3BitCountZigZagDecode(base, maxMag, encoded);
+
+                        assert(i == decoded.x);
+                        assert(j == decoded.y);
+                        assert(k == decoded.z);
+                    }
                 }
             }
         }
@@ -2677,22 +2778,9 @@ std::vector<uint8_t> EncodeStats(
                         }
                         else
                         {
-//                            auto a = ZigZag(vec.x);
-//                            auto b = ZigZag(vec.y);
-//                            auto c = ZigZag(vec.z);
-
-                            auto a = ZigZagEncode(
-                                        target[i].orientation_a,
-                                        base[i].orientation_a,
-                                        RotationMaxBits);
-                            auto b = ZigZagEncode(
-                                        target[i].orientation_b,
-                                        base[i].orientation_b,
-                                        RotationMaxBits);
-                            auto c = ZigZagEncode(
-                                        target[i].orientation_c,
-                                        base[i].orientation_c,
-                                        RotationMaxBits);
+                            auto a = ZigZag(vec.x);
+                            auto b = ZigZag(vec.y);
+                            auto c = ZigZag(vec.z);
 
                             auto ba = MinBits(a);
                             auto bb = MinBits(b);
@@ -2736,32 +2824,32 @@ std::vector<uint8_t> EncodeStats(
                                     ++stats.quantWhichIsBigger[whosBigger];
                                 }
 
-//                                {
-//                                    static unsigned countD = 0;
+                                {
+                                    static unsigned countD = 0;
 
-//                                    if (countD < 100)
-//                                    {
-//                                        countD++;
+                                    if (countD < 100)
+                                    {
+                                        countD++;
 
-//                                        printf("-------------------\n");
+                                        printf("-------------------\n");
 
-//                                        printf(
-//                                            "%d - %d = %d\n",
-//                                            target[i].orientation_a,
-//                                            base[i].orientation_a,
-//                                            target[i].orientation_a - base[i].orientation_a);
-//                                        printf(
-//                                            "%d - %d = %d\n",
-//                                            target[i].orientation_b,
-//                                            base[i].orientation_b,
-//                                            target[i].orientation_b - base[i].orientation_b);
-//                                        printf(
-//                                            "%d - %d = %d\n",
-//                                            target[i].orientation_c,
-//                                            base[i].orientation_c,
-//                                            target[i].orientation_c - base[i].orientation_c);
-//                                    }
-//                                }
+                                        printf(
+                                            "%d - %d = %d\n",
+                                            target[i].orientation_a,
+                                            base[i].orientation_a,
+                                            target[i].orientation_a - base[i].orientation_a);
+                                        printf(
+                                            "%d - %d = %d\n",
+                                            target[i].orientation_b,
+                                            base[i].orientation_b,
+                                            target[i].orientation_b - base[i].orientation_b);
+                                        printf(
+                                            "%d - %d = %d\n",
+                                            target[i].orientation_c,
+                                            base[i].orientation_c,
+                                            target[i].orientation_c - base[i].orientation_c);
+                                    }
+                                }
 
 
                                 // Get stats so I can get the most common quats
@@ -2791,32 +2879,140 @@ std::vector<uint8_t> EncodeStats(
                             {
                                 deltas.Write(0, 1);
 
-                                IntVec3 toEncode =
-                                {
-                                    target[i].orientation_a,
-                                    target[i].orientation_b,
-                                    target[i].orientation_c,
-                                };
-
-                                IntVec3 baseVec =
-                                {
-                                    base[i].orientation_a,
-                                    base[i].orientation_b,
-                                    base[i].orientation_c,
-                                };
-
                                 // -2 == -1 for the largest value, then
                                 // -1 to account that we already count the sign
                                 // bit.
                                 codedBits = BitVector3BitCountEncode(
-                                    toEncode,
-                                     baseVec,
-                                    (1 << RotationMaxBits) - 1,
+                                    vec,
+                                    (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
                                     encoded);
 
                                 deltas.Write(encoded);
                                 bitsWritten += 1 + codedBits;
                             }
+                        }
+
+                        // *sniff* worst case == vec3BitsUncompressed + 1.
+                        //assert(bitsWritten < vec3BitsUncompressed);
+                        stats.quatDeltaPackedBitCount.Update(bitsWritten);
+                        break;
+                    }
+
+                    case QuatPacker::BitVector3ModifiedZigZag:
+                    {
+                        unsigned bitsWritten = 2;
+                        deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+
+                        BitStream encoded;
+                        unsigned codedBits = 0;
+
+                        auto a = ZigZagEncode(
+                                    target[i].orientation_a,
+                                    base[i].orientation_a,
+                                    RotationMaxBits);
+                        auto b = ZigZagEncode(
+                                    target[i].orientation_b,
+                                    base[i].orientation_b,
+                                    RotationMaxBits);
+                        auto c = ZigZagEncode(
+                                    target[i].orientation_c,
+                                    base[i].orientation_c,
+                                    RotationMaxBits);
+
+                        auto ba = MinBits(a);
+                        auto bb = MinBits(b);
+                        auto bc = MinBits(c);
+
+                        auto minBits = std::max(ba, bb);
+                        minBits = std::max(minBits, bc);
+
+                        ++stats.quatFullEncodeBits[ba];
+                        ++stats.quatFullEncodeBits[bb];
+                        ++stats.quatFullEncodeBits[bc];
+
+                        // Even though I would save 3 bits for 8, it'll
+                        // cost me and extra bit for smaller minBits
+                        // prefixes, which taking into consideration the
+                        // probabilites, ends up using more bits in total.
+                        if (minBits >= QuanternionUncompressedBitThreshold)
+                        {
+                            deltas.Write(1, 1);
+                            deltas.Write(target[i].orientation_a, RotationMaxBits);
+                            deltas.Write(target[i].orientation_b, RotationMaxBits);
+                            deltas.Write(target[i].orientation_c, RotationMaxBits);
+
+                            bitsWritten += 1 + vec3BitsUncompressed;
+
+                            {
+                                auto whosBigger = 0;
+                                if (ba >= QuanternionUncompressedBitThreshold)
+                                {
+                                    whosBigger |= 1;
+                                }
+                                if (bb >= QuanternionUncompressedBitThreshold)
+                                {
+                                    whosBigger |= 2;
+                                }
+                                if (bc >= QuanternionUncompressedBitThreshold)
+                                {
+                                    whosBigger |= 4;
+                                }
+
+                                ++stats.quantWhichIsBigger[whosBigger];
+                            }
+
+                            // Get stats so I can get the most common quats
+                            // for a lookup dictionary.
+                            {
+                                auto za = target[i].orientation_a;
+                                auto zb = target[i].orientation_b;
+                                auto zc = target[i].orientation_c;
+
+                                // for stats, only keep the top 4 bits.
+                                auto shift =
+                                    RotationMaxBits -
+                                    quantHistogramBitsPerComponent;
+                                auto sza = za >> shift;
+                                auto szb = zb >> shift;
+                                auto szc = zc >> shift;
+
+                                unsigned hash =
+                                        sza +
+                                        (szb << quantHistogramBitsPerComponent) +
+                                        (szc << (quantHistogramBitsPerComponent * 2));
+
+                                ++stats.quantCommonHistogramTooBig[hash];
+                            }
+                        }
+                        else
+                        {
+                            deltas.Write(0, 1);
+
+                            IntVec3 toEncode =
+                            {
+                                target[i].orientation_a,
+                                target[i].orientation_b,
+                                target[i].orientation_c,
+                            };
+
+                            IntVec3 baseVec =
+                            {
+                                base[i].orientation_a,
+                                base[i].orientation_b,
+                                base[i].orientation_c,
+                            };
+
+                            // -2 == -1 for the largest value, then
+                            // -1 to account that we already count the sign
+                            // bit.
+                            codedBits = BitVector3BitCountZigZagEncode(
+                                toEncode,
+                                baseVec,
+                                (1 << RotationMaxBits) - 1,
+                                encoded);
+
+                            deltas.Write(encoded);
+                            bitsWritten += 1 + codedBits;
                         }
 
                         // *sniff* worst case == vec3BitsUncompressed + 1.
@@ -3162,22 +3358,9 @@ std::vector<uint8_t> Encode(
                         }
                         else
                         {
-//                            auto a = ZigZag(vec.x);
-//                            auto b = ZigZag(vec.y);
-//                            auto c = ZigZag(vec.z);
-
-                            auto a = ZigZagEncode(
-                                        target[i].orientation_a,
-                                        base[i].orientation_a,
-                                        RotationMaxBits);
-                            auto b = ZigZagEncode(
-                                        target[i].orientation_b,
-                                        base[i].orientation_b,
-                                        RotationMaxBits);
-                            auto c = ZigZagEncode(
-                                        target[i].orientation_c,
-                                        base[i].orientation_c,
-                                        RotationMaxBits);
+                            auto a = ZigZag(vec.x);
+                            auto b = ZigZag(vec.y);
+                            auto c = ZigZag(vec.z);
 
                             auto ba = MinBits(a);
                             auto bb = MinBits(b);
@@ -3203,27 +3386,12 @@ std::vector<uint8_t> Encode(
                             {
                                 deltas.Write(0, 1);
 
-                                IntVec3 toEncode =
-                                {
-                                    target[i].orientation_a,
-                                    target[i].orientation_b,
-                                    target[i].orientation_c,
-                                };
-
-                                IntVec3 baseVec =
-                                {
-                                    base[i].orientation_a,
-                                    base[i].orientation_b,
-                                    base[i].orientation_c,
-                                };
-
                                 // -2 == -1 for the largest value, then
                                 // -1 to account that we already count the sign
                                 // bit.
                                 codedBits = BitVector3BitCountEncode(
-                                    toEncode,
-                                     baseVec,
-                                    (1 << RotationMaxBits) - 1,
+                                    vec,
+                                    (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
                                     encoded);
 
                                 deltas.Write(encoded);
@@ -3233,6 +3401,78 @@ std::vector<uint8_t> Encode(
 
                         // *sniff* worst case == vec3BitsUncompressed + 1.
                         //assert(bitsWritten < vec3BitsUncompressed);
+                        break;
+                    }                    
+
+                    case QuatPacker::BitVector3ModifiedZigZag:
+                    {
+                        unsigned bitsWritten = 2;
+                        deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+
+                        BitStream encoded;
+                        unsigned codedBits = 0;
+
+                        auto a = ZigZagEncode(
+                                    target[i].orientation_a,
+                                    base[i].orientation_a,
+                                    RotationMaxBits);
+                        auto b = ZigZagEncode(
+                                    target[i].orientation_b,
+                                    base[i].orientation_b,
+                                    RotationMaxBits);
+                        auto c = ZigZagEncode(
+                                    target[i].orientation_c,
+                                    base[i].orientation_c,
+                                    RotationMaxBits);
+
+                        auto ba = MinBits(a);
+                        auto bb = MinBits(b);
+                        auto bc = MinBits(c);
+
+                        auto minBits = std::max(ba, bb);
+                        minBits = std::max(minBits, bc);
+
+                        // Even though I would save 3 bits for 8, it'll
+                        // cost me and extra bit for smaller minBits
+                        // prefixes, which taking into consideration the
+                        // probabilites, ends up using more bits in total.
+                        if (minBits >= QuanternionUncompressedBitThreshold)
+                        {
+                            deltas.Write(1, 1);
+                            deltas.Write(target[i].orientation_a, RotationMaxBits);
+                            deltas.Write(target[i].orientation_b, RotationMaxBits);
+                            deltas.Write(target[i].orientation_c, RotationMaxBits);
+
+                            bitsWritten += 1 + vec3BitsUncompressed;
+                        }
+                        else
+                        {
+                            deltas.Write(0, 1);
+
+                            IntVec3 toEncode =
+                            {
+                                target[i].orientation_a,
+                                target[i].orientation_b,
+                                target[i].orientation_c,
+                            };
+
+                            IntVec3 baseVec =
+                            {
+                                base[i].orientation_a,
+                                base[i].orientation_b,
+                                base[i].orientation_c,
+                            };
+
+                            codedBits = BitVector3BitCountZigZagEncode(
+                                toEncode,
+                                baseVec,
+                                (1 << RotationMaxBits) - 1,
+                                encoded);
+
+                            deltas.Write(encoded);
+                            bitsWritten += 1 + codedBits;
+                        }
+
                         break;
                     }
                 }
@@ -3481,6 +3721,45 @@ Frame Decode(
                             }
                             else
                             {
+
+                                vec = BitVector3BitCountDecode(
+                                    (1 << (QuanternionUncompressedBitThreshold - 2)) - 1,
+                                    bits);
+                            }
+
+                            result[i].orientation_a = vec.x + base[i].orientation_a;
+                            result[i].orientation_b = vec.y + base[i].orientation_b;
+                            result[i].orientation_c = vec.z + base[i].orientation_c;
+                        }
+                        else
+                        {
+                            result[i].orientation_a = bits.Read(RotationMaxBits);
+                            result[i].orientation_b = bits.Read(RotationMaxBits);
+                            result[i].orientation_c = bits.Read(RotationMaxBits);
+                        }
+
+                        break;
+                    }
+
+                    case QuatPacker::BitVector3ModifiedZigZag:
+                    {
+                        result[i].orientation_largest =
+                                bits.Read(RotationIndexMaxBits);
+
+                        auto notCompressed = bits.Read(1);
+
+                        if (!notCompressed)
+                        {
+                            IntVec3 vec;
+
+                            if (config.quatPacker == QuatPacker::BitVector3Unrelated)
+                            {
+                                vec = BitVector3UnrelatedDecode(
+                                    (1 << RotationMaxBits) - 1,
+                                    bits);
+                            }
+                            else
+                            {
                                 IntVec3 baseVec =
                                 {
                                     base[i].orientation_a,
@@ -3488,15 +3767,15 @@ Frame Decode(
                                     base[i].orientation_c,
                                 };
 
-                                vec = BitVector3BitCountDecode(
+                                vec = BitVector3BitCountZigZagDecode(
                                     baseVec,
                                     (1 << RotationMaxBits) - 1,
                                     bits);
                             }
 
-                            result[i].orientation_a = vec.x;// + base[i].orientation_a;
-                            result[i].orientation_b = vec.y;// + base[i].orientation_b;
-                            result[i].orientation_c = vec.z;// + base[i].orientation_c;
+                            result[i].orientation_a = vec.x;
+                            result[i].orientation_b = vec.y;
+                            result[i].orientation_c = vec.z;
                         }
                         else
                         {
