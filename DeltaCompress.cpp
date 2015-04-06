@@ -22,7 +22,7 @@
 
 bool doTests        = false;
 bool doStats        = true;
-bool doCompression  = true;
+bool doCompression  = false;
 
 // //////////////////////////////////////////////////////
 
@@ -2670,26 +2670,6 @@ std::vector<uint8_t> EncodeStats(
                     stats.deltaABC.Update(dSum);
                 }
 
-                // More stats on how many bits are needed to encode the non-delta quat.
-                auto a = ZigZag(target[i].orientation_a - base[i].orientation_a);
-                auto b = ZigZag(target[i].orientation_b - base[i].orientation_b);
-                auto c = ZigZag(target[i].orientation_c - base[i].orientation_c);
-
-                for (unsigned j = 0; j <= RotationMaxBits + 1; ++j)
-                {
-                    auto max = (1u << j) - 1;
-
-                    if	(
-                            (a <= max) &&
-                            (b <= max) &&
-                            (c <= max)
-                        )
-                    {
-                        ++stats.quatMinBitCounts[j];
-                        break;
-                    }
-                }
-
                 switch (config.quatPacker)
                 {
                     default:
@@ -2714,6 +2694,28 @@ std::vector<uint8_t> EncodeStats(
                             target[i].orientation_b - base[i].orientation_b,
                             target[i].orientation_c - base[i].orientation_c,
                         };
+
+                        {
+                            // More stats on how many bits are needed to encode the non-delta quat.
+                            auto a = ZigZag(target[i].orientation_a - base[i].orientation_a);
+                            auto b = ZigZag(target[i].orientation_b - base[i].orientation_b);
+                            auto c = ZigZag(target[i].orientation_c - base[i].orientation_c);
+
+                            for (unsigned j = 0; j <= RotationMaxBits + 1; ++j)
+                            {
+                                auto max = (1u << j) - 1;
+
+                                if	(
+                                        (a <= max) &&
+                                        (b <= max) &&
+                                        (c <= max)
+                                    )
+                                {
+                                    ++stats.quatMinBitCounts[j];
+                                    break;
+                                }
+                            }
+                        }
 
                         // Get stats so I can get the most common quats
                         // for a lookup dictionary.
@@ -2929,6 +2931,23 @@ std::vector<uint8_t> EncodeStats(
                         ++stats.quatFullEncodeBits[ba];
                         ++stats.quatFullEncodeBits[bb];
                         ++stats.quatFullEncodeBits[bc];
+
+                        {
+                            for (unsigned j = 0; j <= RotationMaxBits; ++j)
+                            {
+                                auto max = (1u << j) - 1;
+
+                                if	(
+                                        (ba <= max) &&
+                                        (bb <= max) &&
+                                        (bc <= max)
+                                    )
+                                {
+                                    ++stats.quatMinBitCounts[j];
+                                    break;
+                                }
+                            }
+                        }
 
                         // Even though I would save 3 bits for 8, it'll
                         // cost me and extra bit for smaller minBits
@@ -3895,7 +3914,7 @@ void Tests()
 #define PRINT_INT(x) printf("%-32s\t%d\n", #x, x);
 #define PRINT_FLOAT(x) printf("%-32s\t%f\n", #x, x);
 
-void CalculateStats(std::vector<Frame>& frames)
+void CalculateStats(std::vector<Frame>& frames, const Config& config)
 {
     // Lets do some research
     auto size = frames.size();
@@ -3948,12 +3967,6 @@ void CalculateStats(std::vector<Frame>& frames)
     // Lets actually do the stuff.
     unsigned bytes = 0;
     unsigned packetsCoded = 0;
-    Config config
-    {
-        ChangedArrayEncoding::Exp,
-        PosVector3Packer::BitVector3Truncated,
-        QuatPacker::BitVector3BitCount,
-    };
 
     for (size_t i = PacketDelta; i < size; ++i)
     {
@@ -4149,18 +4162,11 @@ void CalculateStats(std::vector<Frame>& frames)
 
 // //////////////////////////////////////////////////////
 
-void Compress(std::vector<Frame>& frames)
+void Compress(std::vector<Frame>& frames, const Config& config)
 {
     auto packets = frames.size();
     unsigned bytes = 0;
     unsigned packetsCoded = 0;
-
-    Config config
-    {
-        ChangedArrayEncoding::Exp,
-        PosVector3Packer::BitVector3Truncated,
-        QuatPacker::BitVector3BitCount,
-    };
 
     for (size_t i = PacketDelta; i < packets; ++i)
     {
@@ -4241,14 +4247,21 @@ int main(int, char**)
         Tests();
     }
 
+    Config config
+    {
+        ChangedArrayEncoding::Exp,
+        PosVector3Packer::BitVector3Truncated,
+        QuatPacker::BitVector3ModifiedZigZag,
+    };
+
     if (doStats)
     {
-        CalculateStats(frames);
+        CalculateStats(frames, config);
     }
 
     if (doCompression)
     {
-        Compress(frames);
+        Compress(frames, config);
     }
 
     return 0;
