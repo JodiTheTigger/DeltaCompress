@@ -769,11 +769,13 @@ unsigned constexpr MaxRange(const RangeBits& ranges)
         (1u << ranges[2]);
 }
 
-void GaffersRangeEncode(
+unsigned GaffersRangeEncode(
         RangeBits ranges,
         unsigned value,
         BitStream& target)
 {
+    unsigned bitsUsed = 0;
+
     struct MinCount
     {
         unsigned min;
@@ -784,31 +786,34 @@ void GaffersRangeEncode(
 
     MinsCounts minCounts =
     {
-        MinCount{0,                                 1u << ranges[0]},
-        MinCount{1u << ranges[0],                    1u << ranges[1]},
-        MinCount{(1u << ranges[0]) + (1u << ranges[1]),   1u << ranges[2]},
+        MinCount{0,                                     1u << ranges[0]},
+        MinCount{1u << ranges[0],                       1u << ranges[1]},
+        MinCount{(1u << ranges[0]) + (1u << ranges[1]), 1u << ranges[2]},
     };
 
     if (value < minCounts[0].count)
     {
         target.Write(1, 1);
         target.Write(value, ranges[0]);
-        return;
+        return bitsUsed + 1 + ranges[0];
     }
 
     target.Write(0, 1);
+    ++bitsUsed;
 
     if (value < (minCounts[1].count + minCounts[1].min))
     {
         target.Write(1, 1);
         target.Write(value - minCounts[1].min, ranges[1]);
-        return;
+        return bitsUsed + 1 + ranges[1];
     }
 
     assert(value < MaxRange(ranges));
 
     target.Write(0, 1);
     target.Write(value - minCounts[2].min, ranges[2]);
+
+    return bitsUsed + 1 + ranges[2];
 }
 
 unsigned GaffersRangeDecode(
@@ -1548,6 +1553,165 @@ IntVec3 BitVector3BitCountZigZagDecode(
 
 // //////////////////////////////////////////////////////
 
+unsigned GafferMinThresholdBits = 6;
+
+unsigned BitVector3ModifiedGafferEncode(
+        IntVec3 toEncode,
+        IntVec3 base,
+        unsigned maxMagnitude,
+        RangeBits ranges,
+        BitStream& target)
+{
+    unsigned max        = MaxRange(ranges);
+    unsigned maxBits    = MinBits(maxMagnitude);
+    unsigned bitsUsed   = 0;
+
+    unsigned zx = ZigZagEncode(toEncode.x, base.x, maxBits);
+    unsigned zy = ZigZagEncode(toEncode.y, base.y, maxBits);
+    unsigned zz = ZigZagEncode(toEncode.z, base.z, maxBits);
+
+    auto minBits = std::max(MinBits(zx), MinBits(zy));
+    minBits = std::max(minBits, MinBits(zz));
+
+    if (minBits < GafferMinThresholdBits)
+    {
+        target.Write(1 ,1);
+        bitsUsed++;
+
+        auto prefixBitCount = GafferMinThresholdBits - minBits - 1;
+        auto maxBitsPerComponent = minBits;
+
+        while (prefixBitCount--)
+        {
+            target.Write(0,1);
+            bitsUsed++;
+        }
+        target.Write(1,1);
+        bitsUsed++;
+
+        if (!maxBitsPerComponent)
+        {
+            return bitsUsed;
+        }
+
+        // //////////////////////////////////////////
+
+        assert(zx < (1u << maxBitsPerComponent));
+
+        target.Write(zx, maxBitsPerComponent);
+        bitsUsed += maxBitsPerComponent;
+
+        // //////////////////////////////////////////
+
+        assert(zy < (1u << maxBitsPerComponent));
+
+        target.Write(zy, maxBitsPerComponent);
+        bitsUsed += maxBitsPerComponent;
+
+        // //////////////////////////////////////////
+
+        assert(zz < (1u << maxBitsPerComponent));
+
+        target.Write(zz, maxBitsPerComponent);
+        bitsUsed += maxBitsPerComponent;
+
+        return bitsUsed;
+    }
+
+    target.Write(0, 1);
+    ++bitsUsed;
+
+    if ((zx >= max) && (zy >= max) && (zz > max))
+    {
+        target.Write(1, 1);
+        ++bitsUsed;
+
+        auto truncRange = maxMagnitude - max;
+
+        bitsUsed += TruncateEncode(zx - max, truncRange, target);
+        bitsUsed += TruncateEncode(zy - max, truncRange, target);
+        bitsUsed += TruncateEncode(zz - max, truncRange, target);
+
+        return bitsUsed;
+    }
+
+    target.Write(1, 0);
+    ++bitsUsed;
+
+    bitsUsed += GaffersRangeEncode(ranges, zx, target);
+    bitsUsed += GaffersRangeEncode(ranges, zy, target);
+    bitsUsed += GaffersRangeEncode(ranges, zz, target);
+
+    return bitsUsed;
+}
+
+
+IntVec3 BitVector3ModifiedGafferDecode(
+        IntVec3 base,
+        unsigned maxMagnitude,
+        RangeBits ranges,
+        BitStream& source)
+{
+    unsigned max                    = MaxRange(ranges);
+    unsigned maxBits                = MinBits(maxMagnitude);
+    unsigned maxBitsPerComponent    = GafferMinThresholdBits - 1;
+
+    auto UnZigZag = [&base, &maxBits](unsigned x, unsigned y, unsigned z) -> IntVec3
+    {
+        IntVec3 vec;
+
+        vec.x = ZigZagDecode(x, base.x, maxBits);
+        vec.y = ZigZagDecode(y, base.y, maxBits);
+        vec.z = ZigZagDecode(z, base.z, maxBits);
+
+        return vec;
+    };
+
+    auto doMin = source.Read(1);
+
+    if (doMin)
+    {
+        unsigned prefixCount = 0;
+        while (!source.Read(1))
+        {
+            prefixCount++;
+        }
+
+        maxBitsPerComponent -= prefixCount;
+
+        if (!maxBitsPerComponent)
+        {
+            return UnZigZag(0, 0, 0);
+        }
+
+        auto zx = source.Read(maxBitsPerComponent);
+        auto zy = source.Read(maxBitsPerComponent);
+        auto zz = source.Read(maxBitsPerComponent);
+
+        return UnZigZag(zx, zy, zz);
+    }
+
+    auto doMax = source.Read(1);
+
+    if (doMax)
+    {
+        auto truncRange = maxMagnitude - max;
+        auto tx = max + TruncateDecode(truncRange, source);
+        auto ty = max + TruncateDecode(truncRange, source);
+        auto tz = max + TruncateDecode(truncRange, source);
+
+        return UnZigZag(tx, ty, tz);
+    }
+
+    auto zx = GaffersRangeDecode(ranges, source);
+    auto zy = GaffersRangeDecode(ranges, source);
+    auto zz = GaffersRangeDecode(ranges, source);
+
+    return UnZigZag(zx, zy, zz);
+}
+
+// //////////////////////////////////////////////////////
+
 void BitVector3Tests()
 {
     struct Test
@@ -1708,9 +1872,18 @@ void BitVector3Tests()
 
                         auto maxMag = (1u << 4) - 1;
 
-                        BitVector3BitCountZigZagEncode(target, base, maxMag, encoded);
+                        BitVector3BitCountZigZagEncode(
+                            target,
+                            base,
+                            maxMag,
+                            encoded);
+
                         encoded.Reset();
-                        auto decoded = BitVector3BitCountZigZagDecode(base, maxMag, encoded);
+
+                        auto decoded = BitVector3BitCountZigZagDecode(
+                            base,
+                            maxMag,
+                            encoded);
 
                         assert(i == decoded.x);
                         assert(j == decoded.y);
