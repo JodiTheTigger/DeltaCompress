@@ -251,11 +251,14 @@ struct Stats
 
     std::array<unsigned, RotationMaxBits + 2> quatMinBitCounts;
     std::array<unsigned, RotationMaxBits + 2> quatFullEncodeBits;
+    std::array<unsigned, RotationMaxBits + 2> quatFullNotFullEncodeBits;
 
     std::array<unsigned, 8> quantWhichIsBigger;
 
     std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogram;
     std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogramTooBig;
+
+    unsigned quatChangedAll27bits;
 };
 
 enum class ChangedArrayEncoding
@@ -2933,19 +2936,25 @@ std::vector<uint8_t> EncodeStats(
                         ++stats.quatFullEncodeBits[bc];
 
                         {
-                            for (unsigned j = 0; j <= RotationMaxBits; ++j)
-                            {
-                                auto max = (1u << j) - 1;
+                            unsigned j = 0;
 
+                            for (; j <= RotationMaxBits; ++j)
+                            {
                                 if	(
-                                        (ba <= max) &&
-                                        (bb <= max) &&
-                                        (bc <= max)
+                                        (ba <= j) &&
+                                        (bb <= j) &&
+                                        (bc <= j)
                                     )
                                 {
                                     ++stats.quatMinBitCounts[j];
                                     break;
                                 }
+                            }
+
+                            if (j == RotationMaxBits)
+                            {
+                                // all 9 bits?
+                                ++stats.quatChangedAll27bits;
                             }
                         }
 
@@ -2961,6 +2970,19 @@ std::vector<uint8_t> EncodeStats(
                             deltas.Write(target[i].orientation_c, RotationMaxBits);
 
                             bitsWritten += 1 + vec3BitsUncompressed;
+
+                            {
+                                if  (
+                                        (ba != RotationMaxBits) ||
+                                        (bb != RotationMaxBits) ||
+                                        (bc != RotationMaxBits)
+                                    )
+                                {
+                                    ++stats.quatFullNotFullEncodeBits[ba];
+                                    ++stats.quatFullNotFullEncodeBits[bb];
+                                    ++stats.quatFullNotFullEncodeBits[bc];
+                                }
+                            }
 
                             {
                                 auto whosBigger = 0;
@@ -3962,6 +3984,8 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         {0},
         {0},
         {0},
+        {0},
+        0,
     };
 
     // Lets actually do the stuff.
@@ -4122,14 +4146,32 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
 
     printf("\n");
 
-    PRINT_INT(stats.quantWhichIsBigger[0]);
-    PRINT_INT(stats.quantWhichIsBigger[1]);
-    PRINT_INT(stats.quantWhichIsBigger[2]);
-    PRINT_INT(stats.quantWhichIsBigger[3]);
-    PRINT_INT(stats.quantWhichIsBigger[4]);
-    PRINT_INT(stats.quantWhichIsBigger[5]);
-    PRINT_INT(stats.quantWhichIsBigger[6]);
-    PRINT_INT(stats.quantWhichIsBigger[7]);
+    PRINT_INT(stats.quatFullNotFullEncodeBits[0])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[1])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[2])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[3])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[4])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[5])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[6])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[7])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[8])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[9])
+    PRINT_INT(stats.quatFullNotFullEncodeBits[10])
+
+    printf("\n");
+
+
+
+    PRINT_INT(stats.quantWhichIsBigger[0])
+    PRINT_INT(stats.quantWhichIsBigger[1])
+    PRINT_INT(stats.quantWhichIsBigger[2])
+    PRINT_INT(stats.quantWhichIsBigger[3])
+    PRINT_INT(stats.quantWhichIsBigger[4])
+    PRINT_INT(stats.quantWhichIsBigger[5])
+    PRINT_INT(stats.quantWhichIsBigger[6])
+    PRINT_INT(stats.quantWhichIsBigger[7])
+
+    PRINT_INT(stats.quatChangedAll27bits)
 
     printf("\n==============================================\n");
 
