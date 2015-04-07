@@ -20,8 +20,8 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = false;
-bool doStats        = true;
+bool doTests        = true;
+bool doStats        = false;
 bool doCompression  = false;
 
 // //////////////////////////////////////////////////////
@@ -742,7 +742,7 @@ unsigned TruncateDecode(unsigned maxValue, BitStream& source)
     return value - u;
 }
 
-void TestTruncate()
+void TruncateTest()
 {
     const unsigned count = 10;
     const unsigned max = count - 1;
@@ -755,6 +755,104 @@ void TestTruncate()
         auto result = TruncateDecode(max, coded);
 
         assert(result == i);
+    }
+}
+// //////////////////////////////////////////////////////
+
+using RangeBits = std::array<uint8_t, 3>;
+
+unsigned constexpr MaxRange(const RangeBits& ranges)
+{
+    return
+        (1u << ranges[0]) +
+        (1u << ranges[1]) +
+        (1u << ranges[2]);
+}
+
+void GaffersRangeEncode(
+        RangeBits ranges,
+        unsigned value,
+        BitStream& target)
+{
+    struct MinCount
+    {
+        unsigned min;
+        unsigned count;
+    };
+
+    using MinsCounts = std::array<MinCount, 3>;
+
+    MinsCounts minCounts =
+    {
+        MinCount{0,                                 1u << ranges[0]},
+        MinCount{1u << ranges[0],                    1u << ranges[1]},
+        MinCount{(1u << ranges[0]) + (1u << ranges[1]),   1u << ranges[2]},
+    };
+
+    if (value < minCounts[0].count)
+    {
+        target.Write(1, 1);
+        target.Write(value, ranges[0]);
+        return;
+    }
+
+    target.Write(0, 1);
+
+    if (value < (minCounts[1].count + minCounts[1].min))
+    {
+        target.Write(1, 1);
+        target.Write(value - minCounts[1].min, ranges[1]);
+        return;
+    }
+
+    assert(value < MaxRange(ranges));
+
+    target.Write(0, 1);
+    target.Write(value - minCounts[2].min, ranges[2]);
+}
+
+unsigned GaffersRangeDecode(
+        RangeBits ranges,
+        BitStream& source)
+{
+    auto first = source.Read(1);
+
+    if (first)
+    {
+        return source.Read(ranges[0]);
+    }
+
+    auto second = source.Read(1);
+
+    if (second)
+    {
+        auto result = source.Read(ranges[1]);
+        return result + (1 << ranges[0]);
+    }
+
+    auto result = source.Read(ranges[2]);
+    return result + (1 << ranges[0]) + (1 << ranges[1]);
+}
+
+void GaffersRangeTest()
+{
+    auto ranges = RangeBits
+    {
+        5,
+        6,
+        7
+    };
+
+    unsigned maxRange = MaxRange(ranges);
+    for (unsigned i = 0; i < maxRange; ++i)
+    {
+        BitStream stream;
+
+        GaffersRangeEncode(ranges, i, stream);
+        stream.Reset();
+        auto result = GaffersRangeDecode(ranges, stream);
+
+        assert(i == result);
     }
 }
 
@@ -3924,8 +4022,9 @@ Frame Decode(
 
 void Tests()
 {
+    GaffersRangeTest();
     ZigZagTest();
-    TestTruncate();
+    TruncateTest();
     BitVector3Tests();
     RunLengthTests();
     BitStreamTest();
