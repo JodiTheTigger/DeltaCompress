@@ -260,11 +260,6 @@ struct Stats
     std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogramTooBig;
 
     unsigned quatChangedAll27bits;
-
-    // Gaffer investigation
-    unsigned quantCount;
-    unsigned quantMin;
-    unsigned quantMax;
 };
 
 enum class ChangedArrayEncoding
@@ -3586,8 +3581,6 @@ std::vector<uint8_t> EncodeStats(
 
                     case QuatPacker::Gaffer:
                     {
-                        ++stats.quantCount;
-
                         auto WriteFull = [&deltas, &target, &i, &stats]()
                         {
                             deltas.Write(1, 1);
@@ -3601,8 +3594,6 @@ std::vector<uint8_t> EncodeStats(
                                         1 +
                                         (RotationMaxBits * 3) +
                                         RotationIndexMaxBits);
-
-                            ++stats.quantMax;
                         };
 
                         if  (
@@ -3642,11 +3633,6 @@ std::vector<uint8_t> EncodeStats(
                                 deltaData,
                                 ranges,
                                 deltas);
-
-                        if (codedBits == 7)
-                        {
-                            ++stats.quantMin;
-                        }
 
                         stats.quatDeltaPackedBitCount.Update(1 + codedBits);
                         break;
@@ -4721,10 +4707,6 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         {0},
         {0},
         0,
-
-        0,
-        0,
-        0,
     };
 
     // Lets actually do the stuff.
@@ -4744,9 +4726,6 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         stats.bytesPerPacket.Update(buffer.size());
 
         packetsCoded++;
-
-        // Gaffer debug
-        printf("%d\n", stats.quantCount);
     }
 
 
@@ -4914,12 +4893,6 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.quantWhichIsBigger[7])
 
     PRINT_INT(stats.quatChangedAll27bits)
-
-    printf("\n");
-
-    PRINT_INT(stats.quantCount);
-    PRINT_INT(stats.quantMin);
-    PRINT_INT(stats.quantMax);
 
     printf("\n");
 
