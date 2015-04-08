@@ -20,7 +20,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = false;
+bool doTests        = true;
 bool doStats        = true;
 bool doCompression  = true;
 
@@ -773,7 +773,6 @@ unsigned constexpr MaxRange(const RangeBits& ranges)
 unsigned GaffersRangeEncode(
         RangeBits ranges,
         unsigned value,
-        unsigned maxBits,
         BitStream& target)
 {
     unsigned bitsUsed = 0;
@@ -813,28 +812,15 @@ unsigned GaffersRangeEncode(
     target.Write(0, 1);
     ++bitsUsed;
 
-    auto maxRange = MaxRange(ranges);
+    assert (value < MaxRange(ranges));
 
-    if (value < maxRange)
-    {
-        target.Write(1, 1);
-        target.Write(value - minCounts[2].min, ranges[2]);
+    target.Write(value - minCounts[2].min, ranges[2]);
 
-        return bitsUsed + 1 + ranges[2];
-    }
-
-    target.Write(0, 1);
-    ++bitsUsed;
-
-    return TruncateEncode(
-        value - maxRange,
-        ((1 << maxBits) - 1) - maxRange,
-        target);
+    return bitsUsed + 1 + ranges[2];
 }
 
 unsigned GaffersRangeDecode(
         RangeBits ranges,
-        unsigned maxBits,
         BitStream& source)
 {
     auto first = source.Read(1);
@@ -852,19 +838,8 @@ unsigned GaffersRangeDecode(
         return result + (1 << ranges[0]);
     }
 
-    auto third = source.Read(1);
-
-    if (third)
-    {
-        auto result = source.Read(ranges[2]);
-        return result + (1 << ranges[0]) + (1 << ranges[1]);
-    }
-
-    auto maxRange = MaxRange(ranges);
-
-    return maxRange + TruncateDecode(
-        ((1 << maxBits) - 1) - maxRange,
-        source);
+    auto result = source.Read(ranges[2]);
+    return result + (1 << ranges[0]) + (1 << ranges[1]);
 }
 
 void GaffersRangeTest()
@@ -876,13 +851,14 @@ void GaffersRangeTest()
         7
     };
 
-    for (unsigned i = 0; i < 512; ++i)
+    auto maxRange = MaxRange(ranges);
+    for (unsigned i = 0; i < maxRange; ++i)
     {
         BitStream stream;
 
-        GaffersRangeEncode(ranges, i, 9, stream);
+        GaffersRangeEncode(ranges, i, stream);
         stream.Reset();
-        auto result = GaffersRangeDecode(ranges, 9, stream);
+        auto result = GaffersRangeDecode(ranges, stream);
 
         assert(i == result);
     }
@@ -1624,8 +1600,14 @@ unsigned BitVector3ModifiedGafferEncode(
             target.Write(0,1);
             bitsUsed++;
         }
-        target.Write(1,1);
-        bitsUsed++;
+
+        // we know  the prefix count in advance, so
+        // no need to terminate if we reach max.
+        if (minBits)
+        {
+            target.Write(1,1);
+            bitsUsed++;
+        }
 
         if (!maxBitsPerComponent)
         {
@@ -1656,31 +1638,50 @@ unsigned BitVector3ModifiedGafferEncode(
         return bitsUsed;
     }
 
-    target.Write(0, 1);
-    ++bitsUsed;
-
-    if ((zx >= max) && (zy >= max) && (zz > max))
+    auto WriteMax = [&]() -> unsigned
     {
+        target.Write(0, 1);
+        ++bitsUsed;
+
         target.Write(1, 1);
         ++bitsUsed;
 
-        auto truncRange = maxMagnitude - max;
+        target.Write(zx, maxBits);
+        target.Write(zy, maxBits);
+        target.Write(zz, maxBits);
 
-        bitsUsed += TruncateEncode(zx - max, truncRange, target);
-        bitsUsed += TruncateEncode(zy - max, truncRange, target);
-        bitsUsed += TruncateEncode(zz - max, truncRange, target);
+        bitsUsed += maxBits * 3;
 
         return bitsUsed;
+    };
+
+    if ((zx >= max) || (zy >= max) || (zz >= max))
+    {
+        return WriteMax();
     }
 
-    target.Write(0, 1);
-    ++bitsUsed;
+    BitStream testEncode;
 
-    bitsUsed += GaffersRangeEncode(ranges, zx, maxBits, target);
-    bitsUsed += GaffersRangeEncode(ranges, zy, maxBits, target);
-    bitsUsed += GaffersRangeEncode(ranges, zz, maxBits, target);
+    GaffersRangeEncode(ranges, zx, testEncode);
+    GaffersRangeEncode(ranges, zy, testEncode);
+    GaffersRangeEncode(ranges, zz, testEncode);
 
-    return bitsUsed;
+    auto size = testEncode.Bits() ;
+
+    if (size < 3 * maxBits)
+    {
+        target.Write(0, 1);
+        ++bitsUsed;
+
+        target.Write(0, 1);
+        ++bitsUsed;
+
+        target.Write(testEncode);
+
+        return size + bitsUsed;
+    }
+
+    return WriteMax();
 }
 
 
@@ -1690,7 +1691,6 @@ IntVec3 BitVector3ModifiedGafferDecode(
         RangeBits ranges,
         BitStream& source)
 {
-    unsigned max                    = MaxRange(ranges);
     unsigned maxBits                = MinBits(maxMagnitude);
     unsigned maxBitsPerComponent    = GafferMinThresholdBits - 1;
 
@@ -1713,6 +1713,11 @@ IntVec3 BitVector3ModifiedGafferDecode(
         while (!source.Read(1))
         {
             prefixCount++;
+
+            if (prefixCount == (GafferMinThresholdBits - 1))
+            {
+                break;
+            }
         }
 
         maxBitsPerComponent -= prefixCount;
@@ -1733,17 +1738,16 @@ IntVec3 BitVector3ModifiedGafferDecode(
 
     if (doMax)
     {
-        auto truncRange = maxMagnitude - max;
-        auto tx = max + TruncateDecode(truncRange, source);
-        auto ty = max + TruncateDecode(truncRange, source);
-        auto tz = max + TruncateDecode(truncRange, source);
+        auto zx = source.Read(maxBits);
+        auto zy = source.Read(maxBits);
+        auto zz = source.Read(maxBits);
 
-        return UnZigZag(tx, ty, tz);
+        return UnZigZag(zx, zy, zz);
     }
 
-    auto zx = GaffersRangeDecode(ranges, maxBits, source);
-    auto zy = GaffersRangeDecode(ranges, maxBits, source);
-    auto zz = GaffersRangeDecode(ranges, maxBits, source);
+    auto zx = GaffersRangeDecode(ranges, source);
+    auto zy = GaffersRangeDecode(ranges, source);
+    auto zz = GaffersRangeDecode(ranges, source);
 
     return UnZigZag(zx, zy, zz);
 }
@@ -4740,7 +4744,7 @@ int main(int, char**)
     {
         ChangedArrayEncoding::Exp,
         PosVector3Packer::BitVector3Truncated,
-        QuatPacker::BitVector3BitCount,
+        QuatPacker::BitVector3ModifiedGaffer,
     };
 
     if (doStats)
