@@ -1567,7 +1567,7 @@ IntVec3 BitVector3BitCountZigZagDecode(
 
 // //////////////////////////////////////////////////////
 
-unsigned GafferMinThresholdBits = 2;
+unsigned GafferMinThresholdBits = 3;
 
 unsigned BitVector3ModifiedGafferEncode(
         IntVec3 toEncode,
@@ -1589,60 +1589,66 @@ unsigned BitVector3ModifiedGafferEncode(
 
     if (minBits < GafferMinThresholdBits)
     {
+        target.Write(0, 1);
+        ++bitsUsed;
+
         target.Write(1 ,1);
         bitsUsed++;
 
-        auto prefixBitCount = GafferMinThresholdBits - minBits - 1;
-        auto maxBitsPerComponent = minBits;
+        target.Write(zx, GafferMinThresholdBits - 1);
+        target.Write(zy, GafferMinThresholdBits - 1);
+        target.Write(zz, GafferMinThresholdBits - 1);
 
-        while (prefixBitCount--)
-        {
-            target.Write(0,1);
-            bitsUsed++;
-        }
+        bitsUsed += 3 * (GafferMinThresholdBits - 1);
 
-        // we know  the prefix count in advance, so
-        // no need to terminate if we reach max.
-        if (minBits)
-        {
-            target.Write(1,1);
-            bitsUsed++;
-        }
+//        auto prefixBitCount = GafferMinThresholdBits - minBits - 1;
+//        auto maxBitsPerComponent = minBits;
 
-        if (!maxBitsPerComponent)
-        {
-            return bitsUsed;
-        }
+//        while (prefixBitCount--)
+//        {
+//            target.Write(0,1);
+//            bitsUsed++;
+//        }
 
-        // //////////////////////////////////////////
+//        // we know  the prefix count in advance, so
+//        // no need to terminate if we reach max.
+//        if (minBits)
+//        {
+//            target.Write(1,1);
+//            bitsUsed++;
+//        }
 
-        assert(zx < (1u << maxBitsPerComponent));
+//        if (!maxBitsPerComponent)
+//        {
+//            return bitsUsed;
+//        }
 
-        target.Write(zx, maxBitsPerComponent);
-        bitsUsed += maxBitsPerComponent;
+//        // //////////////////////////////////////////
 
-        // //////////////////////////////////////////
+//        assert(zx < (1u << maxBitsPerComponent));
 
-        assert(zy < (1u << maxBitsPerComponent));
+//        target.Write(zx, maxBitsPerComponent);
+//        bitsUsed += maxBitsPerComponent;
 
-        target.Write(zy, maxBitsPerComponent);
-        bitsUsed += maxBitsPerComponent;
+//        // //////////////////////////////////////////
 
-        // //////////////////////////////////////////
+//        assert(zy < (1u << maxBitsPerComponent));
 
-        assert(zz < (1u << maxBitsPerComponent));
+//        target.Write(zy, maxBitsPerComponent);
+//        bitsUsed += maxBitsPerComponent;
 
-        target.Write(zz, maxBitsPerComponent);
-        bitsUsed += maxBitsPerComponent;
+//        // //////////////////////////////////////////
+
+//        assert(zz < (1u << maxBitsPerComponent));
+
+//        target.Write(zz, maxBitsPerComponent);
+//        bitsUsed += maxBitsPerComponent;
 
         return bitsUsed;
     }
 
     auto WriteMax = [&]() -> unsigned
     {
-        target.Write(0, 1);
-        ++bitsUsed;
-
         target.Write(1, 1);
         ++bitsUsed;
 
@@ -1692,7 +1698,7 @@ IntVec3 BitVector3ModifiedGafferDecode(
         BitStream& source)
 {
     unsigned maxBits                = MinBits(maxMagnitude);
-    unsigned maxBitsPerComponent    = GafferMinThresholdBits - 1;
+    //unsigned maxBitsPerComponent    = GafferMinThresholdBits - 1;
 
     auto UnZigZag = [&base, &maxBits](unsigned x, unsigned y, unsigned z) -> IntVec3
     {
@@ -1705,35 +1711,6 @@ IntVec3 BitVector3ModifiedGafferDecode(
         return vec;
     };
 
-    auto doMin = source.Read(1);
-
-    if (doMin)
-    {
-        unsigned prefixCount = 0;
-        while (!source.Read(1))
-        {
-            prefixCount++;
-
-            if (prefixCount == (GafferMinThresholdBits - 1))
-            {
-                break;
-            }
-        }
-
-        maxBitsPerComponent -= prefixCount;
-
-        if (!maxBitsPerComponent)
-        {
-            return UnZigZag(0, 0, 0);
-        }
-
-        auto zx = source.Read(maxBitsPerComponent);
-        auto zy = source.Read(maxBitsPerComponent);
-        auto zz = source.Read(maxBitsPerComponent);
-
-        return UnZigZag(zx, zy, zz);
-    }
-
     auto doMax = source.Read(1);
 
     if (doMax)
@@ -1741,6 +1718,35 @@ IntVec3 BitVector3ModifiedGafferDecode(
         auto zx = source.Read(maxBits);
         auto zy = source.Read(maxBits);
         auto zz = source.Read(maxBits);
+
+        return UnZigZag(zx, zy, zz);
+    }
+
+    auto doMin = source.Read(1);
+
+    if (doMin)
+    {
+//        unsigned prefixCount = 0;
+//        while (!source.Read(1))
+//        {
+//            prefixCount++;
+
+//            if (prefixCount == (GafferMinThresholdBits - 1))
+//            {
+//                break;
+//            }
+//        }
+
+//        maxBitsPerComponent -= prefixCount;
+
+//        if (!maxBitsPerComponent)
+//        {
+//            return UnZigZag(0, 0, 0);
+//        }
+
+        auto zx = source.Read(GafferMinThresholdBits - 1);
+        auto zy = source.Read(GafferMinThresholdBits - 1);
+        auto zz = source.Read(GafferMinThresholdBits - 1);
 
         return UnZigZag(zx, zy, zz);
     }
@@ -3448,8 +3454,6 @@ std::vector<uint8_t> EncodeStats(
                                     (1 << RotationMaxBits) - 1,
                                     RangeBits{4, 5, 7},
                                     encoded);
-
-                            assert(encoded.Bits() < 30);
 
                             deltas.Write(encoded);
                         }
