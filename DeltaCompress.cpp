@@ -1567,7 +1567,7 @@ IntVec3 BitVector3BitCountZigZagDecode(
 
 // //////////////////////////////////////////////////////
 
-unsigned GafferMinThresholdBits = 6;
+unsigned GafferMinThresholdBits = 3;
 
 unsigned BitVector3ModifiedGafferEncode(
         IntVec3 toEncode,
@@ -1741,6 +1741,86 @@ IntVec3 BitVector3ModifiedGafferDecode(
         auto zx = source.Read(maxBits);
         auto zy = source.Read(maxBits);
         auto zz = source.Read(maxBits);
+
+        return UnZigZag(zx, zy, zz);
+    }
+
+    auto zx = GaffersRangeDecode(ranges, source);
+    auto zy = GaffersRangeDecode(ranges, source);
+    auto zz = GaffersRangeDecode(ranges, source);
+
+    return UnZigZag(zx, zy, zz);
+}
+
+// //////////////////////////////////////////////////////
+
+unsigned GafferEncode(
+        IntVec3 deltaData,
+        RangeBits ranges,
+        BitStream& target)
+{
+    unsigned bitsUsed   = 0;
+
+    unsigned zx = ZigZag(deltaData.x);
+    unsigned zy = ZigZag(deltaData.y);
+    unsigned zz = ZigZag(deltaData.z);
+
+    auto minBits = std::max(MinBits(zx), MinBits(zy));
+    minBits = std::max(minBits, MinBits(zz));
+
+    if (minBits < GafferMinThresholdBits)
+    {
+        target.Write(1, 1);
+        ++bitsUsed;
+
+        target.Write(zx, GafferMinThresholdBits - 1);
+        target.Write(zy, GafferMinThresholdBits - 1);
+        target.Write(zz, GafferMinThresholdBits - 1);
+        bitsUsed += 3 * (GafferMinThresholdBits - 1);
+
+        return bitsUsed;
+    }
+
+    BitStream testEncode;
+
+    GaffersRangeEncode(ranges, zx, testEncode);
+    GaffersRangeEncode(ranges, zy, testEncode);
+    GaffersRangeEncode(ranges, zz, testEncode);
+
+    auto size = testEncode.Bits();
+
+    target.Write(0, 1);
+    ++bitsUsed;
+
+    target.Write(testEncode);
+
+    return size + bitsUsed;
+}
+
+
+IntVec3 GafferDecode(
+        RangeBits ranges,
+        BitStream& source)
+{
+    auto UnZigZag = [](unsigned x, unsigned y, unsigned z) -> IntVec3
+    {
+        IntVec3 vec;
+
+        vec.x = ZigZag(x);
+        vec.y = ZigZag(y);
+        vec.z = ZigZag(z);
+
+        return vec;
+    };
+
+    auto doMin = source.Read(1);
+
+    if (doMin)
+    {
+        auto bitsToRead = GafferMinThresholdBits - 1;
+        auto zx = source.Read(bitsToRead);
+        auto zy = source.Read(bitsToRead);
+        auto zz = source.Read(bitsToRead);
 
         return UnZigZag(zx, zy, zz);
     }
@@ -1947,30 +2027,71 @@ void BitVector3Tests()
             for (const auto& b : testValues)
             {
                 for (const auto& c : testValues)
-                {
+                {                    
                     IntVec3 base{a,b,c};
                     IntVec3 target{c,a,b};
 
-                    BitStream encoded;
+                    {
+                        BitStream encoded;
 
-                    BitVector3ModifiedGafferEncode(
-                        target,
-                        base,
-                        511,
-                        ranges,
-                        encoded);
+                        BitVector3ModifiedGafferEncode(
+                            target,
+                            base,
+                            511,
+                            ranges,
+                            encoded);
 
-                    encoded.Reset();
+                        encoded.Reset();
 
-                    auto decoded = BitVector3ModifiedGafferDecode(
-                        base,
-                        511,
-                        ranges,
-                        encoded);
+                        auto decoded = BitVector3ModifiedGafferDecode(
+                            base,
+                            511,
+                            ranges,
+                            encoded);
 
-                    assert(decoded.x == target.x);
-                    assert(decoded.y == target.y);
-                    assert(decoded.z == target.z);
+                        assert(decoded.x == target.x);
+                        assert(decoded.y == target.y);
+                        assert(decoded.z == target.z);
+                    }
+
+                    {
+                        BitStream encoded;
+
+                        IntVec3 deltaData
+                        {
+                            target.x - base.x,
+                            target.y - base.y,
+                            target.z - base.z,
+                        };
+
+                        auto zx = ZigZag(deltaData.x);
+                        auto zy = ZigZag(deltaData.y);
+                        auto zz = ZigZag(deltaData.z);
+
+                        auto max = MaxRange(ranges);
+
+                        if ((zx < max) && (zy < max) && (zz < max))
+                        {
+                            GafferEncode(
+                                deltaData,
+                                ranges,
+                                encoded);
+
+                            encoded.Reset();
+
+                            auto decoded = GafferDecode(
+                                ranges,
+                                encoded);
+
+                            decoded.x += base.x;
+                            decoded.y += base.y;
+                            decoded.z += base.z;
+
+                            assert(decoded.x == target.x);
+                            assert(decoded.y == target.y);
+                            assert(decoded.z == target.z);
+                        }
+                    }
                 }
             }
         }
