@@ -259,6 +259,12 @@ struct Stats
     std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogramTooBig;
 
     unsigned quatChangedAll27bits;
+
+    unsigned quantsAllMin;
+    unsigned quantsAllMax;
+    unsigned quantsRange0;
+    unsigned quantsRange1;
+    unsigned quantsRange2;
 };
 
 enum class ChangedArrayEncoding
@@ -1574,7 +1580,8 @@ unsigned BitVector3ModifiedGafferEncode(
         IntVec3 base,
         unsigned maxMagnitude,
         RangeBits ranges,
-        BitStream& target)
+        BitStream& target,
+        Stats& stats)
 {
     unsigned max        = MaxRange(ranges);
     unsigned maxBits    = MinBits(maxMagnitude);
@@ -1587,8 +1594,26 @@ unsigned BitVector3ModifiedGafferEncode(
     auto minBits = std::max(MinBits(zx), MinBits(zy));
     minBits = std::max(minBits, MinBits(zz));
 
+    // RAM: is my zigzag encoding bad here?
+    IntVec3 a
+    {
+        toEncode.x,
+        toEncode.y,
+        toEncode.z,
+    };
+
+    a.x -= base.x;
+    a.y -= base.y;
+    a.z -= base.z;
+
+    unsigned zzx = ZigZag(a.x);
+    unsigned zzy = ZigZag(a.y);
+    unsigned zzz = ZigZag(a.z);
+
     if (minBits < GafferMinThresholdBits)
     {
+        ++stats.quantsAllMin;
+
         target.Write(0, 1);
         ++bitsUsed;
 
@@ -1649,6 +1674,8 @@ unsigned BitVector3ModifiedGafferEncode(
 
     auto WriteMax = [&]() -> unsigned
     {
+        ++stats.quantsAllMax;
+
         target.Write(1, 1);
         ++bitsUsed;
 
@@ -1661,12 +1688,71 @@ unsigned BitVector3ModifiedGafferEncode(
         return bitsUsed;
     };
 
-    if ((zx >= max) || (zy >= max) || (zz >= max))
+    // RAM: is my zigzag encoding bad here?
+    //if ((zx >= max) || (zy >= max) || (zz >= max))
+    if ((zzx >= max) || (zzy >= max) || (zzz >= max))
     {
         return WriteMax();
     }
 
     BitStream testEncode;
+
+    if (zx < 16)
+    {
+        //bitCountQuat += 1 + 4;
+        ++stats.quantsRange0;
+    }
+    else
+    {
+        if (zx < 48)
+        {
+            //bitCountQuat += 2 + 5;
+            ++stats.quantsRange1;
+        }
+        else
+        {
+            //bitCountQuat += 2 + 7;
+            ++stats.quantsRange2;
+        }
+    }
+
+    if (zy < 16)
+    {
+        //bitCountQuat += 1 + 4;
+        ++stats.quantsRange0;
+    }
+    else
+    {
+        if (zy < 48)
+        {
+            //bitCountQuat += 2 + 5;
+            ++stats.quantsRange1;
+        }
+        else
+        {
+            //bitCountQuat += 2 + 7;
+            ++stats.quantsRange2;
+        }
+    }
+
+    if (zz < 16)
+    {
+        //bitCountQuat += 1 + 4;
+        ++stats.quantsRange0;
+    }
+    else
+    {
+        if (zz < 48)
+        {
+            //bitCountQuat += 2 + 5;
+            ++stats.quantsRange1;
+        }
+        else
+        {
+            //bitCountQuat += 2 + 7;
+            ++stats.quantsRange2;
+        }
+    }
 
     GaffersRangeEncode(ranges, zx, testEncode);
     GaffersRangeEncode(ranges, zy, testEncode);
@@ -1959,12 +2045,15 @@ void BitVector3Tests()
 
                     BitStream encoded;
 
+                    Stats stats;
+
                     BitVector3ModifiedGafferEncode(
                         target,
                         base,
                         511,
                         ranges,
-                        encoded);
+                        encoded,
+                        stats);
 
                     encoded.Reset();
 
@@ -3453,12 +3542,15 @@ std::vector<uint8_t> EncodeStats(
                                     baseVec,
                                     (1 << RotationMaxBits) - 1,
                                     RangeBits{4, 5, 7},
-                                    encoded);
+                                    encoded,
+                                    stats);
 
                             deltas.Write(encoded);
                         }
                         else
                         {
+                            ++stats.quantsAllMax;
+
                             deltas.Write(0, 1);
 
                             deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
@@ -3955,12 +4047,14 @@ std::vector<uint8_t> Encode(
                             };
 
                             BitStream encoded;
+                            Stats stats;
                             BitVector3ModifiedGafferEncode(
                                     toEncode,
                                     baseVec,
                                     (1 << RotationMaxBits) - 1,
                                     RangeBits{4, 5, 7},
-                                    encoded);
+                                    encoded,
+                                    stats);
 
                             deltas.Write(encoded);
                         }
@@ -4484,6 +4578,12 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         {0},
         {0},
         0,
+
+        0,
+        0,
+        0,
+        0,
+        0,
     };
 
     // Lets actually do the stuff.
@@ -4672,6 +4772,14 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.quantWhichIsBigger[7])
 
     PRINT_INT(stats.quatChangedAll27bits)
+
+    printf("\n==============================================\n");
+
+    PRINT_INT(stats.quantsAllMin)
+    PRINT_INT(stats.quantsAllMax)
+    PRINT_INT(stats.quantsRange0)
+    PRINT_INT(stats.quantsRange1)
+    PRINT_INT(stats.quantsRange2)
 
     printf("\n==============================================\n");
 
