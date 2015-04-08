@@ -20,7 +20,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
+bool doTests        = false;
 bool doStats        = true;
 bool doCompression  = true;
 
@@ -1567,7 +1567,7 @@ IntVec3 BitVector3BitCountZigZagDecode(
 
 // //////////////////////////////////////////////////////
 
-unsigned GafferMinThresholdBits = 6;
+unsigned GafferMinThresholdBits = 2;
 
 unsigned BitVector3ModifiedGafferEncode(
         IntVec3 toEncode,
@@ -2993,11 +2993,11 @@ std::vector<uint8_t> EncodeStats(
             }
 
             // Only write what's changed
-            if (quatSame)
-            {
-                deltas.Write(0, 1);
-            }
-            else
+//            if (quatSame)
+//            {
+//                deltas.Write(0, 1);
+//            }
+//            else
             {
                 deltas.Write(1, 1);
 
@@ -3417,35 +3417,55 @@ std::vector<uint8_t> EncodeStats(
 
                     case QuatPacker::BitVector3ModifiedGaffer:
                     {
-                        unsigned bitsWritten = 2;
-                        deltas.Write(
-                            target[i].orientation_largest,
-                            RotationIndexMaxBits);
+                        unsigned bitsWritten = 0;
 
-                        IntVec3 toEncode =
+                        if  (
+                                target[i].orientation_largest ==
+                                base[i].orientation_largest
+                            )
                         {
-                            target[i].orientation_a,
-                            target[i].orientation_b,
-                            target[i].orientation_c,
-                        };
+                            deltas.Write(1, 1);
+                            ++bitsWritten;
 
-                        IntVec3 baseVec =
+                            IntVec3 toEncode =
+                            {
+                                target[i].orientation_a,
+                                target[i].orientation_b,
+                                target[i].orientation_c,
+                            };
+
+                            IntVec3 baseVec =
+                            {
+                                base[i].orientation_a,
+                                base[i].orientation_b,
+                                base[i].orientation_c,
+                            };
+
+                            BitStream encoded;
+                            bitsWritten += BitVector3ModifiedGafferEncode(
+                                    toEncode,
+                                    baseVec,
+                                    (1 << RotationMaxBits) - 1,
+                                    RangeBits{4, 5, 7},
+                                    encoded);
+
+                            assert(encoded.Bits() < 30);
+
+                            deltas.Write(encoded);
+                        }
+                        else
                         {
-                            base[i].orientation_a,
-                            base[i].orientation_b,
-                            base[i].orientation_c,
-                        };
+                            deltas.Write(0, 1);
 
-                        BitStream encoded;
-                        auto codedBits = BitVector3ModifiedGafferEncode(
-                                toEncode,
-                                baseVec,
-                                (1 << RotationMaxBits) - 1,
-                                RangeBits {5, 6, 7},
-                                encoded);
+                            deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+                            deltas.Write(target[i].orientation_a, RotationMaxBits);
+                            deltas.Write(target[i].orientation_b, RotationMaxBits);
+                            deltas.Write(target[i].orientation_c, RotationMaxBits);
 
-                        deltas.Write(encoded);
-                        bitsWritten += 1 + codedBits;
+                            bitsWritten +=
+                                    RotationIndexMaxBits +
+                                    (3 * RotationMaxBits);
+                        }
 
                         stats.quatDeltaPackedBitCount.Update(bitsWritten);
 
@@ -3909,35 +3929,46 @@ std::vector<uint8_t> Encode(
 
                     case QuatPacker::BitVector3ModifiedGaffer:
                     {
-                        unsigned bitsWritten = 2;
-                        deltas.Write(
-                            target[i].orientation_largest,
-                            RotationIndexMaxBits);
-
-                        IntVec3 toEncode =
+                        if  (
+                                target[i].orientation_largest ==
+                                base[i].orientation_largest
+                            )
                         {
-                            target[i].orientation_a,
-                            target[i].orientation_b,
-                            target[i].orientation_c,
-                        };
+                            deltas.Write(1, 1);
 
-                        IntVec3 baseVec =
+                            IntVec3 toEncode =
+                            {
+                                target[i].orientation_a,
+                                target[i].orientation_b,
+                                target[i].orientation_c,
+                            };
+
+                            IntVec3 baseVec =
+                            {
+                                base[i].orientation_a,
+                                base[i].orientation_b,
+                                base[i].orientation_c,
+                            };
+
+                            BitStream encoded;
+                            BitVector3ModifiedGafferEncode(
+                                    toEncode,
+                                    baseVec,
+                                    (1 << RotationMaxBits) - 1,
+                                    RangeBits{4, 5, 7},
+                                    encoded);
+
+                            deltas.Write(encoded);
+                        }
+                        else
                         {
-                            base[i].orientation_a,
-                            base[i].orientation_b,
-                            base[i].orientation_c,
-                        };
+                            deltas.Write(0, 1);
 
-                        BitStream encoded;
-                        auto codedBits = BitVector3ModifiedGafferEncode(
-                                toEncode,
-                                baseVec,
-                                (1 << RotationMaxBits) - 1,
-                                RangeBits {5, 6, 7},
-                                encoded);
-
-                        deltas.Write(encoded);
-                        bitsWritten += 1 + codedBits;
+                            deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+                            deltas.Write(target[i].orientation_a, RotationMaxBits);
+                            deltas.Write(target[i].orientation_b, RotationMaxBits);
+                            deltas.Write(target[i].orientation_c, RotationMaxBits);
+                        }
 
                         break;
                     }
@@ -4255,25 +4286,37 @@ Frame Decode(
 
                     case QuatPacker::BitVector3ModifiedGaffer:
                     {
-                        result[i].orientation_largest =
-                            bits.Read(RotationIndexMaxBits);
+                        auto bothered = bits.Read(1);
 
-                        IntVec3 baseVec =
+                        if (bothered)
                         {
-                            base[i].orientation_a,
-                            base[i].orientation_b,
-                            base[i].orientation_c,
-                        };
+                            result[i].orientation_largest =
+                                base[i].orientation_largest;
 
-                        auto vec = BitVector3ModifiedGafferDecode(
-                                baseVec,
-                                (1 << RotationMaxBits) - 1,
-                                RangeBits{5, 6, 7},
-                                bits);
+                            IntVec3 baseVec =
+                            {
+                                base[i].orientation_a,
+                                base[i].orientation_b,
+                                base[i].orientation_c,
+                            };
 
-                        result[i].orientation_a = vec.x;
-                        result[i].orientation_b = vec.y;
-                        result[i].orientation_c = vec.z;
+                            auto vec = BitVector3ModifiedGafferDecode(
+                                    baseVec,
+                                    (1 << RotationMaxBits) - 1,
+                                    RangeBits{4, 5, 7},
+                                    bits);
+
+                            result[i].orientation_a = vec.x;
+                            result[i].orientation_b = vec.y;
+                            result[i].orientation_c = vec.z;
+                        }
+                        else
+                        {
+                            result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
+                            result[i].orientation_a         = bits.Read(RotationMaxBits);
+                            result[i].orientation_b         = bits.Read(RotationMaxBits);
+                            result[i].orientation_c         = bits.Read(RotationMaxBits);
+                        }
 
                         break;
                     }
@@ -4549,6 +4592,8 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     printf("\n");
     auto quatPackedAvg = stats.quatDeltaPackedBitCount.Average();
     PRINT_FLOAT(quatPackedAvg)
+    PRINT_INT(stats.quatDeltaPackedBitCount.count)
+    PRINT_INT(stats.quatDeltaPackedBitCount.sum)
     PRINT_INT(stats.quatDeltaPackedBitCount.min)
     PRINT_INT(stats.quatDeltaPackedBitCount.max)
 
