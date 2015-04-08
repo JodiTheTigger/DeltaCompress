@@ -772,6 +772,7 @@ unsigned constexpr MaxRange(const RangeBits& ranges)
 unsigned GaffersRangeEncode(
         RangeBits ranges,
         unsigned value,
+        unsigned maxBits,
         BitStream& target)
 {
     unsigned bitsUsed = 0;
@@ -808,16 +809,31 @@ unsigned GaffersRangeEncode(
         return bitsUsed + 1 + ranges[1];
     }
 
-    assert(value < MaxRange(ranges));
+    target.Write(0, 1);
+    ++bitsUsed;
+
+    auto maxRange = MaxRange(ranges);
+
+    if (value < maxRange)
+    {
+        target.Write(1, 1);
+        target.Write(value - minCounts[2].min, ranges[2]);
+
+        return bitsUsed + 1 + ranges[2];
+    }
 
     target.Write(0, 1);
-    target.Write(value - minCounts[2].min, ranges[2]);
+    ++bitsUsed;
 
-    return bitsUsed + 1 + ranges[2];
+    return TruncateEncode(
+        value - maxRange,
+        ((1 << maxBits) - 1) - maxRange,
+        target);
 }
 
 unsigned GaffersRangeDecode(
         RangeBits ranges,
+        unsigned maxBits,
         BitStream& source)
 {
     auto first = source.Read(1);
@@ -835,8 +851,19 @@ unsigned GaffersRangeDecode(
         return result + (1 << ranges[0]);
     }
 
-    auto result = source.Read(ranges[2]);
-    return result + (1 << ranges[0]) + (1 << ranges[1]);
+    auto third = source.Read(1);
+
+    if (third)
+    {
+        auto result = source.Read(ranges[2]);
+        return result + (1 << ranges[0]) + (1 << ranges[1]);
+    }
+
+    auto maxRange = MaxRange(ranges);
+
+    return maxRange + TruncateDecode(
+        ((1 << maxBits) - 1) - maxRange,
+        source);
 }
 
 void GaffersRangeTest()
@@ -848,14 +875,13 @@ void GaffersRangeTest()
         7
     };
 
-    unsigned maxRange = MaxRange(ranges);
-    for (unsigned i = 0; i < maxRange; ++i)
+    for (unsigned i = 0; i < 512; ++i)
     {
         BitStream stream;
 
-        GaffersRangeEncode(ranges, i, stream);
+        GaffersRangeEncode(ranges, i, 9, stream);
         stream.Reset();
-        auto result = GaffersRangeDecode(ranges, stream);
+        auto result = GaffersRangeDecode(ranges, 9, stream);
 
         assert(i == result);
     }
@@ -1635,12 +1661,12 @@ unsigned BitVector3ModifiedGafferEncode(
         return bitsUsed;
     }
 
-    target.Write(1, 0);
+    target.Write(0, 1);
     ++bitsUsed;
 
-    bitsUsed += GaffersRangeEncode(ranges, zx, target);
-    bitsUsed += GaffersRangeEncode(ranges, zy, target);
-    bitsUsed += GaffersRangeEncode(ranges, zz, target);
+    bitsUsed += GaffersRangeEncode(ranges, zx, maxBits, target);
+    bitsUsed += GaffersRangeEncode(ranges, zy, maxBits, target);
+    bitsUsed += GaffersRangeEncode(ranges, zz, maxBits, target);
 
     return bitsUsed;
 }
@@ -1703,9 +1729,9 @@ IntVec3 BitVector3ModifiedGafferDecode(
         return UnZigZag(tx, ty, tz);
     }
 
-    auto zx = GaffersRangeDecode(ranges, source);
-    auto zy = GaffersRangeDecode(ranges, source);
-    auto zz = GaffersRangeDecode(ranges, source);
+    auto zx = GaffersRangeDecode(ranges, maxBits, source);
+    auto zy = GaffersRangeDecode(ranges, maxBits, source);
+    auto zz = GaffersRangeDecode(ranges, maxBits, source);
 
     return UnZigZag(zx, zy, zz);
 }
@@ -1889,6 +1915,46 @@ void BitVector3Tests()
                         assert(j == decoded.y);
                         assert(k == decoded.z);
                     }
+                }
+            }
+        }
+    }
+
+    // //////////////////////////////////////////////////
+
+    {
+        auto testValues = {0, 12, 66, 156, 256, 289, 511};
+        auto ranges = RangeBits{5,6,7};
+
+        for (const auto& a : testValues)
+        {
+            for (const auto& b : testValues)
+            {
+                for (const auto& c : testValues)
+                {
+                    IntVec3 base{a,b,c};
+                    IntVec3 target{c,a,b};
+
+                    BitStream encoded;
+
+                    BitVector3ModifiedGafferEncode(
+                        target,
+                        base,
+                        511,
+                        ranges,
+                        encoded);
+
+                    encoded.Reset();
+
+                    auto decoded = BitVector3ModifiedGafferDecode(
+                        base,
+                        511,
+                        ranges,
+                        encoded);
+
+                    assert(decoded.x == target.x);
+                    assert(decoded.y == target.y);
+                    assert(decoded.z == target.z);
                 }
             }
         }
@@ -4195,12 +4261,12 @@ Frame Decode(
 
 void Tests()
 {
-    GaffersRangeTest();
     ZigZagTest();
     TruncateTest();
+    GaffersRangeTest();
+    BitStreamTest();
     BitVector3Tests();
     RunLengthTests();
-    BitStreamTest();
 }
 
 // //////////////////////////////////////////////////////
