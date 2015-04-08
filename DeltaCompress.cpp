@@ -20,7 +20,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
+bool doTests        = false;
 bool doStats        = true;
 bool doCompression  = true;
 
@@ -286,6 +286,7 @@ enum class QuatPacker
     BitVector3BitCount,
     BitVector3ModifiedZigZag,
     BitVector3ModifiedGaffer,
+    Gaffer,
 };
 
 // //////////////////////////////////////////////////////
@@ -3114,13 +3115,17 @@ std::vector<uint8_t> EncodeStats(
             }
 
             // Only write what's changed
-            if (quatSame)
+            // But only for non gaffer encoding.
+            if ((quatSame) && (config.quatPacker != QuatPacker::Gaffer))
             {
                 deltas.Write(0, 1);
             }
             else
             {
-                deltas.Write(1, 1);
+                if (config.quatPacker != QuatPacker::Gaffer)
+                {
+                    deltas.Write(1, 1);
+                }
 
                 const auto vec3BitsUncompressed = (RotationMaxBits * 3);
                 stats.quatDeltaUnpackedBitCount +=
@@ -3572,6 +3577,65 @@ std::vector<uint8_t> EncodeStats(
 
                         break;
                     }
+
+                    case QuatPacker::Gaffer:
+                    {
+                        auto WriteFull = [&deltas, &target, &i, &stats]()
+                        {
+                            deltas.Write(1, 1);
+
+                            deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+                            deltas.Write(target[i].orientation_a, RotationMaxBits);
+                            deltas.Write(target[i].orientation_b, RotationMaxBits);
+                            deltas.Write(target[i].orientation_c, RotationMaxBits);
+
+                            stats.quatDeltaPackedBitCount.Update(
+                                        1 +
+                                        (RotationMaxBits * 3) +
+                                        RotationIndexMaxBits);
+                        };
+
+                        if  (
+                                target[i].orientation_largest !=
+                                base[i].orientation_largest
+                            )
+                        {
+                            WriteFull();
+                            break;
+                        }
+
+                        IntVec3 deltaData
+                        {
+                            target[i].orientation_a - base[i].orientation_a,
+                            target[i].orientation_b - base[i].orientation_b,
+                            target[i].orientation_c - base[i].orientation_c,
+                        };
+
+                        auto zx = ZigZag(deltaData.x);
+                        auto zy = ZigZag(deltaData.y);
+                        auto zz = ZigZag(deltaData.z);
+
+                        auto ranges = RangeBits{5, 6, 7};
+
+                        auto max = MaxRange(ranges);
+
+                        if ((zx >= max) || (zy >= max) || (zz >= max))
+                        {
+                            WriteFull();
+                            break;
+                        }
+
+                        // using gaffer encode.
+                        deltas.Write(0, 1);
+
+                        auto codedBits = GafferEncode(
+                                deltaData,
+                                ranges,
+                                deltas);
+
+                        stats.quatDeltaPackedBitCount.Update(1 + codedBits);
+                        break;
+                    }
                 }
             }
 
@@ -3846,13 +3910,16 @@ std::vector<uint8_t> Encode(
                     (base[i].orientation_c == target[i].orientation_c);
 
             // Only write what's changed
-            if (quatSame)
+            if ((quatSame) && (config.quatPacker != QuatPacker::Gaffer))
             {
                 deltas.Write(0, 1);
             }
             else
             {
-                deltas.Write(1, 1);
+                if (config.quatPacker != QuatPacker::Gaffer)
+                {
+                    deltas.Write(1, 1);
+                }
 
                 const auto vec3BitsUncompressed = (RotationMaxBits * 3);
 
@@ -4060,6 +4127,58 @@ std::vector<uint8_t> Encode(
                         deltas.Write(encoded);
                         bitsWritten += 1 + codedBits;
 
+                        break;
+                    }
+
+                    case QuatPacker::Gaffer:
+                    {
+                        auto WriteFull = [&deltas, &target, &i]()
+                        {
+                            deltas.Write(1, 1);
+
+                            deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
+                            deltas.Write(target[i].orientation_a, RotationMaxBits);
+                            deltas.Write(target[i].orientation_b, RotationMaxBits);
+                            deltas.Write(target[i].orientation_c, RotationMaxBits);
+                        };
+
+                        if  (
+                                target[i].orientation_largest !=
+                                base[i].orientation_largest
+                            )
+                        {
+                            WriteFull();
+                            break;
+                        }
+
+                        IntVec3 deltaData
+                        {
+                            target[i].orientation_a - base[i].orientation_a,
+                            target[i].orientation_b - base[i].orientation_b,
+                            target[i].orientation_c - base[i].orientation_c,
+                        };
+
+                        auto zx = ZigZag(deltaData.x);
+                        auto zy = ZigZag(deltaData.y);
+                        auto zz = ZigZag(deltaData.z);
+
+                        auto ranges = RangeBits{5, 6, 7};
+
+                        auto max = MaxRange(ranges);
+
+                        if ((zx >= max) || (zy >= max) || (zz >= max))
+                        {
+                            WriteFull();
+                            break;
+                        }
+
+                        // using gaffer encode.
+                        deltas.Write(0, 1);
+
+                        GafferEncode(
+                                deltaData,
+                                ranges,
+                                deltas);
                         break;
                     }
                 }
@@ -4272,7 +4391,11 @@ Frame Decode(
     {
         if (changed.Read(1))
         {
-            auto quadChanged = bits.Read(1);
+            unsigned quadChanged = 1;
+            if (config.quatPacker != QuatPacker::Gaffer)
+            {
+                quadChanged = bits.Read(1);
+            }
 
             if (quadChanged)
             {
@@ -4395,6 +4518,31 @@ Frame Decode(
                         result[i].orientation_a = vec.x;
                         result[i].orientation_b = vec.y;
                         result[i].orientation_c = vec.z;
+
+                        break;
+                    }
+
+                    case QuatPacker::Gaffer:
+                    {
+                        auto full = bits.Read(1);
+
+                        if (full)
+                        {
+                            result[i].orientation_largest   = bits.Read(RotationIndexMaxBits);
+                            result[i].orientation_a         = bits.Read(RotationMaxBits);
+                            result[i].orientation_b         = bits.Read(RotationMaxBits);
+                            result[i].orientation_c         = bits.Read(RotationMaxBits);
+                            break;
+                        }
+
+                        result[i].orientation_largest =
+                            base[i].orientation_largest;
+
+                        auto vec = GafferDecode({5, 6, 7}, bits);
+
+                        result[i].orientation_a = base[i].orientation_a + vec.x;
+                        result[i].orientation_b = base[i].orientation_b + vec.y;
+                        result[i].orientation_c = base[i].orientation_c + vec.z;
 
                         break;
                     }
@@ -4865,7 +5013,7 @@ int main(int, char**)
     {
         ChangedArrayEncoding::Exp,
         PosVector3Packer::BitVector3Truncated,
-        QuatPacker::BitVector3ModifiedGaffer,
+        QuatPacker::Gaffer,
     };
 
     if (doStats)
