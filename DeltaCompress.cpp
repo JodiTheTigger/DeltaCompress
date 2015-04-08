@@ -63,13 +63,14 @@ inline bool operator==(const DeltaData& lhs, const DeltaData& rhs)
 {
     return
     (
-            (lhs.interacting    == rhs.interacting)
-        &&  (lhs.orientation_a  == rhs.orientation_a)
-        &&  (lhs.orientation_b  == rhs.orientation_b)
-        &&  (lhs.orientation_c  == rhs.orientation_c)
-        &&  (lhs.position_x     == rhs.position_x)
-        &&  (lhs.position_y     == rhs.position_y)
-        &&  (lhs.position_z     == rhs.position_z)
+            (lhs.interacting            == rhs.interacting)
+        &&  (lhs.orientation_a          == rhs.orientation_a)
+        &&  (lhs.orientation_b          == rhs.orientation_b)
+        &&  (lhs.orientation_c          == rhs.orientation_c)
+        &&  (lhs.orientation_largest    == rhs.orientation_largest)
+        &&  (lhs.position_x             == rhs.position_x)
+        &&  (lhs.position_y             == rhs.position_y)
+        &&  (lhs.position_z             == rhs.position_z)
     );
 }
 
