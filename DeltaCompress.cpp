@@ -20,9 +20,9 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
-bool doStats        = false;
-bool doCompression  = false;
+bool doTests        = false;
+bool doStats        = true;
+bool doCompression  = true;
 
 // //////////////////////////////////////////////////////
 
@@ -285,6 +285,7 @@ enum class QuatPacker
     BitVector3Unrelated,
     BitVector3BitCount,
     BitVector3ModifiedZigZag,
+    BitVector3ModifiedGaffer,
 };
 
 // //////////////////////////////////////////////////////
@@ -3398,6 +3399,43 @@ std::vector<uint8_t> EncodeStats(
                         stats.quatDeltaPackedBitCount.Update(bitsWritten);
                         break;
                     }
+
+                    case QuatPacker::BitVector3ModifiedGaffer:
+                    {
+                        unsigned bitsWritten = 2;
+                        deltas.Write(
+                            target[i].orientation_largest,
+                            RotationIndexMaxBits);
+
+                        IntVec3 toEncode =
+                        {
+                            target[i].orientation_a,
+                            target[i].orientation_b,
+                            target[i].orientation_c,
+                        };
+
+                        IntVec3 baseVec =
+                        {
+                            base[i].orientation_a,
+                            base[i].orientation_b,
+                            base[i].orientation_c,
+                        };
+
+                        BitStream encoded;
+                        auto codedBits = BitVector3ModifiedGafferEncode(
+                                toEncode,
+                                baseVec,
+                                (1 << RotationMaxBits) - 1,
+                                RangeBits {5, 6, 7},
+                                encoded);
+
+                        deltas.Write(encoded);
+                        bitsWritten += 1 + codedBits;
+
+                        stats.quatDeltaPackedBitCount.Update(bitsWritten);
+
+                        break;
+                    }
                 }
             }
 
@@ -3853,6 +3891,41 @@ std::vector<uint8_t> Encode(
 
                         break;
                     }
+
+                    case QuatPacker::BitVector3ModifiedGaffer:
+                    {
+                        unsigned bitsWritten = 2;
+                        deltas.Write(
+                            target[i].orientation_largest,
+                            RotationIndexMaxBits);
+
+                        IntVec3 toEncode =
+                        {
+                            target[i].orientation_a,
+                            target[i].orientation_b,
+                            target[i].orientation_c,
+                        };
+
+                        IntVec3 baseVec =
+                        {
+                            base[i].orientation_a,
+                            base[i].orientation_b,
+                            base[i].orientation_c,
+                        };
+
+                        BitStream encoded;
+                        auto codedBits = BitVector3ModifiedGafferEncode(
+                                toEncode,
+                                baseVec,
+                                (1 << RotationMaxBits) - 1,
+                                RangeBits {5, 6, 7},
+                                encoded);
+
+                        deltas.Write(encoded);
+                        bitsWritten += 1 + codedBits;
+
+                        break;
+                    }
                 }
             }
 
@@ -4161,6 +4234,31 @@ Frame Decode(
                             result[i].orientation_b = bits.Read(RotationMaxBits);
                             result[i].orientation_c = bits.Read(RotationMaxBits);
                         }
+
+                        break;
+                    }
+
+                    case QuatPacker::BitVector3ModifiedGaffer:
+                    {
+                        result[i].orientation_largest =
+                            bits.Read(RotationIndexMaxBits);
+
+                        IntVec3 baseVec =
+                        {
+                            base[i].orientation_a,
+                            base[i].orientation_b,
+                            base[i].orientation_c,
+                        };
+
+                        auto vec = BitVector3ModifiedGafferDecode(
+                                baseVec,
+                                (1 << RotationMaxBits) - 1,
+                                RangeBits{5, 6, 7},
+                                bits);
+
+                        result[i].orientation_a = vec.x;
+                        result[i].orientation_b = vec.y;
+                        result[i].orientation_c = vec.z;
 
                         break;
                     }
@@ -4631,7 +4729,7 @@ int main(int, char**)
     {
         ChangedArrayEncoding::Exp,
         PosVector3Packer::BitVector3Truncated,
-        QuatPacker::BitVector3ModifiedZigZag,
+        QuatPacker::BitVector3ModifiedGaffer,
     };
 
     if (doStats)
