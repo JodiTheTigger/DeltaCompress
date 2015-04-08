@@ -259,6 +259,11 @@ struct Stats
     std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogramTooBig;
 
     unsigned quatChangedAll27bits;
+
+    // Gaffer investigation
+    unsigned quantCount;
+    unsigned quantMin;
+    unsigned quantMax;
 };
 
 enum class ChangedArrayEncoding
@@ -3580,6 +3585,8 @@ std::vector<uint8_t> EncodeStats(
 
                     case QuatPacker::Gaffer:
                     {
+                        ++stats.quantCount;
+
                         auto WriteFull = [&deltas, &target, &i, &stats]()
                         {
                             deltas.Write(1, 1);
@@ -3593,6 +3600,8 @@ std::vector<uint8_t> EncodeStats(
                                         1 +
                                         (RotationMaxBits * 3) +
                                         RotationIndexMaxBits);
+
+                            ++stats.quantMax;
                         };
 
                         if  (
@@ -3615,7 +3624,7 @@ std::vector<uint8_t> EncodeStats(
                         auto zy = ZigZag(deltaData.y);
                         auto zz = ZigZag(deltaData.z);
 
-                        auto ranges = RangeBits{5, 6, 7};
+                        auto ranges = RangeBits{4, 5, 7};
 
                         auto max = MaxRange(ranges);
 
@@ -3632,6 +3641,11 @@ std::vector<uint8_t> EncodeStats(
                                 deltaData,
                                 ranges,
                                 deltas);
+
+                        if (codedBits == 7)
+                        {
+                            ++stats.quantMin;
+                        }
 
                         stats.quatDeltaPackedBitCount.Update(1 + codedBits);
                         break;
@@ -4162,7 +4176,7 @@ std::vector<uint8_t> Encode(
                         auto zy = ZigZag(deltaData.y);
                         auto zz = ZigZag(deltaData.z);
 
-                        auto ranges = RangeBits{5, 6, 7};
+                        auto ranges = RangeBits{4, 5, 7};
 
                         auto max = MaxRange(ranges);
 
@@ -4538,7 +4552,7 @@ Frame Decode(
                         result[i].orientation_largest =
                             base[i].orientation_largest;
 
-                        auto vec = GafferDecode({5, 6, 7}, bits);
+                        auto vec = GafferDecode({4, 5, 7}, bits);
 
                         result[i].orientation_a = base[i].orientation_a + vec.x;
                         result[i].orientation_b = base[i].orientation_b + vec.y;
@@ -4706,6 +4720,10 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         {0},
         {0},
         0,
+
+        0,
+        0,
+        0,
     };
 
     // Lets actually do the stuff.
@@ -4725,6 +4743,9 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         stats.bytesPerPacket.Update(buffer.size());
 
         packetsCoded++;
+
+        // Gaffer debug
+        printf("%d\n", stats.quantCount);
     }
 
 
@@ -4892,6 +4913,14 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.quantWhichIsBigger[7])
 
     PRINT_INT(stats.quatChangedAll27bits)
+
+    printf("\n");
+
+    PRINT_INT(stats.quantCount);
+    PRINT_INT(stats.quantMin);
+    PRINT_INT(stats.quantMax);
+
+    printf("\n");
 
     printf("\n==============================================\n");
 
