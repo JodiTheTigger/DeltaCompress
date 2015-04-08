@@ -1407,8 +1407,14 @@ unsigned BitVector3BitCountEncode(
         target.Write(0,1);
         bitsUsed++;
     }
-    target.Write(1,1);
-    bitsUsed++;
+
+    // we know  the prefix count in advance, so
+    // no need to terminate if we reach max.
+    if (minBits)
+    {
+        target.Write(1,1);
+        bitsUsed++;
+    }
 
     if (!maxBitsPerComponent)
     {
@@ -1451,6 +1457,11 @@ IntVec3 BitVector3BitCountDecode(
     while (!source.Read(1))
     {
         prefixCount++;
+
+        if (prefixCount == maxBitsPerComponent)
+        {
+            break;
+        }
     }
 
     maxBitsPerComponent -= prefixCount;
@@ -4729,7 +4740,7 @@ int main(int, char**)
     {
         ChangedArrayEncoding::Exp,
         PosVector3Packer::BitVector3Truncated,
-        QuatPacker::BitVector3ModifiedGaffer,
+        QuatPacker::BitVector3BitCount,
     };
 
     if (doStats)
