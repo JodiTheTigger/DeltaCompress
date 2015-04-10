@@ -683,6 +683,202 @@ unsigned MinBits(unsigned value)
 
 // //////////////////////////////////////////////////////
 
+// Try doing http://www.arturocampos.com/ac_range.html
+// NOtE: don't encode more than 2 << 24 values or you will
+// have a bad time.
+
+struct Coding
+{
+    static const uint32_t top_value     = 0x80000000;
+    static const uint32_t bottom_value  = 0x00800000;
+    static const uint32_t shift_bits    = 23;
+    static const uint32_t extra_bits    = 7;
+
+    uint32_t low        = 0;
+    uint32_t range      = top_value;
+    // first byte written as the header. Should be ignored when decoding.
+    uint8_t buffer      = 0xDD;
+
+    union
+    {
+        uint32_t underflow  = 0;
+        uint32_t next_range;
+    };
+
+    uint32_t read_index = 0;
+
+    std::vector<uint8_t> bytes;
+
+    uint8_t Read()
+    {
+        if (read_index < bytes.size())
+        {
+            return bytes[read_index++];
+        }
+
+        return 0;
+    }
+};
+
+void Flush_underflow(Coding& coding, uint8_t value, auto overflow)
+{
+    coding.bytes.push_back(coding.buffer + overflow);
+
+    while (coding.underflow)
+    {
+        coding.bytes.push_back(value);
+        --coding.underflow;
+    }
+}
+
+void Renormalise(Coding& coding)
+{
+    while (coding.range <= coding.bottom_value)
+    {
+        if (coding.low < (0xFF << coding.shift_bits))
+        {
+            Flush_underflow(coding, 0xFF, 0);
+
+            coding.buffer = coding.low >> coding.shift_bits;
+        }
+        else
+        {
+            if (coding.low & coding.top_value)
+            {
+                Flush_underflow(coding, 0, 1);
+
+                coding.buffer = coding.low >> coding.shift_bits;
+            }
+            else
+            {
+                ++coding.underflow;
+            }
+        }
+
+        coding.range    <<= 8;
+        coding.low      <<= 8;
+        coding.low      &= (coding.top_value - 1);
+    }
+}
+
+void Encode(
+        Coding& coding,
+        uint32_t low,
+        uint32_t count,
+        uint32_t maximum_cumulative_probability)
+{
+    Renormalise(coding);
+
+    auto new_range = coding.range / maximum_cumulative_probability;
+    auto new_range_start = new_range * low;
+
+    coding.low += new_range_start;
+
+    if (low + count < maximum_cumulative_probability)
+    {
+        coding.range = new_range * count;
+    }
+    else
+    {
+        coding.range -= new_range_start;
+    }
+}
+
+void Flush(Coding& coding)
+{
+    Renormalise(coding);
+
+    auto temp = coding.low >> coding.shift_bits;
+
+    if  (
+            (coding.low & (coding.bottom_value - 1)) >=
+            ((coding.bytes.size() & 0xffffffL) >> 1)
+        )
+    {
+        ++temp;
+    }
+
+    if (temp > 0xFF)
+    {
+        Flush_underflow(coding, 0, 1);
+    }
+    else
+    {
+        Flush_underflow(coding, 0xFF, 0);
+    }
+
+    coding.bytes.push_back(temp & 0xFF);
+    coding.bytes.push_back(
+                ((temp = coding.low) >> (coding.shift_bits - 8)) & 0xFF);
+}
+
+void Decoder_init(Coding& coding)
+{
+    // Skip header.
+    coding.read_index   = 1;
+    coding.buffer       = coding.Read();
+    coding.low          = coding.buffer >> (8 - coding.extra_bits);
+    coding.range        = 1 << coding.extra_bits;
+}
+
+void Decoder_renormalise(Coding& coding)
+{
+    while (coding.range <= coding.bottom_value)
+    {
+        coding.low =
+                (coding.low << 8) |
+                ((coding.buffer << coding.extra_bits) & 0xFF);
+
+        coding.buffer = coding.Read();
+        coding.low |= (coding.buffer >> (8 - coding.extra_bits));
+        coding.range <<= 8;
+    }
+}
+
+uint32_t Decoder_decode(
+        Coding& coding,
+        uint32_t maximum_cumulative_probability)
+{
+    Decoder_renormalise(coding);
+
+    coding.next_range = coding.range / maximum_cumulative_probability;
+    auto symbol_range = coding.low / coding.next_range;
+
+    if (symbol_range >= maximum_cumulative_probability)
+    {
+        return maximum_cumulative_probability - 1;
+    }
+    else
+    {
+        return symbol_range;
+    }
+}
+
+void Decoder_update_state(
+    Coding& coding,
+    uint32_t low,
+    uint32_t count,
+    uint32_t maximum_cumulative_probability)
+{
+    auto temp = coding.next_range * low;
+    coding.low -= temp;
+    if ((low + count) < maximum_cumulative_probability)
+    {
+        coding.range = coding.next_range * count;
+    }
+    else
+    {
+        coding.range -= temp;
+    }
+}
+
+void Decoder_flush(Coding& coding)
+{
+    Decoder_renormalise(coding);
+}
+
+// //////////////////////////////////////////////////////
+
 // Unneeded if we change the endianess of our bitvector.
 unsigned Flip(unsigned value, unsigned bits)
 {
