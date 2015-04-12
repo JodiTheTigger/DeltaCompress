@@ -260,6 +260,13 @@ struct Stats
     std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogramTooBig;
 
     unsigned quatChangedAll27bits;
+
+    unsigned zeros;
+    unsigned ones;
+    unsigned one_one;
+    unsigned zero_zero;
+    unsigned one_zero;
+    unsigned zero_one;
 };
 
 enum class ChangedArrayEncoding
@@ -3108,6 +3115,131 @@ BitStream BitBitPackDecode(BitStream& data, unsigned targetBits = 0)
     return result;
 }
 
+//// //////////////////////////////////////////////////////
+
+//// stats.ones	241612	9.59%
+//// stats.zeros	2276683	90.41%
+
+//BitStream RangeEncodeSimpleEncode(BitStream data)
+//{
+//    auto size = data.Bits();
+
+//    if (size < 2)
+//    {
+//        return data;
+//    }
+
+//    data.Reset();
+//    BitStream result;
+
+//    unsigned count = size;
+//    unsigned read = 0;
+
+
+
+//    return result;
+//}
+
+//BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
+//{
+//    return result;
+//}
+
+//// //////////////////////////////////////////////////////
+
+//// stats.zero_zero	2175025	95.65%
+//// stats.zero_one	98923	4.35%
+//// stats.one_one	140024	57.97%
+//// stats.one_zero	101528	42.03%
+
+//BitStream RangeEncodeSmarterEncode(BitStream data)
+//{
+//    auto size = data.Bits();
+
+//    if (size < 2)
+//    {
+//        return data;
+//    }
+
+//    data.Reset();
+//    BitStream result;
+
+//    unsigned count = size;
+//    unsigned read = 0;
+
+
+
+//    return result;
+//}
+
+//BitStream RangeEncodeSmarterDecode(BitStream& data, unsigned targetBits = 0)
+//{
+//    return result;
+//}
+
+//// //////////////////////////////////////////////////////
+
+//// stats.ones	241612	9.59%
+//// stats.zeros	2276683	90.41%
+
+//BitStream RangeEncodeSimpleAdaptiveEncode(BitStream data)
+//{
+//    auto size = data.Bits();
+
+//    if (size < 2)
+//    {
+//        return data;
+//    }
+
+//    data.Reset();
+//    BitStream result;
+
+//    unsigned count = size;
+//    unsigned read = 0;
+
+
+
+//    return result;
+//}
+
+//BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits = 0)
+//{
+//    return result;
+//}
+
+//// //////////////////////////////////////////////////////
+
+//// stats.zero_zero	2175025	95.65%
+//// stats.zero_one	98923	4.35%
+//// stats.one_one	140024	57.97%
+//// stats.one_zero	101528	42.03%
+
+//BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
+//{
+//    auto size = data.Bits();
+
+//    if (size < 2)
+//    {
+//        return data;
+//    }
+
+//    data.Reset();
+//    BitStream result;
+
+//    unsigned count = size;
+//    unsigned read = 0;
+
+
+
+//    return result;
+//}
+
+//BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits = 0)
+//{
+//    return result;
+//}
+
+
 // //////////////////////////////////////////////////////
 
 void RunLengthTests()
@@ -3244,6 +3376,8 @@ std::vector<uint8_t> EncodeStats(
     unsigned runLength0 = 0;
     unsigned runLength1 = 0;
 
+    int last = -1;
+
     for (size_t i = 0; i < count; ++i)
     {
         if (base[i] == target[i])
@@ -3253,9 +3387,46 @@ std::vector<uint8_t> EncodeStats(
 
             ++(stats.changed1DistanceRunHistogram[runLength1]);
             runLength1 = 0;
+
+            {
+                ++stats.zeros;
+
+                if (last >= 0)
+                {
+                    if (last == 0)
+                    {
+                        ++stats.zero_zero;
+                    }
+                    else
+                    {
+                        ++stats.one_zero;
+                    }
+                }
+
+                last = 0;
+            }
         }
         else
         {
+            {
+                ++stats.ones;
+
+                if (last >= 0)
+                {
+                    if (last == 1)
+                    {
+                        ++stats.one_one;
+                    }
+                    else
+                    {
+                        ++stats.zero_one;
+                    }
+                }
+
+                last = 1;
+            }
+
+
             changed.Write(1, 1);
             ++runLength1;
 
@@ -4896,6 +5067,13 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         {0},
         {0},
         0,
+
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
     };
 
     // Lets actually do the stuff.
@@ -5082,6 +5260,16 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.quantWhichIsBigger[7])
 
     PRINT_INT(stats.quatChangedAll27bits)
+
+
+    printf("\n");
+
+    PRINT_INT(stats.ones);
+    PRINT_INT(stats.zeros);
+    PRINT_INT(stats.zero_zero);
+    PRINT_INT(stats.one_one);
+    PRINT_INT(stats.zero_one);
+    PRINT_INT(stats.one_zero);
 
     printf("\n");
 
