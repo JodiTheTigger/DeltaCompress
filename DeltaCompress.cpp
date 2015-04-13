@@ -284,6 +284,7 @@ enum class ChangedArrayEncoding
     RangeSimple,
     RangeSmarter,
     RangeSimpleAdaptive,
+    RangeSmarterAdaptive,
 };
 
 enum class PosVector3Packer
@@ -3508,41 +3509,146 @@ BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits =
 
 //// //////////////////////////////////////////////////////
 
-//// stats.zero_zero	2175025	95.65%
-//// stats.zero_one	98923	4.35%
-//// stats.one_one	140024	57.97%
-//// stats.one_zero	101528	42.03%
+BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
+{
+    auto size = data.Bits();
 
-//BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
-//{
-//    auto size = data.Bits();
+    if (size < 2)
+    {
+        return data;
+    }
 
-//    if (size < 2)
-//    {
-//        return data;
-//    }
+    data.Reset();
+    BitStream result;
 
-//    data.Reset();
-//    BitStream result;
+    unsigned count = size;
+    Range_coding::Coding coding;
+    unsigned last = 1;
 
-//    unsigned count = size;
-//    unsigned read = 0;
+    auto adaptive_zero = PercentToRanges(RangeZeros);
+    auto adaptive_one  = PercentToRanges(RangeOnes);
 
+    for (unsigned i = 0; i < count; ++i)
+    {
+        auto value = data.Read(1);
 
+        if (last == 0)
+        {
+            Range_coding::Encode(
+                coding,
+                adaptive_zero[value].min,
+                adaptive_zero[value].count,
+                Range_max_count);
 
-//    return result;
-//}
+            Adapt(adaptive_zero, value, Simple_inertia_bits);
+        }
+        else
+        {
+            Range_coding::Encode(
+                coding,
+                adaptive_one[value].min,
+                adaptive_one[value].count,
+                Range_max_count);
 
-//BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits = 0)
-//{
-//    return result;
-//}
+            Adapt(adaptive_one, value, Simple_inertia_bits);
+        }
+
+        last = value;
+    }
+
+    Range_coding::Flush(coding);
+
+    // first byte is a header we can drop.
+    auto no_header = std::vector<uint8_t>(coding.bytes.begin() + 1, coding.bytes.end());
+    BitStream done = {no_header};
+    done.SetOffset(8 * no_header.size());
+
+    return done;
+}
+
+BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits = 0)
+{
+    Range_coding::Coding coding;
+    auto raw_data = data.Data();
+
+    // coding assumes a header
+    coding.bytes.push_back(0);
+    coding.bytes.insert(
+        coding.bytes.end(),
+        raw_data.begin(),
+        raw_data.end());
+
+    Range_coding::Decoder_init(coding);
+
+    BitStream result;
+
+    unsigned last = 1;
+
+    auto adaptive_zero = PercentToRanges(RangeZeros);
+    auto adaptive_one  = PercentToRanges(RangeOnes);
+
+    while (result.Bits() < targetBits)
+    {
+        auto value =
+            Range_coding::Decoder_decode(coding, Range_max_count);
+
+        unsigned bit = 0;
+
+        if (last == 0)
+        {
+            bit = DecodedToValue(adaptive_zero, value);
+
+            Range_coding::Decoder_update_state(
+                coding,
+                adaptive_zero[bit].min,
+                adaptive_zero[bit].count,
+                Range_max_count);
+
+            Adapt(adaptive_zero, bit, Simple_inertia_bits);
+        }
+        else
+        {
+            bit = DecodedToValue(adaptive_one, value);
+
+            Range_coding::Decoder_update_state(
+                coding,
+                adaptive_one[bit].min,
+                adaptive_one[bit].count,
+                Range_max_count);
+
+            Adapt(adaptive_one, bit, Simple_inertia_bits);
+        }
+
+        result.Write(bit, 1);
+
+        last = bit;
+    }
+
+    Range_coding::Decoder_flush(coding);
+
+    // -1 since I had to add that header byte.
+    // -1 for one of the tail bytes I don't transmit.
+    auto bitsUsed = 8 * (coding.read_index - 2);
+
+    data.SetOffset(bitsUsed);
+
+    return result;
+}
 
 // //////////////////////////////////////////////////////
 
 void RunLengthTests()
 {
     std::vector<std::function<void(BitStream)>> tests;
+
+    tests.push_back([](BitStream data)
+    {
+        auto bits = data.Bits();
+        auto encoded = RangeEncodeSmarterAdaptiveEncode(data);
+        auto decoded = RangeEncodeSmarterAdaptiveDecode(encoded, bits);
+
+        assert(data == decoded);
+    });
 
     tests.push_back([](BitStream data)
     {
@@ -4429,6 +4535,7 @@ std::vector<uint8_t> EncodeStats(
     auto range_simple = RangeEncodeSimpleEncode(changed);
     auto range_smarter = RangeEncodeSmarterEncode(changed);
     auto range_simple_adaptive = RangeEncodeSimpleAdaptiveEncode(changed);
+    auto range_smarter_adaptive = RangeEncodeSmarterAdaptiveEncode(changed);
 
     assert((rle.size() * 8) < Cubes);
     assert((bitpack.size() * 8) < Cubes);
@@ -4438,6 +4545,7 @@ std::vector<uint8_t> EncodeStats(
     assert((range_simple.Bits()) < Cubes);
     assert((range_smarter.Bits()) < Cubes);
     assert((range_simple_adaptive.Bits()) < Cubes);
+    assert((range_smarter_adaptive.Bits()) < Cubes);
 
     stats.rle.Update(rle.size() * 8);
     stats.bitpack.Update(bitpack.size() * 8);
@@ -4447,6 +4555,7 @@ std::vector<uint8_t> EncodeStats(
     stats.range_simple.Update(range_simple.Bits());
     stats.range_smarter.Update(range_smarter.Bits());
     stats.range_simple_adaptive.Update(range_simple_adaptive.Bits());
+    stats.range_smarter_adaptive.Update(range_smarter_adaptive.Bits());
 
     auto changedCompressed = [&changed, &config]()
     {
@@ -4498,6 +4607,11 @@ std::vector<uint8_t> EncodeStats(
             case ChangedArrayEncoding::RangeSimpleAdaptive:
             {
                 return RangeEncodeSimpleAdaptiveEncode(changed);
+            }
+
+            case ChangedArrayEncoding::RangeSmarterAdaptive:
+            {
+                return RangeEncodeSmarterAdaptiveEncode(changed);
             }
         }
     }();
@@ -5034,6 +5148,11 @@ std::vector<uint8_t> Encode(
             {
                 return RangeEncodeSimpleAdaptiveEncode(changed);
             }
+
+            case ChangedArrayEncoding::RangeSmarterAdaptive:
+            {
+                return RangeEncodeSmarterAdaptiveEncode(changed);
+            }
         }
     }();
 
@@ -5130,6 +5249,11 @@ Frame Decode(
             case ChangedArrayEncoding::RangeSimpleAdaptive:
             {
                 return RangeEncodeSimpleAdaptiveDecode(bits, Cubes);
+            }
+
+            case ChangedArrayEncoding::RangeSmarterAdaptive:
+            {
+                return RangeEncodeSmarterAdaptiveDecode(bits, Cubes);
             }
         }
     }();
@@ -5800,7 +5924,7 @@ int main(int, char**)
 
     Config config
     {
-        ChangedArrayEncoding::RangeSmarter,
+        ChangedArrayEncoding::RangeSmarterAdaptive,
         PosVector3Packer::BitVector3Truncated,
         QuatPacker::Gaffer,
     };
