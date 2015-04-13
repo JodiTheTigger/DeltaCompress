@@ -20,7 +20,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
+bool doTests        = false;
 bool doStats        = true;
 bool doCompression  = true;
 
@@ -3405,15 +3405,18 @@ void Adapt(std::vector<Range>& range, unsigned bit, unsigned inertia)
     // https://github.com/rygorous/gaffer_net/blob/master/main.cpp
     if (bit)
     {
-        probability += (Range_max_count - probability) >> inertia;
+        probability -= probability >> inertia;
     }
     else
     {
-        probability -= probability >> inertia;
+        probability += (Range_max_count - probability) >> inertia;
     }
 
     range[0].count = probability;
     range[1].min = probability;
+    range[1].count = Range_max_count - probability;
+
+    assert((range[1].min + range[1].count) == Range_max_count);
 }
 
 BitStream RangeEncodeSimpleAdaptiveEncode(BitStream data)
@@ -3489,7 +3492,7 @@ BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits =
 
         result.Write(bit, 1);
 
-        Adapt(ranges, value, Simple_inertia_bits);
+        Adapt(ranges, bit, Simple_inertia_bits);
     }
 
     Range_coding::Decoder_flush(coding);
@@ -4443,7 +4446,7 @@ std::vector<uint8_t> EncodeStats(
     stats.bitbitfullpack.Update(bitbitpackfull.Bits());
     stats.range_simple.Update(range_simple.Bits());
     stats.range_smarter.Update(range_smarter.Bits());
-    stats.range_simple_adaptive.Update(range_smarter.Bits());
+    stats.range_simple_adaptive.Update(range_simple_adaptive.Bits());
 
     auto changedCompressed = [&changed, &config]()
     {
