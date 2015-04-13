@@ -3276,7 +3276,6 @@ BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
 auto RangeOnes = {0.4203, (1.0 - 0.4203)};
 auto RangeZeros = {0.9565, (1.0 - 0.9565)};
 
-static const auto firstBitRange = PercentToRanges(RangeZeroOne);
 static const auto zeroRange = PercentToRanges(RangeZeros);
 static const auto oneRange = PercentToRanges(RangeOnes);
 
@@ -3294,37 +3293,26 @@ BitStream RangeEncodeSmarterEncode(BitStream data)
 
     unsigned count = size;
     Range_coding::Coding coding;
-    int last = -1;
+    unsigned last = 1;
 
     for (unsigned i = 0; i < count; ++i)
     {
         auto value = data.Read(1);
 
-        if (last >= 0)
+        if (last == 0)
         {
-            if (last == 0)
-            {
-                Range_coding::Encode(
-                    coding,
-                    zeroRange[value].min,
-                    zeroRange[value].count,
-                    Range_max_count);
-            }
-            else
-            {
-                Range_coding::Encode(
-                    coding,
-                    oneRange[value].min,
-                    oneRange[value].count,
-                    Range_max_count);
-            }
+            Range_coding::Encode(
+                coding,
+                zeroRange[value].min,
+                zeroRange[value].count,
+                Range_max_count);
         }
         else
         {
             Range_coding::Encode(
                 coding,
-                firstBitRange[value].min,
-                firstBitRange[value].count,
+                oneRange[value].min,
+                oneRange[value].count,
                 Range_max_count);
         }
 
@@ -3357,7 +3345,7 @@ BitStream RangeEncodeSmarterDecode(BitStream& data, unsigned targetBits = 0)
 
     BitStream result;
 
-    int last = -1;
+    unsigned last = 1;
 
     while (result.Bits() < targetBits)
     {
@@ -3366,20 +3354,13 @@ BitStream RangeEncodeSmarterDecode(BitStream& data, unsigned targetBits = 0)
 
         std::vector<Range> ranges = [&]()
         {
-            if (last >= 0)
+            if (last == 0)
             {
-                if (last == 0)
-                {
-                    return zeroRange;
-                }
-                else
-                {
-                    return oneRange;
-                }
+                return zeroRange;
             }
             else
             {
-                return firstBitRange;
+                return oneRange;
             }
         }();
 
