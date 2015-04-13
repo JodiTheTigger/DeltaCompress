@@ -254,17 +254,6 @@ struct Stats
     unsigned bitStream10;
     unsigned bitStream11;
 
-    std::array<unsigned, RotationMaxBits + 2> quatMinBitCounts;
-    std::array<unsigned, RotationMaxBits + 2> quatFullEncodeBits;
-    std::array<unsigned, RotationMaxBits + 2> quatFullNotFullEncodeBits;
-
-    std::array<unsigned, 8> quantWhichIsBigger;
-
-    std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogram;
-    std::array<unsigned, 1 << (quantHistogramBitsPerComponent * 3)> quantCommonHistogramTooBig;
-
-    unsigned quatChangedAll27bits;
-
     unsigned zeros;
     unsigned ones;
     unsigned one_one;
@@ -3983,62 +3972,6 @@ std::vector<uint8_t> EncodeStats(
                         target[i].orientation_c - base[i].orientation_c,
                     };
 
-                    {
-                        // More stats on how many bits are needed to encode the non-delta quat.
-                        auto a = ZigZag(target[i].orientation_a - base[i].orientation_a);
-                        auto b = ZigZag(target[i].orientation_b - base[i].orientation_b);
-                        auto c = ZigZag(target[i].orientation_c - base[i].orientation_c);
-
-                        for (unsigned j = 0; j <= RotationMaxBits + 1; ++j)
-                        {
-                            auto max = (1u << j) - 1;
-
-                            if	(
-                                    (a <= max) &&
-                                    (b <= max) &&
-                                    (c <= max)
-                                )
-                            {
-                                ++stats.quatMinBitCounts[j];
-                                break;
-                            }
-                        }
-                    }
-
-                    // Get stats so I can get the most common quats
-                    // for a lookup dictionary.
-                    {
-                        // top 8 common, then after those the
-                        // next set is an order of magnitude less
-                        // c, b, a
-                        // 1496, 16911 = 10000 10000 01111
-                        // 1342, 16879 = 10000 01111 01111
-                        // 1252, 16912 = 10000 10000 10000
-                        // 1142, 15888 = 01111 10000 10000
-                        // 1113, 15855 = 01111 01111 01111
-                        // 1106, 15856 = 01111 01111 10000
-                        // 1037, 15887 = 01111 10000 01111
-                        // 1021, 16880 = 10000 01111 10000
-                        auto za = target[i].orientation_a;
-                        auto zb = target[i].orientation_b;
-                        auto zc = target[i].orientation_c;
-
-                        // for stats, only keep the top 4 bits.
-                        auto shift =
-                            RotationMaxBits -
-                            quantHistogramBitsPerComponent;
-                        auto sza = za >> shift;
-                        auto szb = zb >> shift;
-                        auto szc = zc >> shift;
-
-                        unsigned hash =
-                                sza +
-                                (szb << quantHistogramBitsPerComponent) +
-                                (szc << (quantHistogramBitsPerComponent * 2));
-
-                        ++stats.quantCommonHistogram[hash];
-                    }
-
                     BitStream encoded;
                     unsigned codedBits = 0;
 
@@ -4079,10 +4012,6 @@ std::vector<uint8_t> EncodeStats(
                         auto minBits = std::max(ba, bb);
                         minBits = std::max(minBits, bc);
 
-                        ++stats.quatFullEncodeBits[ba];
-                        ++stats.quatFullEncodeBits[bb];
-                        ++stats.quatFullEncodeBits[bc];
-
                         // Even though I would save 3 bits for 8, it'll
                         // cost me and extra bit for smaller minBits
                         // prefixes, which taking into consideration the
@@ -4095,24 +4024,6 @@ std::vector<uint8_t> EncodeStats(
                             deltas.Write(target[i].orientation_c, RotationMaxBits);
 
                             bitsWritten += 1 + vec3BitsUncompressed;
-
-                            {
-                                auto whosBigger = 0;
-                                if (ba >= QuanternionUncompressedBitThreshold)
-                                {
-                                    whosBigger |= 1;
-                                }
-                                if (bb >= QuanternionUncompressedBitThreshold)
-                                {
-                                    whosBigger |= 2;
-                                }
-                                if (bc >= QuanternionUncompressedBitThreshold)
-                                {
-                                    whosBigger |= 4;
-                                }
-
-                                ++stats.quantWhichIsBigger[whosBigger];
-                            }
 
                             {
                                 static unsigned countD = 0;
@@ -4139,30 +4050,6 @@ std::vector<uint8_t> EncodeStats(
                                         base[i].orientation_c,
                                         target[i].orientation_c - base[i].orientation_c);
                                 }
-                            }
-
-
-                            // Get stats so I can get the most common quats
-                            // for a lookup dictionary.
-                            {
-                                auto za = target[i].orientation_a;
-                                auto zb = target[i].orientation_b;
-                                auto zc = target[i].orientation_c;
-
-                                // for stats, only keep the top 4 bits.
-                                auto shift =
-                                    RotationMaxBits -
-                                    quantHistogramBitsPerComponent;
-                                auto sza = za >> shift;
-                                auto szb = zb >> shift;
-                                auto szc = zc >> shift;
-
-                                unsigned hash =
-                                        sza +
-                                        (szb << quantHistogramBitsPerComponent) +
-                                        (szc << (quantHistogramBitsPerComponent * 2));
-
-                                ++stats.quantCommonHistogramTooBig[hash];
                             }
                         }
                         else
@@ -4216,33 +4103,6 @@ std::vector<uint8_t> EncodeStats(
                     auto minBits = std::max(ba, bb);
                     minBits = std::max(minBits, bc);
 
-                    ++stats.quatFullEncodeBits[ba];
-                    ++stats.quatFullEncodeBits[bb];
-                    ++stats.quatFullEncodeBits[bc];
-
-                    {
-                        unsigned j = 0;
-
-                        for (; j <= RotationMaxBits; ++j)
-                        {
-                            if	(
-                                    (ba <= j) &&
-                                    (bb <= j) &&
-                                    (bc <= j)
-                                )
-                            {
-                                ++stats.quatMinBitCounts[j];
-                                break;
-                            }
-                        }
-
-                        if (j == RotationMaxBits)
-                        {
-                            // all 9 bits?
-                            ++stats.quatChangedAll27bits;
-                        }
-                    }
-
                     // Even though I would save 3 bits for 8, it'll
                     // cost me and extra bit for smaller minBits
                     // prefixes, which taking into consideration the
@@ -4255,60 +4115,6 @@ std::vector<uint8_t> EncodeStats(
                         deltas.Write(target[i].orientation_c, RotationMaxBits);
 
                         bitsWritten += 1 + vec3BitsUncompressed;
-
-                        {
-                            if  (
-                                    (ba != RotationMaxBits) ||
-                                    (bb != RotationMaxBits) ||
-                                    (bc != RotationMaxBits)
-                                )
-                            {
-                                ++stats.quatFullNotFullEncodeBits[ba];
-                                ++stats.quatFullNotFullEncodeBits[bb];
-                                ++stats.quatFullNotFullEncodeBits[bc];
-                            }
-                        }
-
-                        {
-                            auto whosBigger = 0;
-                            if (ba >= QuanternionUncompressedBitThreshold)
-                            {
-                                whosBigger |= 1;
-                            }
-                            if (bb >= QuanternionUncompressedBitThreshold)
-                            {
-                                whosBigger |= 2;
-                            }
-                            if (bc >= QuanternionUncompressedBitThreshold)
-                            {
-                                whosBigger |= 4;
-                            }
-
-                            ++stats.quantWhichIsBigger[whosBigger];
-                        }
-
-                        // Get stats so I can get the most common quats
-                        // for a lookup dictionary.
-                        {
-                            auto za = target[i].orientation_a;
-                            auto zb = target[i].orientation_b;
-                            auto zc = target[i].orientation_c;
-
-                            // for stats, only keep the top 4 bits.
-                            auto shift =
-                                RotationMaxBits -
-                                quantHistogramBitsPerComponent;
-                            auto sza = za >> shift;
-                            auto szb = zb >> shift;
-                            auto szc = zc >> shift;
-
-                            unsigned hash =
-                                    sza +
-                                    (szb << quantHistogramBitsPerComponent) +
-                                    (szc << (quantHistogramBitsPerComponent * 2));
-
-                            ++stats.quantCommonHistogramTooBig[hash];
-                        }
                     }
                     else
                     {
@@ -5573,13 +5379,6 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         0,
         0,
         0,
-        {0},
-        {0},
-        {0},
-        {0},
-        {0},
-        {0},
-        0,
 
         0,
         0,
@@ -5736,64 +5535,6 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.bitStream01)
     PRINT_INT(stats.bitStream10)
     PRINT_INT(stats.bitStream11)
-
-    printf("\n");
-
-    PRINT_INT(stats.quatMinBitCounts[0])
-    PRINT_INT(stats.quatMinBitCounts[1])
-    PRINT_INT(stats.quatMinBitCounts[2])
-    PRINT_INT(stats.quatMinBitCounts[3])
-    PRINT_INT(stats.quatMinBitCounts[4])
-    PRINT_INT(stats.quatMinBitCounts[5])
-    PRINT_INT(stats.quatMinBitCounts[6])
-    PRINT_INT(stats.quatMinBitCounts[7])
-    PRINT_INT(stats.quatMinBitCounts[8])
-    PRINT_INT(stats.quatMinBitCounts[9])
-    PRINT_INT(stats.quatMinBitCounts[10])
-
-    printf("\n");
-
-    PRINT_INT(stats.quatFullEncodeBits[0])
-    PRINT_INT(stats.quatFullEncodeBits[1])
-    PRINT_INT(stats.quatFullEncodeBits[2])
-    PRINT_INT(stats.quatFullEncodeBits[3])
-    PRINT_INT(stats.quatFullEncodeBits[4])
-    PRINT_INT(stats.quatFullEncodeBits[5])
-    PRINT_INT(stats.quatFullEncodeBits[6])
-    PRINT_INT(stats.quatFullEncodeBits[7])
-    PRINT_INT(stats.quatFullEncodeBits[8])
-    PRINT_INT(stats.quatFullEncodeBits[9])
-    PRINT_INT(stats.quatFullEncodeBits[10])
-
-    printf("\n");
-
-    PRINT_INT(stats.quatFullNotFullEncodeBits[0])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[1])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[2])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[3])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[4])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[5])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[6])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[7])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[8])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[9])
-    PRINT_INT(stats.quatFullNotFullEncodeBits[10])
-
-    printf("\n");
-
-
-
-    PRINT_INT(stats.quantWhichIsBigger[0])
-    PRINT_INT(stats.quantWhichIsBigger[1])
-    PRINT_INT(stats.quantWhichIsBigger[2])
-    PRINT_INT(stats.quantWhichIsBigger[3])
-    PRINT_INT(stats.quantWhichIsBigger[4])
-    PRINT_INT(stats.quantWhichIsBigger[5])
-    PRINT_INT(stats.quantWhichIsBigger[6])
-    PRINT_INT(stats.quantWhichIsBigger[7])
-
-    PRINT_INT(stats.quatChangedAll27bits)
-
 
     printf("\n");
 
