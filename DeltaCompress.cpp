@@ -3498,6 +3498,10 @@ BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits =
 
 //// //////////////////////////////////////////////////////
 
+
+static unsigned Smarter_inertia_bits_zero = 5;
+static unsigned Smarter_inertia_bits_one = 3;
+
 BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
 {
     auto size = data.Bits();
@@ -3529,7 +3533,7 @@ BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
                 adaptive_zero[value].count,
                 Range_max_count);
 
-            Adapt(adaptive_zero, value, Simple_inertia_bits);
+            Adapt(adaptive_zero, value, Smarter_inertia_bits_zero);
         }
         else
         {
@@ -3539,7 +3543,7 @@ BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
                 adaptive_one[value].count,
                 Range_max_count);
 
-            Adapt(adaptive_one, value, Simple_inertia_bits);
+            Adapt(adaptive_one, value, Smarter_inertia_bits_one);
         }
 
         last = value;
@@ -3593,7 +3597,7 @@ BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits 
                 adaptive_zero[bit].count,
                 Range_max_count);
 
-            Adapt(adaptive_zero, bit, Simple_inertia_bits);
+            Adapt(adaptive_zero, bit, Smarter_inertia_bits_zero);
         }
         else
         {
@@ -3605,7 +3609,7 @@ BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits 
                 adaptive_one[bit].count,
                 Range_max_count);
 
-            Adapt(adaptive_one, bit, Simple_inertia_bits);
+            Adapt(adaptive_one, bit, Smarter_inertia_bits_one);
         }
 
         result.Write(bit, 1);
@@ -5407,19 +5411,17 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         packetsCoded++;
     }
 
-
     printf("== Statistics ================================\n\n");
 
-    float changedBitsTotal  = (901.0f * packetsCoded);
-    float rle               = 100 * (stats.rle.sum / changedBitsTotal);
-    float bitpack           = 100 * (stats.bitpack.sum / changedBitsTotal);
-    float bitexprle         = 100 * (stats.bitexprle.sum / changedBitsTotal);
-    float expbitpack        = 100 * (stats.bitbitpack.sum / changedBitsTotal);
-    float bitbitpackfull    = 100 * (stats.bitbitfullpack.sum / changedBitsTotal);
-    float range_simple      = 100 * (stats.range_simple.sum / changedBitsTotal);
-    float range_smarter     = 100 * (stats.range_smarter.sum / changedBitsTotal);
-    float range_simple_adaptive     = 100 * (stats.range_simple_adaptive.sum / changedBitsTotal);
-    float range_smarter_adaptive    = 100 * (stats.range_smarter_adaptive.sum / changedBitsTotal);
+    float rle                       = stats.rle.Average();
+    float bitpack                   = stats.bitpack.Average();
+    float bitexprle                 = stats.bitexprle.Average();
+    float expbitpack                = stats.bitbitpack.Average();
+    float bitbitpackfull            = stats.bitbitfullpack.Average();
+    float range_simple              = stats.range_simple.Average();
+    float range_smarter             = stats.range_smarter.Average();
+    float range_simple_adaptive     = stats.range_simple_adaptive.Average();
+    float range_smarter_adaptive    = stats.range_smarter_adaptive.Average();
 
     PRINT_FLOAT(rle)
     PRINT_INT(stats.rle.min)
