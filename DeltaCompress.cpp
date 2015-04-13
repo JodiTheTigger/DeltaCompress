@@ -20,9 +20,9 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = false;
+bool doTests        = true;
 bool doStats        = true;
-bool doCompression  = true;
+bool doCompression  = false;
 
 // //////////////////////////////////////////////////////
 
@@ -723,6 +723,9 @@ struct Coding
 
     uint8_t Read()
     {
+        // At the end we can read past the end of the buffer.
+        //assert(read_index < bytes.size());
+
         if (read_index < bytes.size())
         {
             return bytes[read_index++];
@@ -3247,7 +3250,7 @@ BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
 
     Range_coding::Flush(coding);
 
-    auto bitsUsed = 8 * (coding.read_index - 1);
+    auto bitsUsed = 8 * (coding.read_index - 3);
 
     data.SetOffset(bitsUsed);
 
@@ -3407,6 +3410,12 @@ void RunLengthTests()
     });
 
     std::vector<BitStream> testData;
+
+    {
+        auto one_zeros = ByteVector(113, 0);
+        one_zeros[0] = 1;
+        testData.push_back(BitStream(one_zeros, 901));
+    }
 
     for (uint8_t i = 0; i < 32; ++i)
     {
@@ -5240,7 +5249,7 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     float bitexprle         = 100 * (stats.bitexprle.sum / changedBitsTotal);
     float expbitpack        = 100 * (stats.bitbitpack.sum / changedBitsTotal);
     float bitbitpackfull    = 100 * (stats.bitbitfullpack.sum / changedBitsTotal);
-    float range_simple      = 100 * stats.range_simple.Average();
+    float range_simple      = 100 * (stats.range_simple.sum / changedBitsTotal);
 
     PRINT_FLOAT(rle)
     PRINT_INT(stats.rle.min)
