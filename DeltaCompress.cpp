@@ -20,9 +20,9 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
-bool doStats        = true;
-bool doCompression  = false;
+bool doTests        = false;
+bool doStats        = false;
+bool doCompression  = true;
 
 // //////////////////////////////////////////////////////
 
@@ -825,6 +825,11 @@ void Flush(Coding& coding)
     coding.bytes.push_back(temp & 0xFF);
     coding.bytes.push_back(
                 ((temp = coding.low) >> (coding.shift_bits - 8)) & 0xFF);
+
+    // I think we can get away with not needing these.
+    // but whenever I remove them both, it goes wrong. I don't know why.
+    coding.bytes.push_back(0);
+    //coding.bytes.push_back(0);
 }
 
 void Decoder_init(Coding& coding)
@@ -3248,9 +3253,11 @@ BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
         result.Write(bit, 1);
     }
 
-    Range_coding::Flush(coding);
+    Range_coding::Decoder_flush(coding);
 
-    auto bitsUsed = 8 * (coding.read_index - 3);
+    // -1 since I had to add that header byte.
+    // -1 for one of the tail bytes I don't transmit.
+    auto bitsUsed = 8 * (coding.read_index - 2);
 
     data.SetOffset(bitsUsed);
 
