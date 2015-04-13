@@ -220,6 +220,7 @@ struct Stats
     MinMaxSum bitexprle;
     MinMaxSum bitbitpack;
     MinMaxSum bitbitfullpack;
+    MinMaxSum range_simple;
 
     unsigned changed;
     unsigned quatChangedNoPos;
@@ -276,7 +277,8 @@ enum class ChangedArrayEncoding
     BitPack,
     Exp,
     BitBitPack,
-    BitBitFullPack
+    BitBitFullPack,
+    RangeSimple,
 };
 
 enum class PosVector3Packer
@@ -690,6 +692,9 @@ unsigned MinBits(unsigned value)
 
 // //////////////////////////////////////////////////////
 
+namespace Range_coding
+{
+
 // Try doing http://www.arturocampos.com/ac_range.html
 // NOtE: don't encode more than 2 << 24 values or you will
 // have a bad time.
@@ -883,6 +888,8 @@ void Decoder_flush(Coding& coding)
 {
     Decoder_renormalise(coding);
 }
+
+} // namespace
 
 // //////////////////////////////////////////////////////
 
@@ -3115,35 +3122,137 @@ BitStream BitBitPackDecode(BitStream& data, unsigned targetBits = 0)
     return result;
 }
 
-//// //////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////
 
-//// stats.ones	241612	9.59%
-//// stats.zeros	2276683	90.41%
+// stats.ones	241612	9.59%
+// stats.zeros	2276683	90.41%
 
-//BitStream RangeEncodeSimpleEncode(BitStream data)
-//{
-//    auto size = data.Bits();
+static unsigned Range_max_count = 1 << 16;
 
-//    if (size < 2)
-//    {
-//        return data;
-//    }
+struct Range
+{
+    unsigned min;
+    unsigned count;
+};
 
-//    data.Reset();
-//    BitStream result;
+std::vector<Range> PercentToRanges(auto percents)
+{
+    unsigned min = 0;
+    unsigned count = 0;
+    std::vector<Range> result;
 
-//    unsigned count = size;
-//    unsigned read = 0;
+    for (const auto precent : percents)
+    {
+        min += count;
+        count = static_cast<unsigned>(round(precent * Range_max_count));
 
+        result.push_back({min, count});
+    }
 
+    assert((min + count) == Range_max_count);
 
-//    return result;
-//}
+    return result;
+}
 
-//BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
-//{
-//    return result;
-//}
+unsigned DecodedToValue(const std::vector<Range>& ranges, unsigned decoded)
+{
+    unsigned result = 0;
+
+    for (const auto& range : ranges)
+    {
+        if (decoded < (range.min + range.count))
+        {
+            return result;
+        }
+
+        ++result;
+    }
+
+    return ranges.size() - 1;
+}
+
+auto RangeZeroOne = {0.9041, (1.0 - 0.9041)};
+
+BitStream RangeEncodeSimpleEncode(BitStream data)
+{
+    auto size = data.Bits();
+
+    if (size < 2)
+    {
+        return data;
+    }
+
+    data.Reset();
+    BitStream result;
+
+    unsigned count = size;
+    Range_coding::Coding coding;
+
+    static const auto ranges = PercentToRanges(RangeZeroOne);
+
+    for (unsigned i = 0; i < count; ++i)
+    {
+        auto value = data.Read(1);
+
+        Range_coding::Encode(
+            coding,
+            ranges[value].min,
+            ranges[value].count,
+            Range_max_count);
+    }
+
+    Range_coding::Flush(coding);
+
+    // first byte is a header we can drop.
+    auto no_header = std::vector<uint8_t>(coding.bytes.begin() + 1, coding.bytes.end());
+    BitStream done = {no_header};
+    done.SetOffset(8 * no_header.size());
+
+    return done;
+}
+
+BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
+{
+    Range_coding::Coding coding;
+    auto raw_data = data.Data();
+
+    // coding assumes a header
+    coding.bytes.push_back(0);
+    coding.bytes.insert(
+        coding.bytes.end(),
+        raw_data.begin(),
+        raw_data.end());
+
+    Range_coding::Decoder_init(coding);
+
+    BitStream result;
+
+    static const auto ranges = PercentToRanges(RangeZeroOne);
+
+    while (result.Bits() < targetBits)
+    {
+        auto value =
+            Range_coding::Decoder_decode(coding, Range_max_count);
+
+        auto bit = DecodedToValue(ranges, value);
+
+        Range_coding::Decoder_update_state(
+            coding,
+            ranges[bit].min,
+            ranges[bit].count,
+            Range_max_count);
+
+        result.Write(bit, 1);
+    }
+
+    Range_coding::Flush(coding);
+
+    auto bitsUsed = 8 * (coding.read_index - 1);
+
+    data.SetOffset(bitsUsed);
+
+    return result;
+}
 
 //// //////////////////////////////////////////////////////
 
@@ -3239,12 +3348,20 @@ BitStream BitBitPackDecode(BitStream& data, unsigned targetBits = 0)
 //    return result;
 //}
 
-
 // //////////////////////////////////////////////////////
 
 void RunLengthTests()
 {
     std::vector<std::function<void(BitStream)>> tests;
+
+    tests.push_back([](BitStream data)
+    {
+        auto bits = data.Bits();
+        auto encoded = RangeEncodeSimpleEncode(data);
+        auto decoded = RangeEncodeSimpleDecode(encoded, bits);
+
+        assert(data == decoded);
+    });
 
     tests.push_back([](BitStream data)
     {
@@ -4095,18 +4212,21 @@ std::vector<uint8_t> EncodeStats(
     auto bitexprle = ExponentialBitLevelRunLengthEncode(changed);
     auto expbitpack = BitBitPackEncode(changed);
     auto bitbitpackfull = BitBitPackFullEncode(changed);
+    auto range_simple = RangeEncodeSimpleEncode(changed);
 
     assert((rle.size() * 8) < Cubes);
     assert((bitpack.size() * 8) < Cubes);
     assert((bitexprle.Bits()) < Cubes);
     assert((expbitpack.Bits()) < Cubes);
     assert((bitbitpackfull.Bits()) < Cubes);
+    assert((range_simple.Bits()) < Cubes);
 
     stats.rle.Update(rle.size() * 8);
     stats.bitpack.Update(bitpack.size() * 8);
     stats.bitexprle.Update(bitexprle.Bits());
     stats.bitbitpack.Update(expbitpack.Bits());
     stats.bitbitfullpack.Update(bitbitpackfull.Bits());
+    stats.range_simple.Update(range_simple.Bits());
 
     auto changedCompressed = [&changed, &config]()
     {
@@ -4143,6 +4263,11 @@ std::vector<uint8_t> EncodeStats(
             case ChangedArrayEncoding::BitBitFullPack:
             {
                 return BitBitPackFullEncode(changed);
+            }
+
+            case ChangedArrayEncoding::RangeSimple:
+            {
+                return RangeEncodeSimpleEncode(changed);
             }
         }
     }();
@@ -4664,6 +4789,11 @@ std::vector<uint8_t> Encode(
             {
                 return BitBitPackFullEncode(changed);
             }
+
+            case ChangedArrayEncoding::RangeSimple:
+            {
+                return RangeEncodeSimpleEncode(changed);
+            }
         }
     }();
 
@@ -4745,6 +4875,11 @@ Frame Decode(
                 bits.SetOffset(bitsUsed);
 
                 return decode;
+            }
+
+            case ChangedArrayEncoding::RangeSimple:
+            {
+                return RangeEncodeSimpleDecode(bits, Cubes);
             }
         }
     }();
@@ -5036,6 +5171,7 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         {Cubes,0,0,0},
         {Cubes,0,0,0},
         {Cubes,0,0,0},
+        {Cubes,0,0,0},
         0,
         0,
         0,
@@ -5104,6 +5240,7 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     float bitexprle         = 100 * (stats.bitexprle.sum / changedBitsTotal);
     float expbitpack        = 100 * (stats.bitbitpack.sum / changedBitsTotal);
     float bitbitpackfull    = 100 * (stats.bitbitfullpack.sum / changedBitsTotal);
+    float range_simple      = 100 * stats.range_simple.Average();
 
     PRINT_FLOAT(rle)
     PRINT_INT(stats.rle.min)
@@ -5120,6 +5257,10 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_FLOAT(bitbitpackfull)
     PRINT_INT(stats.bitbitfullpack.min)
     PRINT_INT(stats.bitbitfullpack.max)
+
+    PRINT_FLOAT(range_simple)
+    PRINT_INT(stats.range_simple.min)
+    PRINT_INT(stats.range_simple.max)
 
 //    for (const auto h : stats.changed0DistanceRunHistogram)
 //    {
@@ -5391,7 +5532,7 @@ int main(int, char**)
 
     Config config
     {
-        ChangedArrayEncoding::Exp,
+        ChangedArrayEncoding::RangeSimple,
         PosVector3Packer::BitVector3Truncated,
         QuatPacker::Gaffer,
     };
