@@ -20,7 +20,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
+bool doTests        = false;
 bool doStats        = true;
 bool doCompression  = true;
 
@@ -1368,12 +1368,16 @@ unsigned BitVector3SortedEncode(
 
         if  (
                 (zy > zx) &&
-                (zy > zz)
+                (zy >= zz)
             )
         {
             auto temp = zy;
             zy = zx;
             zx = temp;
+
+            auto tempf = vec.y;
+            vec.y = vec.x;
+            vec.x = tempf;
 
             top = 1;
         }
@@ -1381,13 +1385,18 @@ unsigned BitVector3SortedEncode(
         {
             if  (
                     (zz > zx) &&
-                    (zz > zy)
+                    (zz >= zy)
                 )
             {
                 auto temp = zz;
                 zz = zy;
                 zy = zx;
                 zx = temp;
+
+                auto tempf = vec.z;
+                vec.z = vec.y;
+                vec.y = vec.x;
+                vec.x = tempf;
 
                 top = 2;
             }
@@ -5521,6 +5530,7 @@ Frame Decode(
                     case PosVector3Packer::BitVector3:
                     case PosVector3Packer::BitVector3_2BitExpPrefix:
                     case PosVector3Packer::BitVector3Truncated:
+                    case PosVector3Packer::BitVector3Sorted:
                     {
                         unsigned maxMagnitude = 1 + static_cast<unsigned>(MaxPositionChangePerSnapshot * frameDelta);
 
@@ -5944,7 +5954,7 @@ int main(int, char**)
     Config config
     {
         ChangedArrayEncoding::RangeSmarterAdaptive,
-        PosVector3Packer::BitVector3Truncated,
+        PosVector3Packer::BitVector3Sorted,
         QuatPacker::Gaffer,
     };
 
