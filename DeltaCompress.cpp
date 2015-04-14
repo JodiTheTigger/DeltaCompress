@@ -20,7 +20,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = false;
+bool doTests        = true;
 bool doStats        = true;
 bool doCompression  = true;
 
@@ -281,7 +281,8 @@ enum class PosVector3Packer
     None,
     BitVector3,
     BitVector3_2BitExpPrefix,
-    BitVector3Truncated
+    BitVector3Truncated,
+    BitVector3Sorted
 };
 
 enum class QuatPacker
@@ -1338,6 +1339,244 @@ IntVec3 BitVector3TruncatedDecode(
     return result;
 }
 
+
+unsigned BitVector3SortedEncode(
+        IntVec3 vec,
+        unsigned maxMagnitude,
+        BitStream& target)
+{
+    unsigned bitsUsed = 0;
+
+    // +1 for the sign bit.
+    unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    // //////////////////////////////////////////
+
+    // Sort from largest to smallest
+    auto zx = ZigZag(vec.x);
+    auto zy = ZigZag(vec.y);
+    auto zz = ZigZag(vec.z);
+
+    assert(abs(vec.x) <= static_cast<int>(maxMagnitude));
+    assert(abs(vec.y) <= static_cast<int>(maxMagnitude));
+    assert(abs(vec.z) <= static_cast<int>(maxMagnitude));
+
+    // default order, x,y,z.
+    {
+        auto top = 0;
+        auto next = 0;
+
+        if  (
+                (zy > zx) &&
+                (zy > zz)
+            )
+        {
+            auto temp = zy;
+            zy = zx;
+            zx = temp;
+
+            top = 1;
+        }
+        else
+        {
+            if  (
+                    (zz > zx) &&
+                    (zz > zy)
+                )
+            {
+                auto temp = zz;
+                zz = zy;
+                zy = zx;
+                zx = temp;
+
+                top = 2;
+            }
+        }
+
+        assert(zx >= zy);
+        assert(zx >= zz);
+
+        if (zz > zy)
+        {
+            auto temp = zz;
+            zz = zy;
+            zy = temp;
+
+            next = 1;
+        }
+
+        assert(zy >= zz);
+
+        bitsUsed += TruncateEncode(top, 3, target);
+        target.Write(next, 1);
+        ++bitsUsed;
+    }
+
+    // //////////////////////////////////////////
+
+    unsigned bitsForzx = MinBits(zx);
+    bitsUsed += TruncateEncode(bitsForzx, maxBitsRequired, target);
+
+    // Don't need to send the top bit, as we know it's set since
+    // otherwise bitsForzx would be smaller.
+    if (bitsForzx)
+    {
+        zx &= (1 << (bitsForzx - 1)) - 1;
+        target.Write(zx, bitsForzx - 1);
+        bitsUsed += bitsForzx - 1;
+    }
+    else
+    {
+        // everything after is zero, we're done.
+        return bitsUsed;
+    }
+
+    float next = static_cast<float>(maxMagnitude * maxMagnitude);
+    next -= vec.x * vec.x;
+    assert(next >= 0);
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    maxBitsRequired = std::min(maxBitsRequired, bitsForzx);
+
+    unsigned bitsForzy = MinBits(zy);
+
+    assert(maxBitsRequired >= bitsForzy);
+
+    bitsUsed += TruncateEncode(bitsForzy, maxBitsRequired, target);
+
+    if (bitsForzy)
+    {
+        zy &= (1 << (bitsForzy - 1)) - 1;
+        target.Write(zy, bitsForzy - 1);
+        bitsUsed += bitsForzy - 1;
+    }
+    else
+    {
+        // everything after is zero, we're done.
+        return bitsUsed;
+    }
+
+    next = static_cast<float>(maxMagnitude * maxMagnitude);
+    next -= vec.y * vec.y;
+    assert(next >= 0);
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    maxBitsRequired = std::min(maxBitsRequired, bitsForzy);
+
+    unsigned bitsForzz = MinBits(zz);
+
+    assert(maxBitsRequired >= bitsForzz);
+
+    //target.Write(bitsForzz, maxPrefixSize);
+    target.Write(zz, maxBitsRequired);
+    bitsUsed += maxBitsRequired;
+
+    return bitsUsed;
+}
+
+IntVec3 BitVector3SortedDecode(
+        unsigned maxMagnitude,
+        BitStream& source)
+{
+    IntVec3 result = {0,0,0};
+
+    // +1 for the sign bit.
+    unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    // //////////////////////////////////////////
+
+    // Read the Order
+    auto largest = TruncateDecode(3, source);
+    auto nextLargest = source.Read(1);
+
+    auto ReturnSorted = [&largest, &nextLargest](IntVec3 vec) -> IntVec3
+    {
+        if (nextLargest)
+        {
+            auto temp = vec.y;
+            vec.y = vec.z;
+            vec.z = temp;
+        }
+
+        if (largest)
+        {
+            if (largest == 1)
+            {
+                auto temp = vec.y;
+                vec.y = vec.x;
+                vec.x = temp;
+            }
+            else
+            {
+                auto temp = vec.x;
+                vec.x = vec.y;
+                vec.y = vec.z;
+                vec.z = temp;
+            }
+        }
+
+        return vec;
+    };
+
+    // //////////////////////////////////////////
+
+    auto bitsX = TruncateDecode(maxBitsRequired, source);
+
+    if (bitsX)
+    {
+        auto zx = source.Read(bitsX - 1);
+        // Don't need to send the top bit, as we know it's set since
+        // otherwise bitsForzx would be smaller.
+        zx |= 1 << (bitsX - 1);
+        result.x = ZigZag(zx);
+    }
+    else
+    {
+        return ReturnSorted(result);
+    }
+
+    float next = static_cast<float>(maxMagnitude * maxMagnitude);
+    next -= result.x * result.x;
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    maxBitsRequired = std::min(maxBitsRequired, bitsX);
+
+    auto bitsY = TruncateDecode(maxBitsRequired, source);
+    if (bitsY)
+    {
+        auto zy = source.Read(bitsY - 1);
+        zy |= 1 << (bitsY - 1);
+        result.y = ZigZag(zy);
+    }
+    else
+    {
+        return ReturnSorted(result);
+    }
+
+    next = static_cast<float>(maxMagnitude * maxMagnitude);
+    next -= result.y * result.y;
+    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+
+    // //////////////////////////////////////////
+
+    maxBitsRequired = 1 + MinBits(maxMagnitude);
+    maxBitsRequired = std::min(maxBitsRequired, bitsY);
+
+    auto zz = source.Read(maxBitsRequired);
+    result.z = ZigZag(zz);
+
+    return ReturnSorted(result);
+}
+
 static const unsigned prefixBits = 2;
 
 unsigned ShiftsRequired(unsigned value, unsigned maxBits)
@@ -2058,6 +2297,12 @@ void BitVector3Tests()
     };
 
     std::vector<Test> tests;
+
+    tests.push_back(
+    {
+        BitVector3SortedEncode,
+        BitVector3SortedDecode,
+    });
 
     tests.push_back(
     {
@@ -4274,6 +4519,7 @@ std::vector<uint8_t> EncodeStats(
                     case PosVector3Packer::BitVector3:
                     case PosVector3Packer::BitVector3_2BitExpPrefix:
                     case PosVector3Packer::BitVector3Truncated:
+                    case PosVector3Packer::BitVector3Sorted:
                     {
                         // GLEE, actually writing a delta this time!
                         auto vec = IntVec3
@@ -4314,6 +4560,16 @@ std::vector<uint8_t> EncodeStats(
                             case PosVector3Packer::BitVector3Truncated:
                             {
                                 bitsWritten = BitVector3TruncatedEncode(
+                                    vec,
+                                    maxMagnitude,
+                                    deltas);
+
+                                break;
+                            }
+
+                            case PosVector3Packer::BitVector3Sorted:
+                            {
+                                bitsWritten = BitVector3SortedEncode(
                                     vec,
                                     maxMagnitude,
                                     deltas);
@@ -4849,6 +5105,7 @@ std::vector<uint8_t> Encode(
                     case PosVector3Packer::BitVector3:
                     case PosVector3Packer::BitVector3_2BitExpPrefix:
                     case PosVector3Packer::BitVector3Truncated:
+                    case PosVector3Packer::BitVector3Sorted:
                     {
                         // GLEE, actually writing a delta this time!
                         auto vec = IntVec3
@@ -4889,6 +5146,16 @@ std::vector<uint8_t> Encode(
                             case PosVector3Packer::BitVector3Truncated:
                             {
                                 bitsWritten = BitVector3TruncatedEncode(
+                                    vec,
+                                    maxMagnitude,
+                                    deltas);
+
+                                break;
+                            }
+
+                            case PosVector3Packer::BitVector3Sorted:
+                            {
+                                bitsWritten = BitVector3SortedEncode(
                                     vec,
                                     maxMagnitude,
                                     deltas);
@@ -5288,6 +5555,15 @@ Frame Decode(
 
                                 break;
                             }
+
+                            case PosVector3Packer::BitVector3Sorted:
+                            {
+                                vec = BitVector3SortedDecode(
+                                    maxMagnitude,
+                                    bits);
+
+                                break;
+                            }
                         }
 
                         auto mag = sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
@@ -5323,12 +5599,12 @@ Frame Decode(
 
 void Tests()
 {
+    BitVector3Tests();
     RunLengthTests();
     ZigZagTest();
     TruncateTest();
     GaffersRangeTest();
     BitStreamTest();
-    BitVector3Tests();
 }
 
 // //////////////////////////////////////////////////////
