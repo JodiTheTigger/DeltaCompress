@@ -20,7 +20,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = false;
+bool doTests        = true;
 bool doStats        = true;
 bool doCompression  = true;
 
@@ -1482,7 +1482,6 @@ unsigned BitVector3SortedEncode(
 
     assert(maxBitsRequired >= bitsForzz);
 
-    //target.Write(bitsForzz, maxPrefixSize);
     target.Write(zz, maxBitsRequired);
     bitsUsed += maxBitsRequired;
 
@@ -3663,6 +3662,35 @@ void Adapt(std::vector<Range>& range, unsigned bit, unsigned inertia)
     assert((range[1].min + range[1].count) == Range_max_count);
 }
 
+void Adapt_every_damned_thing(
+        std::vector<Range>& ranges,
+        unsigned index,
+        unsigned inertia)
+{
+    auto size = ranges.size();
+
+    assert(index < size);
+
+    unsigned newMin = 0;
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if (index != i)
+        {
+            ranges[i].count -= ranges[i].count >> inertia;
+        }
+        else
+        {
+            ranges[i].count += (Range_max_count - ranges[i].count) >> inertia;
+        }
+
+        ranges[i].min   =  newMin;
+        newMin          +=  ranges[i].count;
+    }
+
+    // NFI if this will work, fail fast...
+    assert((ranges.back().min + ranges.back().count) == Range_max_count);
+}
+
 BitStream RangeEncodeSimpleAdaptiveEncode(BitStream data)
 {
     auto size = data.Bits();
@@ -3883,6 +3911,29 @@ BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits 
 }
 
 // //////////////////////////////////////////////////////
+
+void AdaptiveModelTests()
+{
+    std::vector<Range> ranges;
+
+    // lets do a bytes worth.
+    unsigned lastCount = 0;
+    for (unsigned i = 0; i < 256; ++i)
+    {
+        auto add = 10u + ((i * 4) / 5);
+        ranges.push_back({lastCount, add});
+        lastCount += add;
+    }
+
+    // make sure all ranges add up to max.
+    ranges.back().count = Range_max_count - ranges.back().min;
+
+    // Just testing I don't hit any asserts.
+    Adapt_every_damned_thing(ranges, 28, 4);
+    Adapt_every_damned_thing(ranges, 28, 1);
+    Adapt_every_damned_thing(ranges, 28, 6);
+    Adapt_every_damned_thing(ranges, 28, 6);
+}
 
 void RunLengthTests()
 {
@@ -5609,6 +5660,7 @@ Frame Decode(
 
 void Tests()
 {
+    AdaptiveModelTests();
     BitVector3Tests();
     RunLengthTests();
     ZigZagTest();
