@@ -3672,17 +3672,28 @@ void Adapt_every_damned_thing(
     assert(index < size);
 
     unsigned newMin = 0;
+    unsigned removed = 0;
     for (unsigned i = 0; i < size; ++i)
     {
         if (index != i)
         {
-            ranges[i].count -= ranges[i].count >> inertia;
-        }
-        else
-        {
-            ranges[i].count += (Range_max_count - ranges[i].count) >> inertia;
+            auto diff = ranges[i].count >> inertia;
+            removed += diff;
+            ranges[i].count -= diff;
         }
 
+        ranges[i].min   =  newMin;
+        newMin          +=  ranges[i].count;
+    }
+
+    ranges[index].count += removed;
+
+    assert(ranges[index].count < Range_max_count);
+
+    newMin = ranges[index].min + ranges[index].count;
+
+    for (unsigned i = index + 1; i < size; ++i)
+    {
         ranges[i].min   =  newMin;
         newMin          +=  ranges[i].count;
     }
