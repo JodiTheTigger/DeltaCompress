@@ -3410,6 +3410,32 @@ std::vector<Range> PercentToRanges(auto percents)
     return result;
 }
 
+std::vector<Range> UniformRange(unsigned count)
+{
+    unsigned base = Range_max_count / count;
+    unsigned offset = Range_max_count % count;
+    std::vector<Range> ranges;
+
+    unsigned lastCount = 0;
+    for (unsigned i = 0; i < count; ++i)
+    {
+        auto add = base;
+
+        if (i < offset)
+        {
+            ++add;
+        }
+
+        ranges.push_back({lastCount, add});
+        lastCount += add;
+    }
+
+    // make sure all ranges add up to max.
+    assert((ranges.back().min + ranges.back().count) == Range_max_count);
+
+    return ranges;
+}
+
 unsigned DecodedToValue(const std::vector<Range>& ranges, unsigned decoded)
 {
     unsigned result = 0;
@@ -3925,25 +3951,37 @@ BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits 
 
 void AdaptiveModelTests()
 {
-    std::vector<Range> ranges;
-
-    // lets do a bytes worth.
-    unsigned lastCount = 0;
-    for (unsigned i = 0; i < 256; ++i)
     {
-        auto add = 10u + ((i * 4) / 5);
-        ranges.push_back({lastCount, add});
-        lastCount += add;
+        std::vector<Range> ranges;
+
+        // lets do a bytes worth.
+        unsigned lastCount = 0;
+        for (unsigned i = 0; i < 256; ++i)
+        {
+            auto add = 10u + ((i * 4) / 5);
+            ranges.push_back({lastCount, add});
+            lastCount += add;
+        }
+
+        // make sure all ranges add up to max.
+        ranges.back().count = Range_max_count - ranges.back().min;
+
+        // Just testing I don't hit any asserts.
+        Adapt_every_damned_thing(ranges, 28, 4);
+        Adapt_every_damned_thing(ranges, 28, 1);
+        Adapt_every_damned_thing(ranges, 28, 6);
+        Adapt_every_damned_thing(ranges, 28, 6);
     }
 
-    // make sure all ranges add up to max.
-    ranges.back().count = Range_max_count - ranges.back().min;
+    {
+        auto ranges = UniformRange(256);
 
-    // Just testing I don't hit any asserts.
-    Adapt_every_damned_thing(ranges, 28, 4);
-    Adapt_every_damned_thing(ranges, 28, 1);
-    Adapt_every_damned_thing(ranges, 28, 6);
-    Adapt_every_damned_thing(ranges, 28, 6);
+        // Just testing I don't hit any asserts.
+        Adapt_every_damned_thing(ranges, 28, 4);
+        Adapt_every_damned_thing(ranges, 28, 1);
+        Adapt_every_damned_thing(ranges, 28, 6);
+        Adapt_every_damned_thing(ranges, 28, 6);
+    }
 }
 
 void RunLengthTests()
