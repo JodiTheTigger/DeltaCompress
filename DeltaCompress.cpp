@@ -893,6 +893,238 @@ void Decoder_flush(Coding& coding)
     Decoder_renormalise(coding);
 }
 
+static const unsigned Cumulative_probability = 65536;
+
+class BinaryRangeCoder
+{
+public:
+    BinaryRangeCoder(std::vector<uint8_t>& storage)
+        : bytes(&storage)
+    {}
+
+    void Encode(unsigned value, unsigned probability)
+    {
+        assert(probability <= Cumulative_probability);
+
+        Renormalise();
+
+        // could be better if we assumed value is 0 or 1.
+        // Defaults for zero.
+        auto range_low  = 0;
+        auto count      = probability;
+        if (value)
+        {
+            range_low   = probability;
+            count       = Cumulative_probability - probability;
+        }
+
+        const auto new_range        = range / Cumulative_probability;
+        const auto new_range_start  = new_range * range_low;
+
+        low += new_range_start;
+
+        if ((range_low + count) < Cumulative_probability)
+        {
+            range = new_range * count;
+        }
+        else
+        {
+            range -= new_range_start;
+        }
+    }
+
+    ~BinaryRangeCoder()
+    {
+        Renormalise();
+
+        auto temp = low >> shift_bits;
+
+        if  (
+                (low & (bottom_value - 1)) >=
+                ((bytes->size() & 0xffffffL) >> 1)
+            )
+        {
+            ++temp;
+        }
+
+        if (temp > 0xFF)
+        {
+            Flush_underflow(0, 1);
+        }
+        else
+        {
+            Flush_underflow(0xFF, 0);
+        }
+
+        Write(temp & 0xFF);
+        Write(((temp = low) >> (shift_bits - 8)) & 0xFF);
+
+        // I think we can get away with not needing these.
+        // but whenever I remove them both, it goes wrong.
+        // I don't know why. (Probably something to do with
+        // the top and bottom bits, and shift been 23).
+        Write(0);
+        //Write(0);
+    }
+
+private:
+    static const uint32_t top_value     = 0x80000000;
+    static const uint32_t bottom_value  = 0x00800000;
+    static const uint32_t shift_bits    = 23;
+    static const uint32_t extra_bits    = 7;
+
+    uint32_t    low         = 0;
+    uint32_t    range       = top_value;
+    uint8_t     buffer      = 0;
+    bool        first       = true;
+    uint32_t    underflow   = 0;
+
+    std::vector<uint8_t>* bytes;
+
+    void Write(uint8_t value)
+    {
+        if (!first)
+        {
+            bytes->push_back(value);
+        }
+        else
+        {
+            first = false;
+        }
+    }
+
+    void Flush_underflow(uint8_t value, auto overflow)
+    {
+        Write(buffer + overflow);
+
+        while (underflow)
+        {
+            Write(value);
+            --underflow;
+        }
+    }
+
+    void Renormalise()
+    {
+        while (range <= bottom_value)
+        {
+            if (low < (0xFF << shift_bits))
+            {
+                Flush_underflow(0xFF, 0);
+
+                buffer = low >> shift_bits;
+            }
+            else
+            {
+                if (low & top_value)
+                {
+                    Flush_underflow(0, 1);
+
+                    buffer = low >> shift_bits;
+                }
+                else
+                {
+                    ++underflow;
+                }
+            }
+
+            range    <<= 8;
+            low      <<= 8;
+            low      &= (top_value - 1);
+        }
+    }
+};
+
+class BinaryRangeDecoder
+{
+public:
+    BinaryRangeDecoder(const std::vector<uint8_t>& storage)
+        : bytes(&storage)
+    {}
+
+    unsigned Decode(unsigned probability)
+    {
+        Renormalise();
+
+        auto next_range = range / Cumulative_probability;
+        auto symbol_range = low / next_range;
+
+        // could be better if we assumed value is 0 or 1.
+        // Defaults for zero.
+        auto range_low  = 0;
+        auto count      = probability;
+        if (symbol_range >= probability)
+        {
+            range_low   = probability;
+            count       = Cumulative_probability - probability;
+        }
+
+        auto temp = next_range * range_low;
+        low -= temp;
+        if ((range_low + count) < Cumulative_probability)
+        {
+            range = next_range * count;
+        }
+        else
+        {
+            range -= temp;
+        }
+
+        return symbol_range >= probability;
+    }
+
+    ~BinaryRangeDecoder()
+    {
+        Renormalise();
+    }
+
+private:
+    static const uint32_t top_value     = 0x80000000;
+    static const uint32_t bottom_value  = 0x00800000;
+    static const uint32_t shift_bits    = 23;
+    static const uint32_t extra_bits    = 7;
+
+    uint32_t    low         = 0;
+    uint32_t    range       = top_value;
+    uint8_t     buffer      = 0;
+    bool        first       = true;
+    uint32_t    read_index  = 0;
+
+    const std::vector<uint8_t>* bytes;
+
+    uint8_t Read()
+    {
+        if (!first)
+        {
+            if (read_index < bytes->size())
+            {
+                return (*bytes)[read_index++];
+            }
+        }
+        else
+        {
+            first = false;
+        }
+
+        return 0;
+    }
+
+    void Renormalise()
+    {
+        while (range <= bottom_value)
+        {
+            low =
+                (low << 8) |
+                ((buffer << extra_bits) & 0xFF);
+
+            buffer = Read();
+            low |= (buffer >> (8 - extra_bits));
+            range <<= 8;
+        }
+    }
+};
+
+
 
 // Copied from https://github.com/rygorous/gaffer_net/blob/master/main.cpp
 template<int Inertia>
