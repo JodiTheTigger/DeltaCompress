@@ -893,6 +893,76 @@ void Decoder_flush(Coding& coding)
     Decoder_renormalise(coding);
 }
 
+
+// Copied from https://github.com/rygorous/gaffer_net/blob/master/main.cpp
+template<int Inertia>
+struct BinaryModel
+{
+    static const unsigned Max_probability = 1 << 16;
+
+    uint16_t probability = 65536 / 2;
+
+    void Code(Coding& coding, unsigned bit)
+    {
+        if (bit)
+        {
+            Range_coding::Encode(
+                coding,
+                0,
+                probability,
+                Max_probability);
+        }
+        else
+        {
+            Range_coding::Encode(
+                coding,
+                probability,
+                Max_probability - probability,
+                Max_probability);
+        }
+
+        Adapt(bit);
+    }
+
+    unsigned Decode(Coding& coding)
+    {
+        auto bit = Range_coding::Decoder_decode(coding, Max_probability);
+
+        if (bit)
+        {
+            Range_coding::Decoder_update_state(
+                coding,
+                0,
+                probability,
+                Max_probability);
+        }
+        else
+        {
+            Range_coding::Decoder_update_state(
+                coding,
+                probability,
+                Max_probability - probability,
+                Max_probability);
+        }
+
+        Adapt(bit);
+
+        return bit;
+    }
+
+    void Adapt(unsigned bit)
+    {
+        if (bit)
+        {
+            probability += (Max_probability - probability) >> Inertia;
+        }
+        else
+        {
+            probability -= probability >> Inertia;
+        }
+    }
+};
+
 } // namespace
 
 // //////////////////////////////////////////////////////
