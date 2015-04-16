@@ -8,7 +8,8 @@ CppApplication {
 
     // http://stackoverflow.com/questions/25936548/how-to-use-qbs-to-build-a-qt-application-with-qt-creator
     //cpp.cxxLanguageVersion: "c++11"
-    cpp.cxxFlags: ["-std=c++14", "-Wextra"]
+    // Clang is annoying and warns missing braces -Wall.
+    cpp.cxxFlags: ["-std=c++14", "-Wextra", "-Wno-missing-braces"]
     cpp.treatWarningsAsErrors: true
     cpp.warningLevel: "all"
 

@@ -121,7 +121,7 @@ static const unsigned MaxSpeedMetersPerSecond = 32;
 
 static const unsigned   ValuesPerMeter    = 512;
 static const unsigned   MaxZInclusize     = (32 * ValuesPerMeter) - 1;
-static const unsigned   MinZInclusize     = 0;
+//static const unsigned   MinZInclusize     = 0;
 static const int        MaxXYInclusize    = 131071;  // (256 * 512) - 1
 static const int        MinXYInclusize    = -131072; // (-256 * 512)
 static const int        XYRange           = MaxXYInclusize - MinXYInclusize;
@@ -199,8 +199,6 @@ struct MinMaxSum
         return sum / (float) count;
     }
 };
-
-static const unsigned quantHistogramBitsPerComponent = 3;
 
 struct Stats
 {
@@ -733,7 +731,7 @@ struct Coding
     }
 };
 
-void Flush_underflow(Coding& coding, uint8_t value, auto overflow)
+void Flush_underflow(Coding& coding, uint8_t value, unsigned overflow)
 {
     coding.bytes.push_back(coding.buffer + overflow);
 
@@ -995,7 +993,7 @@ private:
         }
     }
 
-    void Flush_underflow(uint8_t value, auto overflow)
+    void Flush_underflow(uint8_t value, unsigned overflow)
     {
         Write(buffer + overflow);
 
@@ -3695,7 +3693,7 @@ struct Range
     unsigned count;
 };
 
-std::vector<Range> PercentToRanges(auto percents)
+std::vector<Range> PercentToRanges(std::vector<float> percents)
 {
     unsigned min = 0;
     unsigned count = 0;
@@ -3757,7 +3755,7 @@ unsigned DecodedToValue(const std::vector<Range>& ranges, unsigned decoded)
     return ranges.size() - 1;
 }
 
-auto RangeZeroOne = {0.9041, (1.0 - 0.9041)};
+std::vector<float> RangeZeroOne = {0.9041, (1.0 - 0.9041)};
 
 BitStream RangeEncodeSimpleEncode(BitStream data)
 {
@@ -3849,8 +3847,8 @@ BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
 // stats.one_one	140024	57.97%
 // stats.one_zero	101528	42.03%
 
-auto RangeOnes = {0.4203, (1.0 - 0.4203)};
-auto RangeZeros = {0.9565, (1.0 - 0.9565)};
+std::vector<float> RangeOnes = {0.4203, (1.0 - 0.4203)};
+std::vector<float> RangeZeros = {0.9565, (1.0 - 0.9565)};
 
 static const auto zeroRange = PercentToRanges(RangeZeros);
 static const auto oneRange = PercentToRanges(RangeOnes);
