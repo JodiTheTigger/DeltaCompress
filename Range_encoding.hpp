@@ -193,10 +193,7 @@ public:
     uint32_t FlushAndGetBytesRead()
     {
         Renormalise();
-
-        // -1 since I don't send the last byte
-        // when I encode.
-        return m_read_index - 1;
+        return m_read_index;
     }
 
 private:
@@ -522,7 +519,7 @@ void Tests()
             {12000, (65536 - 12000)},
         };
 
-        auto tests = {2,3,3,3,3,0,2,2,3};
+        auto tests = {1,2,2,2,2,0,1,1,2};
 
         {
             Encoder encoder(data);
@@ -545,7 +542,7 @@ void Tests()
             }
 
             auto read = decoder.FlushAndGetBytesRead();
-            assert(read == tests.size());
+            assert(read == data.size());
         }
     }
 
@@ -573,7 +570,7 @@ void Tests()
             }
 
             auto read = decoder.FlushAndGetBytesRead();
-            assert(read == tests.size());
+            assert(read == data.size());
         }
     }
 }
