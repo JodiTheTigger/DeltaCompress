@@ -412,6 +412,101 @@ private:
     std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
 };
 
+template<unsigned SIZE, unsigned SLOWEST_UPDATE_RATE>
+class PerodicRenomalisation
+{
+    typedef std::array<unsigned, SIZE>  Freqencies;
+    typedef std::array<Range, SIZE>     Ranges;
+
+    // How to init the entire array to 1?
+    PerodicRenomalisation(Freqencies frequencies = {1})
+        : m_f(frequencies)
+    {
+        for (const auto f : m_f)
+        {
+            assert(f);
+
+            m_last_total += f;
+        }
+
+        Recalculate_ranges();
+    }
+
+    void Encode(Encoder& coder, unsigned value)
+    {
+        assert(value < SIZE);
+
+        coder.Encode(m_r[value]);
+
+        Adapt(value);
+    }
+
+    unsigned Decode(Decoder& coder)
+    {
+        auto range = coder.Decode();
+        auto result = 0;
+
+        while (m_r[result].min <= range)
+        {
+            ++result;
+        }
+
+        --result;
+
+        Adapt(result);
+
+        return result;
+    }
+
+private:
+    Ranges      m_r;
+    Freqencies  m_f;
+    unsigned m_updates          = 0;
+    unsigned m_update_trigger   = 1;
+    unsigned m_last_total       = 0;
+
+    void Adapt(unsigned value)
+    {
+        ++m_f[value];
+        ++m_updates;
+
+        if (m_updates >= m_update_trigger)
+        {
+            m_update_trigger += m_update_trigger;
+            if (m_update_trigger > SLOWEST_UPDATE_RATE)
+            {
+                m_update_trigger = SLOWEST_UPDATE_RATE;
+            }
+
+            Recalculate_ranges();
+            m_updates = 0;
+        }
+    }
+
+    void Recalculate_ranges()
+    {
+        unsigned total      = m_last_total + m_updates;
+        auto multiple       = TOTAL_RANGE / total;
+        auto reminder       = TOTAL_RANGE % total;
+        unsigned last_min   = 0;
+
+        for (unsigned i = 0; i < SIZE; ++i)
+        {
+            m_r[i].min      = last_min;
+            m_r[i].count    = m_f[i] * multiple;
+
+            if (reminder--)
+            {
+                ++m_r[i].count;
+            }
+
+            last_min += m_r[i].count;
+        }
+
+        assert(last_min == TOTAL_RANGE);
+    }
+};
+
 } // Namespace models
 
 void Tests()
