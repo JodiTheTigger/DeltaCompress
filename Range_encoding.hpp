@@ -237,12 +237,13 @@ public:
         : m_encoder(bytes)
     {}
 
-    void Encode(unsigned value, uint16_t zero_probability)
+    void Encode(unsigned value, uint16_t one_probability)
     {
+        // Note: First range is for one_probability, not zero.
         m_encoder.Encode(
-            !value ?
-                Range{0, zero_probability} :
-                Range{zero_probability, TOTAL_RANGE - zero_probability});
+            value ?
+                Range{0, one_probability} :
+                Range{one_probability, TOTAL_RANGE - one_probability});
     }
 
 private:
@@ -256,15 +257,15 @@ public:
         : m_decoder(bytes)
     {}
 
-    unsigned Decode(unsigned zero_probability)
+    unsigned Decode(unsigned one_probability)
     {
         auto symbol = m_decoder.Decode();
-        auto result = (symbol >= zero_probability);
+        auto result = (symbol < one_probability);
 
         m_decoder.Update(
-            !result ?
-                Range{0, zero_probability} :
-                Range{zero_probability, TOTAL_RANGE - zero_probability});
+            result ?
+                Range{0, one_probability} :
+                Range{one_probability, TOTAL_RANGE - one_probability});
 
         return result;
     }
@@ -292,35 +293,35 @@ class Binary
 {
 public:
     Binary(unsigned initial_probability = (TOTAL_RANGE / 2))
-        : m_0_probability(initial_probability)
+        : m_one_probability(initial_probability)
     {}
 
     void Encode(Binary_encoder& coder, unsigned value)
     {
-        coder.Encode(value, m_0_probability);
+        coder.Encode(value, m_one_probability);
         Adapt(value);
     }
 
     unsigned Decode(Binary_decoder& coder)
     {
-        auto result = coder.Decode(m_0_probability);
+        auto result = coder.Decode(m_one_probability);
         Adapt(result);
 
         return result;
     }
 
 private:
-    uint16_t  m_0_probability;
+    uint16_t  m_one_probability;
 
     void Adapt(unsigned value)
     {
         if (!value)
         {
-            m_0_probability += (TOTAL_RANGE - m_0_probability) >> INERTIA;
+            m_one_probability += (TOTAL_RANGE - m_one_probability) >> INERTIA;
         }
         else
         {
-            m_0_probability -= m_0_probability >> INERTIA;
+            m_one_probability -= m_one_probability >> INERTIA;
         }
     }
 };
@@ -330,42 +331,44 @@ class Binary_two_speed
 {
 public:
     Binary_two_speed(
-            unsigned initial_probability_1 = (TOTAL_RANGE / 4),
-            unsigned initial_probability_2 = (TOTAL_RANGE / 4))
-        : m_0_probability_1(initial_probability_1)
-        , m_0_probability_2(initial_probability_2)
+            unsigned initial_probability_1 = QUARTER_RANGE,
+            unsigned initial_probability_2 = QUARTER_RANGE)
+        : m_probabilities_1(initial_probability_1)
+        , m_probabilities_2(initial_probability_2)
     {}
 
     void Encode(Binary_encoder& coder, unsigned value)
     {
-        coder.Encode(value, m_0_probability_1 + m_0_probability_2);
+        coder.Encode(value, m_probabilities_1 + m_probabilities_2);
         Adapt(value);
-
     }
 
     unsigned Decode(Binary_decoder& coder)
     {
-        auto result = coder.Decode(m_0_probability_1 + m_0_probability_2);
+        auto result = coder.Decode(m_probabilities_1 + m_probabilities_2);
         Adapt(result);
 
         return result;
     }
 
 private:
-    uint16_t  m_0_probability_1;
-    uint16_t  m_0_probability_2;
+    static const unsigned HALF_RANGE    = TOTAL_RANGE / 2;
+    static const unsigned QUARTER_RANGE = HALF_RANGE / 2;
+
+    uint16_t  m_probabilities_1;
+    uint16_t  m_probabilities_2;
 
     void Adapt(unsigned value)
     {
-        if (!value)
+        if (value)
         {
-            m_0_probability_1 += (TOTAL_RANGE - m_0_probability_1) >> INERTIA_1;
-            m_0_probability_2 += (TOTAL_RANGE - m_0_probability_2) >> INERTIA_2;
+            m_probabilities_1 += (HALF_RANGE - m_probabilities_1) >> INERTIA_1;
+            m_probabilities_2 += (HALF_RANGE - m_probabilities_2) >> INERTIA_2;
         }
         else
         {
-            m_0_probability_1 -= m_0_probability_1 >> INERTIA_1;
-            m_0_probability_2 -= m_0_probability_2 >> INERTIA_2;
+            m_probabilities_1 -= m_probabilities_1 >> INERTIA_1;
+            m_probabilities_2 -= m_probabilities_2 >> INERTIA_2;
         }
     }
 };
