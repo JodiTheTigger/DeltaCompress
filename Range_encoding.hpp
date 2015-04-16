@@ -519,7 +519,7 @@ void Tests()
             {12000, (65536 - 12000)},
         };
 
-        auto tests = {1,2,2,2,2,0,1,1,2};
+        auto tests = {1,2,2,2,2,0,1,1,2,2,2,2,2,2,2,1,2,2,1};
 
         {
             Encoder encoder(data);
@@ -570,6 +570,35 @@ void Tests()
             }
 
             auto read = decoder.FlushAndGetBytesRead();
+            assert(read == data.size());
+        }
+    }
+
+    {
+        Bytes data;
+
+        auto tests = {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
+
+        {
+            Models::Binary<5> to_test;
+            Binary_encoder test_encoder(data);
+
+            for (auto t : tests)
+            {
+                to_test.Encode(test_encoder, t);
+            }
+        }
+        {
+            Models::Binary<5> to_test;
+            Binary_decoder test_decoder(data);
+
+            for (unsigned t : tests)
+            {
+                auto value = to_test.Decode(test_decoder);
+                assert(value == t);
+            }
+
+            auto read = test_decoder.FlushAndGetBytesRead();
             assert(read == data.size());
         }
     }
