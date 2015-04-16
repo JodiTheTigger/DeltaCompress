@@ -292,35 +292,35 @@ class Binary
 {
 public:
     Binary(unsigned initial_probability = (TOTAL_RANGE / 2))
-        : m_probability(initial_probability)
+        : m_0_probability(initial_probability)
     {}
 
     void Encode(Binary_encoder& coder, unsigned value)
     {
-        coder.Encode(value, m_probability);
+        coder.Encode(value, m_0_probability);
         Adapt(value);
     }
 
     unsigned Decode(Binary_decoder& coder)
     {
-        auto result = coder.Decode(m_probability);
+        auto result = coder.Decode(m_0_probability);
         Adapt(result);
 
         return result;
     }
 
 private:
-    uint16_t  m_probability;
+    uint16_t  m_0_probability;
 
     void Adapt(unsigned value)
     {
-        if (value)
+        if (!value)
         {
-            m_probability += (TOTAL_RANGE - m_probability) >> INERTIA;
+            m_0_probability += (TOTAL_RANGE - m_0_probability) >> INERTIA;
         }
         else
         {
-            m_probability -= m_probability >> INERTIA;
+            m_0_probability -= m_0_probability >> INERTIA;
         }
     }
 };
@@ -332,40 +332,40 @@ public:
     Binary_two_speed(
             unsigned initial_probability_1 = (TOTAL_RANGE / 4),
             unsigned initial_probability_2 = (TOTAL_RANGE / 4))
-        : m_probability_1(initial_probability_1)
-        , m_probability_2(initial_probability_2)
+        : m_0_probability_1(initial_probability_1)
+        , m_0_probability_2(initial_probability_2)
     {}
 
     void Encode(Binary_encoder& coder, unsigned value)
     {
-        coder.Encode(value, m_probability_1 + m_probability_2);
+        coder.Encode(value, m_0_probability_1 + m_0_probability_2);
         Adapt(value);
 
     }
 
     unsigned Decode(Binary_decoder& coder)
     {
-        auto result = coder.Decode(m_probability_1 + m_probability_2);
+        auto result = coder.Decode(m_0_probability_1 + m_0_probability_2);
         Adapt(result);
 
         return result;
     }
 
 private:
-    uint16_t  m_probability_1;
-    uint16_t  m_probability_2;
+    uint16_t  m_0_probability_1;
+    uint16_t  m_0_probability_2;
 
     void Adapt(unsigned value)
     {
-        if (value)
+        if (!value)
         {
-            m_probability_1 += (TOTAL_RANGE - m_probability_1) >> INERTIA_1;
-            m_probability_2 += (TOTAL_RANGE - m_probability_2) >> INERTIA_2;
+            m_0_probability_1 += (TOTAL_RANGE - m_0_probability_1) >> INERTIA_1;
+            m_0_probability_2 += (TOTAL_RANGE - m_0_probability_2) >> INERTIA_2;
         }
         else
         {
-            m_probability_1 -= m_probability_1 >> INERTIA_1;
-            m_probability_2 -= m_probability_2 >> INERTIA_2;
+            m_0_probability_1 -= m_0_probability_1 >> INERTIA_1;
+            m_0_probability_2 -= m_0_probability_2 >> INERTIA_2;
         }
     }
 };
@@ -574,34 +574,57 @@ void Tests()
         }
     }
 
+    // Binary Model Tests
     {
-        Bytes data;
-
         auto tests = {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
 
+        auto Binary_test = [](auto tests, auto model_in, auto model_out)
         {
-            Models::Binary<5> to_test;
-            Binary_encoder test_encoder(data);
+            Bytes data;
 
-            for (auto t : tests)
             {
-                to_test.Encode(test_encoder, t);
-            }
-        }
-        {
-            Models::Binary<5> to_test;
-            Binary_decoder test_decoder(data);
+                Binary_encoder test_encoder(data);
 
-            for (unsigned t : tests)
+                for (auto t : tests)
+                {
+                    model_in.Encode(test_encoder, t);
+                }
+            }
             {
-                auto value = to_test.Decode(test_decoder);
-                assert(value == t);
-            }
+                Binary_decoder test_decoder(data);
 
-            auto read = test_decoder.FlushAndGetBytesRead();
-            assert(read == data.size());
-        }
+                for (unsigned t : tests)
+                {
+                    auto value = model_out.Decode(test_decoder);
+                    assert(value == t);
+                }
+
+                auto read = test_decoder.FlushAndGetBytesRead();
+                assert(read == data.size());
+            }
+        };
+
+        Binary_test(tests, Models::Binary<5>(), Models::Binary<5>());
+        Binary_test(tests, Models::Binary<1>(), Models::Binary<1>());
+        Binary_test(tests, Models::Binary<2>(), Models::Binary<2>());
+
+
+        Binary_test(
+            tests,
+            Models::Binary_two_speed<5,2>(),
+            Models::Binary_two_speed<5,2>());
+        Binary_test(
+            tests,
+            Models::Binary_two_speed<6,1>(),
+            Models::Binary_two_speed<6,1>());
+        Binary_test(
+            tests,
+            Models::Binary_two_speed<3,4>(),
+            Models::Binary_two_speed<3,4>());
+
     }
+
+    // Range Model Tests
 }
 
 } // namespace
