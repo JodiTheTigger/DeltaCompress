@@ -7,7 +7,9 @@
 #pragma once
 
 #include <vector>
+#include <array>
 #include <cstdint>
+#include <cassert>
 
 namespace Range_encoding
 {
@@ -115,6 +117,8 @@ private:
             Write(value);
             --m_underflow;
         }
+
+        m_buffer = m_min >> SHIFT_BITS;
     }
 
     void Renormalise()
@@ -124,16 +128,12 @@ private:
             if (m_min < (0xFF << SHIFT_BITS))
             {
                 Flush_underflow(0xFF, 0);
-
-                m_buffer = m_min >> SHIFT_BITS;
             }
             else
             {
                 if (m_min & TOP_VALUE)
                 {
                     Flush_underflow(0, 1);
-
-                    m_buffer = m_min >> SHIFT_BITS;
                 }
                 else
                 {
@@ -153,6 +153,7 @@ class Decoder
 public:
     Decoder(const Bytes& bytes)
         : m_bytes(&bytes)
+        , m_byteSize(bytes.size())
     {
         m_buffer    = Read();
         m_min       = m_buffer >> (8 - EXTRA_BITS);
@@ -204,11 +205,12 @@ private:
     uint32_t        m_min           = 0;
     uint32_t        m_next_range    = 0;
     uint32_t        m_read_index    = 0;
+    uint32_t        m_byteSize      = 0;
     uint8_t         m_buffer        = 0;
 
     uint8_t Read()
     {
-        if (m_read_index < m_bytes->size())
+        if (m_read_index < m_byteSize)
         {
             return (*m_bytes)[m_read_index++];
         }
@@ -231,5 +233,190 @@ private:
     }
 };
 
+class BinaryEncoder
+{
+public:
+    BinaryEncoder(Bytes& bytes)
+        : m_encoder(bytes)
+    {}
+
+    void Encode(unsigned value, uint16_t probability)
+    {
+        m_encoder.Encode(
+            !value ?
+                Range{0, probability} :
+                Range{probability, TOTAL_RANGE - probability});
+    }
+
+private:
+    Encoder m_encoder;
+};
+
+class BinaryDecoder
+{
+public:
+    BinaryDecoder(const Bytes& bytes)
+        : m_decoder(bytes)
+    {}
+
+    unsigned Decode(unsigned probability)
+    {
+        auto symbol = m_decoder.Decode();
+        auto result = (symbol >= probability);
+
+        m_decoder.Update(
+            !result ?
+                Range{0, probability} :
+                Range{probability, TOTAL_RANGE - probability});
+
+        return result;
+    }
+
+    uint32_t FlushAndGetBytesRead()
+    {
+        return m_decoder.FlushAndGetBytesRead();
+    }
+
+private:
+    Decoder m_decoder;
+};
+
+// //////////////////////////////////////////////
+// Models
+// //////////////////////////////////////////////
+
+namespace Models
+{
+
+// Ideas from https://github.com/rygorous/gaffer_net/blob/master/main.cpp
+
+template<unsigned INERTIA>
+class Binary
+{
+public:
+    Binary(unsigned initial_probability = (TOTAL_RANGE / 2))
+        : m_probability(initial_probability)
+    {}
+
+    void Encode(BinaryEncoder& coder, unsigned value)
+    {
+        coder.Encode(value, m_probability);
+        Adapt(value);
+    }
+
+    unsigned Decode(BinaryDecoder& coder)
+    {
+        auto result = coder.Decode(m_probability);
+        Adapt(result);
+
+        return result;
+    }
+
+private:
+    uint16_t  m_probability;
+
+    void Adapt(unsigned value)
+    {
+        if (value)
+        {
+            m_probability += (TOTAL_RANGE - m_probability) >> INERTIA;
+        }
+        else
+        {
+            m_probability -= m_probability >> INERTIA;
+        }
+    }
+};
+
+template<unsigned INERTIA_1, unsigned INERTIA_2>
+class Binary_two_speed
+{
+public:
+    Binary_two_speed(
+            unsigned initial_probability_1 = (TOTAL_RANGE / 4),
+            unsigned initial_probability_2 = (TOTAL_RANGE / 4))
+        : m_probability_1(initial_probability_1)
+        , m_probability_2(initial_probability_2)
+    {}
+
+    void Encode(BinaryEncoder& coder, unsigned value)
+    {
+        coder.Encode(value, m_probability_1 + m_probability_2);
+        Adapt(value);
+
+    }
+
+    unsigned Decode(BinaryDecoder& coder)
+    {
+        auto result = coder.Decode(m_probability_1 + m_probability_2);
+        Adapt(result);
+
+        return result;
+    }
+
+private:
+    uint16_t  m_probability_1;
+    uint16_t  m_probability_2;
+
+    void Adapt(unsigned value)
+    {
+        if (value)
+        {
+            m_probability_1 += (TOTAL_RANGE - m_probability_1) >> INERTIA_1;
+            m_probability_2 += (TOTAL_RANGE - m_probability_2) >> INERTIA_2;
+        }
+        else
+        {
+            m_probability_1 -= m_probability_1 >> INERTIA_1;
+            m_probability_2 -= m_probability_2 >> INERTIA_2;
+        }
+    }
+};
+
+template<class BINARY_MODEL, unsigned BITS>
+class Binary_tree
+{
+    void Encode(BinaryEncoder& coder, unsigned value)
+    {
+        assert(value < MODEL_COUNT);
+
+        // Model the MSB first, then work our way down.
+        // Seems adds are better than << 1.
+        unsigned rebuilt = 1;
+
+        while (rebuilt < MODEL_COUNT)
+        {
+            unsigned bit = ((value & TOP_BIT) != 0);
+            value += value;
+            m_models[rebuilt - 1].Encode(coder, bit);
+            rebuilt += rebuilt + bit;
+        }
+    }
+
+    unsigned Decode(BinaryDecoder& coder)
+    {
+        unsigned rebuilt = 1;
+        while (rebuilt < MODEL_COUNT)
+        {
+            rebuilt += rebuilt + m_models[rebuilt - 1].decode(coder);
+        }
+
+        // Clear the top bit due to starting rebuilt with 1.
+        return rebuilt - MODEL_COUNT;
+    }
+
+private:
+    static const unsigned MODEL_COUNT   = 1 << BITS;
+    static const unsigned TOP_BIT       = MODEL_COUNT / 2;
+
+    std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
+};
+
+} // Namespace models
+
+void Tests()
+{
+
+}
 
 } // namespace
