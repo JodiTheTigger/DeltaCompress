@@ -18,6 +18,8 @@
 #include <functional>
 #include <cmath>
 
+#include "Range_encoding.hpp"
+
 // //////////////////////////////////////////////////////
 
 bool doTests        = true;
