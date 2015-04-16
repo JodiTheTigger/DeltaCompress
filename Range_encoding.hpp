@@ -233,41 +233,41 @@ private:
     }
 };
 
-class BinaryEncoder
+class Binary_encoder
 {
 public:
-    BinaryEncoder(Bytes& bytes)
+    Binary_encoder(Bytes& bytes)
         : m_encoder(bytes)
     {}
 
-    void Encode(unsigned value, uint16_t probability)
+    void Encode(unsigned value, uint16_t zero_probability)
     {
         m_encoder.Encode(
             !value ?
-                Range{0, probability} :
-                Range{probability, TOTAL_RANGE - probability});
+                Range{0, zero_probability} :
+                Range{zero_probability, TOTAL_RANGE - zero_probability});
     }
 
 private:
     Encoder m_encoder;
 };
 
-class BinaryDecoder
+class Binary_decoder
 {
 public:
-    BinaryDecoder(const Bytes& bytes)
+    Binary_decoder(const Bytes& bytes)
         : m_decoder(bytes)
     {}
 
-    unsigned Decode(unsigned probability)
+    unsigned Decode(unsigned zero_probability)
     {
         auto symbol = m_decoder.Decode();
-        auto result = (symbol >= probability);
+        auto result = (symbol >= zero_probability);
 
         m_decoder.Update(
             !result ?
-                Range{0, probability} :
-                Range{probability, TOTAL_RANGE - probability});
+                Range{0, zero_probability} :
+                Range{zero_probability, TOTAL_RANGE - zero_probability});
 
         return result;
     }
@@ -298,13 +298,13 @@ public:
         : m_probability(initial_probability)
     {}
 
-    void Encode(BinaryEncoder& coder, unsigned value)
+    void Encode(Binary_encoder& coder, unsigned value)
     {
         coder.Encode(value, m_probability);
         Adapt(value);
     }
 
-    unsigned Decode(BinaryDecoder& coder)
+    unsigned Decode(Binary_decoder& coder)
     {
         auto result = coder.Decode(m_probability);
         Adapt(result);
@@ -339,14 +339,14 @@ public:
         , m_probability_2(initial_probability_2)
     {}
 
-    void Encode(BinaryEncoder& coder, unsigned value)
+    void Encode(Binary_encoder& coder, unsigned value)
     {
         coder.Encode(value, m_probability_1 + m_probability_2);
         Adapt(value);
 
     }
 
-    unsigned Decode(BinaryDecoder& coder)
+    unsigned Decode(Binary_decoder& coder)
     {
         auto result = coder.Decode(m_probability_1 + m_probability_2);
         Adapt(result);
@@ -376,7 +376,7 @@ private:
 template<class BINARY_MODEL, unsigned BITS>
 class Binary_tree
 {
-    void Encode(BinaryEncoder& coder, unsigned value)
+    void Encode(Binary_encoder& coder, unsigned value)
     {
         assert(value < MODEL_COUNT);
 
@@ -393,7 +393,7 @@ class Binary_tree
         }
     }
 
-    unsigned Decode(BinaryDecoder& coder)
+    unsigned Decode(Binary_decoder& coder)
     {
         unsigned rebuilt = 1;
         while (rebuilt < MODEL_COUNT)
@@ -511,7 +511,71 @@ private:
 
 void Tests()
 {
+    {
+        Bytes data;
 
+        // just test 3 ranges
+        std::vector<Range> ranges
+        {
+            {0, 2000},
+            {2000, 10000},
+            {12000, (65536 - 12000)},
+        };
+
+        auto tests = {2,3,3,3,3,0,2,2,3};
+
+        {
+            Encoder encoder(data);
+
+            for (const auto t : tests)
+            {
+                encoder.Encode(ranges[t]);
+            }
+        }
+
+        {
+            Decoder decoder(data);
+
+            for (const auto t : tests)
+            {
+                auto value = decoder.Decode();
+                assert(value >= ranges[t].min);
+                assert(value < (ranges[t].min + ranges[t].count));
+                decoder.Update(ranges[t]);
+            }
+
+            auto read = decoder.FlushAndGetBytesRead();
+            assert(read == tests.size());
+        }
+    }
+
+    {
+        Bytes data;
+
+        auto tests = {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
+
+        {
+            Binary_encoder encoder(data);
+
+            for (const unsigned t : tests)
+            {
+                encoder.Encode(t, 40000);
+            }
+        }
+
+        {
+            Binary_decoder decoder(data);
+
+            for (const unsigned t : tests)
+            {
+                auto value = decoder.Decode(40000);
+                assert(value == t);
+            }
+
+            auto read = decoder.FlushAndGetBytesRead();
+            assert(read == tests.size());
+        }
+    }
 }
 
 } // namespace

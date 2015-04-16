@@ -23,8 +23,8 @@
 // //////////////////////////////////////////////////////
 
 bool doTests        = true;
-bool doStats        = true;
-bool doCompression  = true;
+bool doStats        = false;
+bool doCompression  = false;
 
 // //////////////////////////////////////////////////////
 
@@ -6011,6 +6011,7 @@ Frame Decode(
 
 void Tests()
 {
+    Range_encoding::Tests();
     AdaptiveModelTests();
     BitVector3Tests();
     RunLengthTests();
