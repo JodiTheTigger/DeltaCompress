@@ -5835,6 +5835,7 @@ Frame Decode(
 
                 case QuatPacker::BitVector3Unrelated:
                 case QuatPacker::BitVector3BitCount:
+                case QuatPacker::BitVector3Sorted:
                 {
                     result[i].orientation_largest =
                             bits.Read(RotationIndexMaxBits);
