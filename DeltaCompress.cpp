@@ -22,9 +22,9 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
+bool doTests        = false;
 bool doStats        = false;
-bool doCompression  = false;
+bool doCompression  = true;
 
 // //////////////////////////////////////////////////////
 
@@ -293,6 +293,7 @@ enum class QuatPacker
     BitVector3ModifiedZigZag,
     BitVector3ModifiedGaffer,
     Gaffer,
+    BitVector3Sorted,
 };
 
 // //////////////////////////////////////////////////////
@@ -1641,10 +1642,16 @@ IntVec3 BitVector3TruncatedDecode(
     return result;
 }
 
+enum class Use_magnitude_as
+{
+    Constant,
+    Vector_Magnitude,
+};
 
 unsigned BitVector3SortedEncode(
         IntVec3 vec,
         unsigned maxMagnitude,
+        Use_magnitude_as use_magnitude_as,
         BitStream& target)
 {
     unsigned bitsUsed = 0;
@@ -1742,10 +1749,13 @@ unsigned BitVector3SortedEncode(
         return bitsUsed;
     }
 
-    float next = static_cast<float>(maxMagnitude * maxMagnitude);
-    next -= vec.x * vec.x;
-    assert(next >= 0);
-    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+    if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
+    {
+        float next = static_cast<float>(maxMagnitude * maxMagnitude);
+        next -= vec.x * vec.x;
+        assert(next >= 0);
+        maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+    }
 
     // //////////////////////////////////////////
 
@@ -1770,10 +1780,13 @@ unsigned BitVector3SortedEncode(
         return bitsUsed;
     }
 
-    next = static_cast<float>(maxMagnitude * maxMagnitude);
-    next -= vec.y * vec.y;
-    assert(next >= 0);
-    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+    if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
+    {
+        auto next = static_cast<float>(maxMagnitude * maxMagnitude);
+        next -= vec.y * vec.y;
+        assert(next >= 0);
+        maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+    }
 
     // //////////////////////////////////////////
 
@@ -1792,6 +1805,7 @@ unsigned BitVector3SortedEncode(
 
 IntVec3 BitVector3SortedDecode(
         unsigned maxMagnitude,
+        Use_magnitude_as use_magnitude_as,
         BitStream& source)
 {
     IntVec3 result = {0,0,0};
@@ -1851,9 +1865,13 @@ IntVec3 BitVector3SortedDecode(
         return ReturnSorted(result);
     }
 
-    float next = static_cast<float>(maxMagnitude * maxMagnitude);
-    next -= result.x * result.x;
-    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+    if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
+    {
+        float next = static_cast<float>(maxMagnitude * maxMagnitude);
+        next -= result.x * result.x;
+        assert(next >= 0);
+        maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+    }
 
     // //////////////////////////////////////////
 
@@ -1872,9 +1890,13 @@ IntVec3 BitVector3SortedDecode(
         return ReturnSorted(result);
     }
 
-    next = static_cast<float>(maxMagnitude * maxMagnitude);
-    next -= result.y * result.y;
-    maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+    if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
+    {
+        auto next = static_cast<float>(maxMagnitude * maxMagnitude);
+        next -= result.y * result.y;
+        assert(next >= 0);
+        maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+    }
 
     // //////////////////////////////////////////
 
@@ -2600,6 +2622,8 @@ IntVec3 GafferDecode(
 
 void BitVector3Tests()
 {
+    using namespace std::placeholders;
+
     struct Test
     {
         std::function<unsigned(IntVec3, unsigned, BitStream&)> encode;
@@ -2610,8 +2634,14 @@ void BitVector3Tests()
 
     tests.push_back(
     {
-        BitVector3SortedEncode,
-        BitVector3SortedDecode,
+        std::bind(BitVector3SortedEncode, _1, _2, Use_magnitude_as::Vector_Magnitude, _3),
+        std::bind(BitVector3SortedDecode, _1, Use_magnitude_as::Vector_Magnitude, _2),
+    });
+
+    tests.push_back(
+    {
+        std::bind(BitVector3SortedEncode, _1, _2, Use_magnitude_as::Constant, _3),
+        std::bind(BitVector3SortedDecode, _1, Use_magnitude_as::Constant, _2),
     });
 
     tests.push_back(
@@ -4621,6 +4651,7 @@ std::vector<uint8_t> EncodeStats(
 
                 case QuatPacker::BitVector3Unrelated:
                 case QuatPacker::BitVector3BitCount:
+                case QuatPacker::BitVector3Sorted:
                 {
                     unsigned bitsWritten = 2;
                     deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
@@ -4635,12 +4666,23 @@ std::vector<uint8_t> EncodeStats(
                     BitStream encoded;
                     unsigned codedBits = 0;
 
-                    if (config.quatPacker == QuatPacker::BitVector3Unrelated)
+                    if (config.quatPacker != QuatPacker::BitVector3BitCount)
                     {
-                        codedBits = BitVector3UnrelatedEncode(
-                            vec,
-                            (1 << RotationMaxBits) - 1,
-                            encoded);
+                        if (config.quatPacker != QuatPacker::BitVector3Sorted)
+                        {
+                            codedBits = BitVector3UnrelatedEncode(
+                                vec,
+                                (1 << RotationMaxBits) - 1,
+                                encoded);
+                        }
+                        else
+                        {
+                            codedBits = BitVector3SortedEncode(
+                                vec,
+                                (1 << RotationMaxBits) - 1,
+                                Use_magnitude_as::Constant,
+                                encoded);
+                        }
 
                         if (codedBits < vec3BitsUncompressed)
                         {
@@ -4983,6 +5025,7 @@ std::vector<uint8_t> EncodeStats(
                                 bitsWritten = BitVector3SortedEncode(
                                     vec,
                                     maxMagnitude,
+                                    Use_magnitude_as::Vector_Magnitude,
                                     deltas);
 
                                 break;
@@ -5251,6 +5294,7 @@ std::vector<uint8_t> Encode(
 
                 case QuatPacker::BitVector3Unrelated:
                 case QuatPacker::BitVector3BitCount:
+                case QuatPacker::BitVector3Sorted:
                 {
                     unsigned bitsWritten = 2;
                     deltas.Write(target[i].orientation_largest, RotationIndexMaxBits);
@@ -5265,12 +5309,23 @@ std::vector<uint8_t> Encode(
                     BitStream encoded;
                     unsigned codedBits = 0;
 
-                    if (config.quatPacker == QuatPacker::BitVector3Unrelated)
+                    if (config.quatPacker != QuatPacker::BitVector3BitCount)
                     {
-                        codedBits = BitVector3UnrelatedEncode(
-                            vec,
-                            (1 << RotationMaxBits) - 1,
-                            encoded);
+                        if (config.quatPacker != QuatPacker::BitVector3Sorted)
+                        {
+                            codedBits = BitVector3UnrelatedEncode(
+                                vec,
+                                (1 << RotationMaxBits) - 1,
+                                encoded);
+                        }
+                        else
+                        {
+                            codedBits = BitVector3SortedEncode(
+                                vec,
+                                (1 << RotationMaxBits) - 1,
+                                Use_magnitude_as::Constant,
+                                encoded);
+                        }
 
                         if (codedBits < vec3BitsUncompressed)
                         {
@@ -5569,6 +5624,7 @@ std::vector<uint8_t> Encode(
                                 bitsWritten = BitVector3SortedEncode(
                                     vec,
                                     maxMagnitude,
+                                    Use_magnitude_as::Vector_Magnitude,
                                     deltas);
 
                                 break;
@@ -5789,11 +5845,21 @@ Frame Decode(
                     {
                         IntVec3 vec;
 
-                        if (config.quatPacker == QuatPacker::BitVector3Unrelated)
+                        if (config.quatPacker != QuatPacker::BitVector3BitCount)
                         {
-                            vec = BitVector3UnrelatedDecode(
-                                (1 << RotationMaxBits) - 1,
-                                bits);
+                            if (config.quatPacker != QuatPacker::BitVector3Sorted)
+                            {
+                                vec = BitVector3UnrelatedDecode(
+                                    (1 << RotationMaxBits) - 1,
+                                    bits);
+                            }
+                            else
+                            {
+                                vec = BitVector3SortedDecode(
+                                    (1 << RotationMaxBits) - 1,
+                                    Use_magnitude_as::Constant,
+                                    bits);
+                            }
                         }
                         else
                         {
@@ -5972,6 +6038,7 @@ Frame Decode(
                             {
                                 vec = BitVector3SortedDecode(
                                     maxMagnitude,
+                                    Use_magnitude_as::Vector_Magnitude,
                                     bits);
 
                                 break;
@@ -6359,7 +6426,7 @@ int main(int, char**)
     {
         ChangedArrayEncoding::RangeSmarterAdaptive,
         PosVector3Packer::BitVector3Sorted,
-        QuatPacker::Gaffer,
+        QuatPacker::BitVector3Unrelated,
     };
 
     if (doStats)
