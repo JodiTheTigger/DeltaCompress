@@ -2634,6 +2634,12 @@ void BitVector3Tests()
 
     tests.push_back(
     {
+        BitVector3UnrelatedEncode,
+        BitVector3UnrelatedDecode,
+    });
+
+    tests.push_back(
+    {
         std::bind(BitVector3SortedEncode, _1, _2, Use_magnitude_as::Vector_Magnitude, _3),
         std::bind(BitVector3SortedDecode, _1, Use_magnitude_as::Vector_Magnitude, _2),
     });
@@ -2648,12 +2654,6 @@ void BitVector3Tests()
     {
         BitVector3BitCountEncode,
         BitVector3BitCountDecode,
-    });
-
-    tests.push_back(
-    {
-        BitVector3UnrelatedEncode,
-        BitVector3UnrelatedDecode,
     });
 
     tests.push_back(
@@ -2677,38 +2677,15 @@ void BitVector3Tests()
     int const max = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
     for (const auto& test : tests)
     {
+        auto values
         {
-            IntVec3 data =
-            {
-                -1,
-                -1586,
-                0,
-            };
+            IntVec3{    -1, -1586,  0},
+            IntVec3{    0,  0,      1},
+            IntVec3{    0,  0,      0},
+        };
 
-            BitStream encoded;
-
-            test.encode(
-                data,
-                max,
-                encoded);
-
-            encoded.Reset();
-
-            auto decoded = test.decode(max, encoded);
-
-            assert(data.x == decoded.x);
-            assert(data.y == decoded.y);
-            assert(data.z == decoded.z);
-        }
-
+        for (const auto& data : values)
         {
-            IntVec3 data =
-            {
-                0,
-                0,
-                1,
-            };
-
             BitStream encoded;
 
             test.encode(
@@ -6079,9 +6056,9 @@ Frame Decode(
 
 void Tests()
 {
+    BitVector3Tests();
     Range_encoding::Tests();
     AdaptiveModelTests();
-    BitVector3Tests();
     RunLengthTests();
     ZigZagTest();
     TruncateTest();
@@ -6425,9 +6402,9 @@ int main(int, char**)
 
     Config config
     {
-        ChangedArrayEncoding::RangeSmarterAdaptive,
+        ChangedArrayEncoding::Exp,
         PosVector3Packer::BitVector3Sorted,
-        QuatPacker::BitVector3Unrelated,
+        QuatPacker::BitVector3Sorted,
     };
 
     if (doStats)
