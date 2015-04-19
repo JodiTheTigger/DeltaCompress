@@ -188,17 +188,19 @@ struct MinMaxSum
         sum += value;
         ++count;
     }
-
-    float Average()
-    {
-        if (!count)
-        {
-            return 0;
-        }
-
-        return sum / (float) count;
-    }
 };
+
+float Average(const MinMaxSum& mms)
+{
+    auto count = mms.count;
+
+    if (!count)
+    {
+        return 0;
+    }
+
+    return mms.sum / static_cast<float>(count);
+}
 
 struct Stats
 {
@@ -6163,15 +6165,15 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
 
     printf("== Statistics ================================\n\n");
 
-    float rle                       = stats.rle.Average();
-    float bitpack                   = stats.bitpack.Average();
-    float bitexprle                 = stats.bitexprle.Average();
-    float expbitpack                = stats.bitbitpack.Average();
-    float bitbitpackfull            = stats.bitbitfullpack.Average();
-    float range_simple              = stats.range_simple.Average();
-    float range_smarter             = stats.range_smarter.Average();
-    float range_simple_adaptive     = stats.range_simple_adaptive.Average();
-    float range_smarter_adaptive    = stats.range_smarter_adaptive.Average();
+    float rle                       = Average(stats.rle);
+    float bitpack                   = Average(stats.bitpack);
+    float bitexprle                 = Average(stats.bitexprle);
+    float expbitpack                = Average(stats.bitbitpack);
+    float bitbitpackfull            = Average(stats.bitbitfullpack);
+    float range_simple              = Average(stats.range_simple);
+    float range_smarter             = Average(stats.range_smarter);
+    float range_simple_adaptive     = Average(stats.range_simple_adaptive);
+    float range_smarter_adaptive    = Average(stats.range_smarter_adaptive);
 
     PRINT_FLOAT(rle)
     PRINT_INT(stats.rle.min)
@@ -6219,10 +6221,10 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     printf("\n");
     printf("\n");
 
-    auto dxa =  stats.deltaX.Average();
-    auto dya =  stats.deltaY.Average();
-    auto dza =  stats.deltaZ.Average();
-    auto dta =  stats.deltaTotal.Average();
+    auto dxa =  Average(stats.deltaX);
+    auto dya =  Average(stats.deltaY);
+    auto dza =  Average(stats.deltaZ);
+    auto dta =  Average(stats.deltaTotal);
     PRINT_FLOAT(dxa)
     PRINT_INT(stats.deltaX.min)
     PRINT_INT(stats.deltaX.max)
@@ -6241,7 +6243,7 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.wtfBothSame)
     PRINT_INT(stats.changed)
 
-    auto posPackedAvg = stats.posDeltaPackedBitCount.Average();
+    auto posPackedAvg = Average(stats.posDeltaPackedBitCount);
     PRINT_FLOAT(posPackedAvg)
     PRINT_INT(stats.posDeltaPackedBitCount.min)
     PRINT_INT(stats.posDeltaPackedBitCount.max)
@@ -6250,10 +6252,10 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.quatChanged)
     PRINT_INT(stats.largestDifferent)
 
-    auto daa = stats.deltaA.Average();
-    auto dba = stats.deltaB.Average();
-    auto dca = stats.deltaC.Average();
-    auto dalla = stats.deltaABC.Average();
+    auto daa = Average(stats.deltaA);
+    auto dba = Average(stats.deltaB);
+    auto dca = Average(stats.deltaC);
+    auto dalla = Average(stats.deltaABC);
     PRINT_FLOAT(daa)
     PRINT_INT(stats.deltaA.min)
     PRINT_INT(stats.deltaA.max)
@@ -6268,13 +6270,13 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.deltaABC.max)
 
     printf("\n");
-    auto quatPackedAvg = stats.quatDeltaPackedBitCount.Average();
+    auto quatPackedAvg = Average(stats.quatDeltaPackedBitCount);
     PRINT_FLOAT(quatPackedAvg)
     PRINT_INT(stats.quatDeltaPackedBitCount.min)
     PRINT_INT(stats.quatDeltaPackedBitCount.max)
 
     printf("\n");
-    auto bytesAvg = stats.bytesPerPacket.Average();
+    auto bytesAvg = Average(stats.bytesPerPacket);
     PRINT_FLOAT(bytesAvg)
     PRINT_INT(stats.bytesPerPacket.min)
     PRINT_INT(stats.bytesPerPacket.max)
