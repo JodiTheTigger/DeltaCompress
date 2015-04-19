@@ -63,10 +63,10 @@ public:
         Write(((temp = m_min) >> (SHIFT_BITS - 8)) & 0xFF);
 
         // I think we can get away with not needing these.
-        // but whenever I remove them both, it goes wrong.
+        // but whenever I remove them, it goes wrong.
         // I don't know why.
         Write(0);
-        //Write(0);
+        Write(0);
     }
 
     void Encode(Range range)

@@ -22,7 +22,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
+bool doTests        = false;
 bool doStats        = false;
 bool doCompression  = true;
 
@@ -688,518 +688,6 @@ unsigned MinBits(unsigned value)
 
     return result;
 }
-
-// //////////////////////////////////////////////////////
-
-namespace Range_coding
-{
-
-// Try doing http://www.arturocampos.com/ac_range.html
-// NOtE: don't encode more than 2 << 24 values or you will
-// have a bad time.
-
-struct Coding
-{
-    static const uint32_t top_value     = 0x80000000;
-    static const uint32_t bottom_value  = 0x00800000;
-    static const uint32_t shift_bits    = 23;
-    static const uint32_t extra_bits    = 7;
-
-    uint32_t low        = 0;
-    uint32_t range      = top_value;
-    // first byte written as the header. Should be ignored when decoding.
-    uint8_t buffer      = 0xDD;
-
-    union
-    {
-        uint32_t underflow  = 0;
-        uint32_t next_range;
-    };
-
-    uint32_t read_index = 0;
-
-    std::vector<uint8_t> bytes;
-
-    uint8_t Read()
-    {
-        // At the end we can read past the end of the buffer.
-        //assert(read_index < bytes.size());
-
-        if (read_index < bytes.size())
-        {
-            return bytes[read_index++];
-        }
-
-        return 0;
-    }
-};
-
-void Flush_underflow(Coding& coding, uint8_t value, unsigned overflow)
-{
-    coding.bytes.push_back(coding.buffer + overflow);
-
-    while (coding.underflow)
-    {
-        coding.bytes.push_back(value);
-        --coding.underflow;
-    }
-}
-
-void Renormalise(Coding& coding)
-{
-    while (coding.range <= coding.bottom_value)
-    {
-        if (coding.low < (0xFF << coding.shift_bits))
-        {
-            Flush_underflow(coding, 0xFF, 0);
-
-            coding.buffer = coding.low >> coding.shift_bits;
-        }
-        else
-        {
-            if (coding.low & coding.top_value)
-            {
-                Flush_underflow(coding, 0, 1);
-
-                coding.buffer = coding.low >> coding.shift_bits;
-            }
-            else
-            {
-                ++coding.underflow;
-            }
-        }
-
-        coding.range    <<= 8;
-        coding.low      <<= 8;
-        coding.low      &= (coding.top_value - 1);
-    }
-}
-
-void Encode(
-        Coding& coding,
-        uint32_t low,
-        uint32_t count,
-        uint32_t maximum_cumulative_probability)
-{
-    Renormalise(coding);
-
-    auto new_range = coding.range / maximum_cumulative_probability;
-    auto new_range_start = new_range * low;
-
-    coding.low += new_range_start;
-
-    if (low + count < maximum_cumulative_probability)
-    {
-        coding.range = new_range * count;
-    }
-    else
-    {
-        coding.range -= new_range_start;
-    }
-}
-
-void Flush(Coding& coding)
-{
-    Renormalise(coding);
-
-    auto temp = coding.low >> coding.shift_bits;
-
-    if  (
-            (coding.low & (coding.bottom_value - 1)) >=
-            ((coding.bytes.size() & 0xffffffL) >> 1)
-        )
-    {
-        ++temp;
-    }
-
-    if (temp > 0xFF)
-    {
-        Flush_underflow(coding, 0, 1);
-    }
-    else
-    {
-        Flush_underflow(coding, 0xFF, 0);
-    }
-
-    coding.bytes.push_back(temp & 0xFF);
-    coding.bytes.push_back(
-                ((temp = coding.low) >> (coding.shift_bits - 8)) & 0xFF);
-
-    // I think we can get away with not needing these.
-    // but whenever I remove any of them, it goes wrong. I don't know why.
-    coding.bytes.push_back(0);
-    coding.bytes.push_back(0);
-}
-
-void Decoder_init(Coding& coding)
-{
-    // Skip header.
-    coding.read_index   = 1;
-    coding.buffer       = coding.Read();
-    coding.low          = coding.buffer >> (8 - coding.extra_bits);
-    coding.range        = 1 << coding.extra_bits;
-}
-
-void Decoder_renormalise(Coding& coding)
-{
-    while (coding.range <= coding.bottom_value)
-    {
-        coding.low =
-                (coding.low << 8) |
-                ((coding.buffer << coding.extra_bits) & 0xFF);
-
-        coding.buffer = coding.Read();
-        coding.low |= (coding.buffer >> (8 - coding.extra_bits));
-        coding.range <<= 8;
-    }
-}
-
-uint32_t Decoder_decode(
-        Coding& coding,
-        uint32_t maximum_cumulative_probability)
-{
-    Decoder_renormalise(coding);
-
-    coding.next_range = coding.range / maximum_cumulative_probability;
-    auto symbol_range = coding.low / coding.next_range;
-
-    if (symbol_range >= maximum_cumulative_probability)
-    {
-        return maximum_cumulative_probability - 1;
-    }
-    else
-    {
-        return symbol_range;
-    }
-}
-
-void Decoder_update_state(
-    Coding& coding,
-    uint32_t low,
-    uint32_t count,
-    uint32_t maximum_cumulative_probability)
-{
-    auto temp = coding.next_range * low;
-    coding.low -= temp;
-    if ((low + count) < maximum_cumulative_probability)
-    {
-        coding.range = coding.next_range * count;
-    }
-    else
-    {
-        coding.range -= temp;
-    }
-}
-
-void Decoder_flush(Coding& coding)
-{
-    Decoder_renormalise(coding);
-}
-
-static const unsigned Cumulative_probability = 65536;
-
-class BinaryRangeCoder
-{
-public:
-    BinaryRangeCoder(std::vector<uint8_t>& storage)
-        : bytes(&storage)
-    {}
-
-    void Encode(unsigned value, unsigned probability)
-    {
-        assert(probability <= Cumulative_probability);
-
-        Renormalise();
-
-        // could be better if we assumed value is 0 or 1.
-        // Defaults for zero.
-        auto range_low  = 0;
-        auto count      = probability;
-        if (value)
-        {
-            range_low   = probability;
-            count       = Cumulative_probability - probability;
-        }
-
-        const auto new_range        = range / Cumulative_probability;
-        const auto new_range_start  = new_range * range_low;
-
-        low += new_range_start;
-
-        if ((range_low + count) < Cumulative_probability)
-        {
-            range = new_range * count;
-        }
-        else
-        {
-            range -= new_range_start;
-        }
-    }
-
-    ~BinaryRangeCoder()
-    {
-        Renormalise();
-
-        auto temp = low >> shift_bits;
-
-        if  (
-                (low & (bottom_value - 1)) >=
-                ((bytes->size() & 0xffffffL) >> 1)
-            )
-        {
-            ++temp;
-        }
-
-        if (temp > 0xFF)
-        {
-            Flush_underflow(0, 1);
-        }
-        else
-        {
-            Flush_underflow(0xFF, 0);
-        }
-
-        Write(temp & 0xFF);
-        Write(((temp = low) >> (shift_bits - 8)) & 0xFF);
-
-        // I think we can get away with not needing these.
-        // but whenever I remove them both, it goes wrong.
-        // I don't know why. (Probably something to do with
-        // the top and bottom bits, and shift been 23).
-        // Acutually, I can't even remove the last one. still goes wrong.
-        Write(0);
-        Write(0);
-    }
-
-private:
-    static const uint32_t top_value     = 0x80000000;
-    static const uint32_t bottom_value  = 0x00800000;
-    static const uint32_t shift_bits    = 23;
-    static const uint32_t extra_bits    = 7;
-
-    uint32_t    low         = 0;
-    uint32_t    range       = top_value;
-    uint8_t     buffer      = 0;
-    bool        first       = true;
-    uint32_t    underflow   = 0;
-
-    std::vector<uint8_t>* bytes;
-
-    void Write(uint8_t value)
-    {
-        if (!first)
-        {
-            bytes->push_back(value);
-        }
-        else
-        {
-            first = false;
-        }
-    }
-
-    void Flush_underflow(uint8_t value, unsigned overflow)
-    {
-        Write(buffer + overflow);
-
-        while (underflow)
-        {
-            Write(value);
-            --underflow;
-        }
-    }
-
-    void Renormalise()
-    {
-        while (range <= bottom_value)
-        {
-            if (low < (0xFF << shift_bits))
-            {
-                Flush_underflow(0xFF, 0);
-
-                buffer = low >> shift_bits;
-            }
-            else
-            {
-                if (low & top_value)
-                {
-                    Flush_underflow(0, 1);
-
-                    buffer = low >> shift_bits;
-                }
-                else
-                {
-                    ++underflow;
-                }
-            }
-
-            range    <<= 8;
-            low      <<= 8;
-            low      &= (top_value - 1);
-        }
-    }
-};
-
-class BinaryRangeDecoder
-{
-public:
-    BinaryRangeDecoder(const std::vector<uint8_t>& storage)
-        : bytes(&storage)
-    {}
-
-    unsigned Decode(unsigned probability)
-    {
-        Renormalise();
-
-        auto next_range = range / Cumulative_probability;
-        auto symbol_range = low / next_range;
-
-        // could be better if we assumed value is 0 or 1.
-        // Defaults for zero.
-        auto range_low  = 0;
-        auto count      = probability;
-        if (symbol_range >= probability)
-        {
-            range_low   = probability;
-            count       = Cumulative_probability - probability;
-        }
-
-        auto temp = next_range * range_low;
-        low -= temp;
-        if ((range_low + count) < Cumulative_probability)
-        {
-            range = next_range * count;
-        }
-        else
-        {
-            range -= temp;
-        }
-
-        return symbol_range >= probability;
-    }
-
-    ~BinaryRangeDecoder()
-    {
-        Renormalise();
-    }
-
-private:
-    static const uint32_t top_value     = 0x80000000;
-    static const uint32_t bottom_value  = 0x00800000;
-    static const uint32_t shift_bits    = 23;
-    static const uint32_t extra_bits    = 7;
-
-    uint32_t    low         = 0;
-    uint32_t    range       = top_value;
-    uint8_t     buffer      = 0;
-    bool        first       = true;
-    uint32_t    read_index  = 0;
-
-    const std::vector<uint8_t>* bytes;
-
-    uint8_t Read()
-    {
-        if (!first)
-        {
-            if (read_index < bytes->size())
-            {
-                return (*bytes)[read_index++];
-            }
-        }
-        else
-        {
-            first = false;
-        }
-
-        return 0;
-    }
-
-    void Renormalise()
-    {
-        while (range <= bottom_value)
-        {
-            low =
-                (low << 8) |
-                ((buffer << extra_bits) & 0xFF);
-
-            buffer = Read();
-            low |= (buffer >> (8 - extra_bits));
-            range <<= 8;
-        }
-    }
-};
-
-
-
-// Copied from https://github.com/rygorous/gaffer_net/blob/master/main.cpp
-template<int Inertia>
-struct BinaryModel
-{
-    static const unsigned Max_probability = 1 << 16;
-
-    uint16_t probability = 65536 / 2;
-
-    void Code(Coding& coding, unsigned bit)
-    {
-        if (bit)
-        {
-            Range_coding::Encode(
-                coding,
-                0,
-                probability,
-                Max_probability);
-        }
-        else
-        {
-            Range_coding::Encode(
-                coding,
-                probability,
-                Max_probability - probability,
-                Max_probability);
-        }
-
-        Adapt(bit);
-    }
-
-    unsigned Decode(Coding& coding)
-    {
-        auto bit = Range_coding::Decoder_decode(coding, Max_probability);
-
-        if (bit)
-        {
-            Range_coding::Decoder_update_state(
-                coding,
-                0,
-                probability,
-                Max_probability);
-        }
-        else
-        {
-            Range_coding::Decoder_update_state(
-                coding,
-                probability,
-                Max_probability - probability,
-                Max_probability);
-        }
-
-        Adapt(bit);
-
-        return bit;
-    }
-
-    void Adapt(unsigned bit)
-    {
-        if (bit)
-        {
-            probability += (Max_probability - probability) >> Inertia;
-        }
-        else
-        {
-            probability -= probability >> Inertia;
-        }
-    }
-};
-
-} // namespace
 
 // //////////////////////////////////////////////////////
 
@@ -3695,76 +3183,6 @@ BitStream BitBitPackDecode(BitStream& data, unsigned targetBits = 0)
 // stats.ones	241612	9.59%
 // stats.zeros	2276683	90.41%
 
-static unsigned Range_max_count = 1 << 16;
-
-struct Range
-{
-    unsigned min;
-    unsigned count;
-};
-
-std::vector<Range> PercentToRanges(std::vector<float> percents)
-{
-    unsigned min = 0;
-    unsigned count = 0;
-    std::vector<Range> result;
-
-    for (const auto precent : percents)
-    {
-        min += count;
-        count = static_cast<unsigned>(round(precent * Range_max_count));
-
-        result.push_back({min, count});
-    }
-
-    assert((min + count) == Range_max_count);
-
-    return result;
-}
-
-std::vector<Range> UniformRange(unsigned count)
-{
-    unsigned base = Range_max_count / count;
-    unsigned offset = Range_max_count % count;
-    std::vector<Range> ranges;
-
-    unsigned lastCount = 0;
-    for (unsigned i = 0; i < count; ++i)
-    {
-        auto add = base;
-
-        if (i < offset)
-        {
-            ++add;
-        }
-
-        ranges.push_back({lastCount, add});
-        lastCount += add;
-    }
-
-    // make sure all ranges add up to max.
-    assert((ranges.back().min + ranges.back().count) == Range_max_count);
-
-    return ranges;
-}
-
-unsigned DecodedToValue(const std::vector<Range>& ranges, unsigned decoded)
-{
-    unsigned result = 0;
-
-    for (const auto& range : ranges)
-    {
-        if (decoded < (range.min + range.count))
-        {
-            return result;
-        }
-
-        ++result;
-    }
-
-    return ranges.size() - 1;
-}
-
 const unsigned Simple_probability_one =
         static_cast<unsigned>(
             round((1.0 - 0.9041) * Range_encoding::TOTAL_RANGE));
@@ -3827,11 +3245,13 @@ BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
 // stats.one_one	140024	57.97%
 // stats.one_zero	101528	42.03%
 
-std::vector<float> RangeOnes = {0.4203, (1.0 - 0.4203)};
-std::vector<float> RangeZeros = {0.9565, (1.0 - 0.9565)};
+const unsigned Smarter_zeros_probability_one =
+        static_cast<unsigned>(
+            round((1.0 - 0.9565) * Range_encoding::TOTAL_RANGE));
 
-static const auto zeroRange = PercentToRanges(RangeZeros);
-static const auto oneRange = PercentToRanges(RangeOnes);
+const unsigned Smarter_ones_probability_one =
+        static_cast<unsigned>(
+            round((1.0 - 0.4203) * Range_encoding::TOTAL_RANGE));
 
 BitStream RangeEncodeSmarterEncode(BitStream data)
 {
@@ -3842,99 +3262,57 @@ BitStream RangeEncodeSmarterEncode(BitStream data)
         return data;
     }
 
-    data.Reset();
-    BitStream result;
+    Range_encoding::Bytes result_buffer;
 
-    unsigned count = size;
-    Range_coding::Coding coding;
-    unsigned last = 1;
-
-    for (unsigned i = 0; i < count; ++i)
     {
-        auto value = data.Read(1);
+        Range_encoding::Binary_encoder coder(result_buffer);
 
-        if (last == 0)
+        data.Reset();
+        unsigned last = 1;
+        for (unsigned i = 0; i < size; ++i)
         {
-            Range_coding::Encode(
-                coding,
-                zeroRange[value].min,
-                zeroRange[value].count,
-                Range_max_count);
-        }
-        else
-        {
-            Range_coding::Encode(
-                coding,
-                oneRange[value].min,
-                oneRange[value].count,
-                Range_max_count);
-        }
+            auto value = data.Read(1);
 
-        last = value;
+            if (last == 0)
+            {
+                coder.Encode(value, Smarter_zeros_probability_one);
+            }
+            else
+            {
+                coder.Encode(value, Smarter_ones_probability_one);
+            }
+
+        }
     }
 
-    Range_coding::Flush(coding);
-
-    // first byte is a header we can drop.
-    auto no_header = std::vector<uint8_t>(coding.bytes.begin() + 1, coding.bytes.end());
-    BitStream done = {no_header};
-    done.SetOffset(8 * no_header.size());
+    BitStream done = {result_buffer};
+    done.SetOffset(8 * result_buffer.size());
 
     return done;
 }
 
 BitStream RangeEncodeSmarterDecode(BitStream& data, unsigned targetBits = 0)
 {
-    Range_coding::Coding coding;
     auto raw_data = data.Data();
 
-    // coding assumes a header
-    coding.bytes.push_back(0);
-    coding.bytes.insert(
-        coding.bytes.end(),
-        raw_data.begin(),
-        raw_data.end());
-
-    Range_coding::Decoder_init(coding);
+    Range_encoding::Binary_decoder coder(raw_data);
 
     BitStream result;
 
     unsigned last = 1;
-
     while (result.Bits() < targetBits)
     {
-        auto value =
-            Range_coding::Decoder_decode(coding, Range_max_count);
+        auto probability_one =
+            (last == 0) ?
+            Smarter_zeros_probability_one :
+            Smarter_ones_probability_one;
 
-        std::vector<Range> ranges = [&]()
-        {
-            if (last == 0)
-            {
-                return zeroRange;
-            }
-            else
-            {
-                return oneRange;
-            }
-        }();
-
-        auto bit = DecodedToValue(ranges, value);
-
-        Range_coding::Decoder_update_state(
-            coding,
-            ranges[bit].min,
-            ranges[bit].count,
-            Range_max_count);
+        auto bit = coder.Decode(probability_one);
 
         result.Write(bit, 1);
-
-        last = bit;
     }
 
-    Range_coding::Decoder_flush(coding);
-
-    // -1 since I had to add that header byte.
-    auto bitsUsed = 8 * (coding.read_index - 1);
+    auto bitsUsed = 8 * coder.FlushAndGetBytesRead();
 
     data.SetOffset(bitsUsed);
 
@@ -3944,70 +3322,6 @@ BitStream RangeEncodeSmarterDecode(BitStream& data, unsigned targetBits = 0)
 // //////////////////////////////////////////////////////
 
 static const unsigned Simple_inertia_bits = 2;
-
-void Adapt(std::vector<Range>& range, unsigned bit, unsigned inertia)
-{
-    assert(range.size() == 2);
-
-    auto probability = range[0].count;
-
-    // Stolen from line 186 of
-    // https://github.com/rygorous/gaffer_net/blob/master/main.cpp
-    if (bit)
-    {
-        probability -= probability >> inertia;
-    }
-    else
-    {
-        probability += (Range_max_count - probability) >> inertia;
-    }
-
-    range[0].count = probability;
-    range[1].min = probability;
-    range[1].count = Range_max_count - probability;
-
-    assert((range[1].min + range[1].count) == Range_max_count);
-}
-
-void Adapt_every_damned_thing(
-        std::vector<Range>& ranges,
-        unsigned index,
-        unsigned inertia)
-{
-    auto size = ranges.size();
-
-    assert(index < size);
-
-    unsigned newMin = 0;
-    unsigned removed = 0;
-    for (unsigned i = 0; i < size; ++i)
-    {
-        if (index != i)
-        {
-            auto diff = ranges[i].count >> inertia;
-            removed += diff;
-            ranges[i].count -= diff;
-        }
-
-        ranges[i].min   =  newMin;
-        newMin          +=  ranges[i].count;
-    }
-
-    ranges[index].count += removed;
-
-    assert(ranges[index].count < Range_max_count);
-
-    newMin = ranges[index].min + ranges[index].count;
-
-    for (unsigned i = index + 1; i < size; ++i)
-    {
-        ranges[i].min   =  newMin;
-        newMin          +=  ranges[i].count;
-    }
-
-    // NFI if this will work, fail fast...
-    assert((ranges.back().min + ranges.back().count) == Range_max_count);
-}
 
 BitStream RangeEncodeSimpleAdaptiveEncode(BitStream data)
 {
@@ -4057,7 +3371,6 @@ BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits =
         result.Write(bit, 1);
     }
 
-    // -1 since I had to add that header byte.
     auto bitsUsed = 8 * coder.FlushAndGetBytesRead();
 
     data.SetOffset(bitsUsed);
@@ -4068,8 +3381,8 @@ BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits =
 //// //////////////////////////////////////////////////////
 
 
-static unsigned Smarter_inertia_bits_zero = 5;
-static unsigned Smarter_inertia_bits_one = 3;
+static const unsigned Smarter_inertia_bits_zero = 5;
+static const unsigned Smarter_inertia_bits_one = 3;
 
 BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
 {
@@ -4080,116 +3393,60 @@ BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
         return data;
     }
 
-    data.Reset();
-    BitStream result;
+    Range_encoding::Bytes result_buffer;
 
-    unsigned count = size;
-    Range_coding::Coding coding;
-    unsigned last = 1;
-
-    auto adaptive_zero = PercentToRanges(RangeZeros);
-    auto adaptive_one  = PercentToRanges(RangeOnes);
-
-    for (unsigned i = 0; i < count; ++i)
     {
-        auto value = data.Read(1);
+        using namespace Range_encoding;
 
-        if (last == 0)
+        Binary_encoder coder(result_buffer);
+
+        // Phoar, the models are getting complex now...
+        Models::Binary_history<
+            Models::Binary<Smarter_inertia_bits_zero>,
+            Models::Binary<Smarter_inertia_bits_one>> model(
+                1,
+                Smarter_zeros_probability_one,
+                Smarter_ones_probability_one);
+
+        data.Reset();
+        for (unsigned i = 0; i < size; ++i)
         {
-            Range_coding::Encode(
-                coding,
-                adaptive_zero[value].min,
-                adaptive_zero[value].count,
-                Range_max_count);
+            auto value = data.Read(1);
 
-            Adapt(adaptive_zero, value, Smarter_inertia_bits_zero);
+            model.Encode(coder, value);
         }
-        else
-        {
-            Range_coding::Encode(
-                coding,
-                adaptive_one[value].min,
-                adaptive_one[value].count,
-                Range_max_count);
-
-            Adapt(adaptive_one, value, Smarter_inertia_bits_one);
-        }
-
-        last = value;
     }
 
-    Range_coding::Flush(coding);
-
-    // first byte is a header we can drop.
-    auto no_header = std::vector<uint8_t>(coding.bytes.begin() + 1, coding.bytes.end());
-    BitStream done = {no_header};
-    done.SetOffset(8 * no_header.size());
+    BitStream done = {result_buffer};
+    done.SetOffset(8 * result_buffer.size());
 
     return done;
 }
 
 BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits = 0)
 {
-    Range_coding::Coding coding;
+    using namespace Range_encoding;
+
     auto raw_data = data.Data();
 
-    // coding assumes a header
-    coding.bytes.push_back(0);
-    coding.bytes.insert(
-        coding.bytes.end(),
-        raw_data.begin(),
-        raw_data.end());
-
-    Range_coding::Decoder_init(coding);
+    Range_encoding::Binary_decoder coder(raw_data);
+    Models::Binary_history<
+        Models::Binary<Smarter_inertia_bits_zero>,
+        Models::Binary<Smarter_inertia_bits_one>> model(
+            1,
+            Smarter_zeros_probability_one,
+            Smarter_ones_probability_one);
 
     BitStream result;
 
-    unsigned last = 1;
-
-    auto adaptive_zero = PercentToRanges(RangeZeros);
-    auto adaptive_one  = PercentToRanges(RangeOnes);
-
     while (result.Bits() < targetBits)
     {
-        auto value =
-            Range_coding::Decoder_decode(coding, Range_max_count);
-
-        unsigned bit = 0;
-
-        if (last == 0)
-        {
-            bit = DecodedToValue(adaptive_zero, value);
-
-            Range_coding::Decoder_update_state(
-                coding,
-                adaptive_zero[bit].min,
-                adaptive_zero[bit].count,
-                Range_max_count);
-
-            Adapt(adaptive_zero, bit, Smarter_inertia_bits_zero);
-        }
-        else
-        {
-            bit = DecodedToValue(adaptive_one, value);
-
-            Range_coding::Decoder_update_state(
-                coding,
-                adaptive_one[bit].min,
-                adaptive_one[bit].count,
-                Range_max_count);
-
-            Adapt(adaptive_one, bit, Smarter_inertia_bits_one);
-        }
+        auto bit = model.Decode(coder);
 
         result.Write(bit, 1);
-
-        last = bit;
     }
 
-    Range_coding::Decoder_flush(coding);
-
-    // -1 since I had to add that header byte.
-    auto bitsUsed = 8 * (coding.read_index - 1);
+    auto bitsUsed = 8 * coder.FlushAndGetBytesRead();
 
     data.SetOffset(bitsUsed);
 
@@ -4197,41 +3454,6 @@ BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits 
 }
 
 // //////////////////////////////////////////////////////
-
-void AdaptiveModelTests()
-{
-    {
-        std::vector<Range> ranges;
-
-        // lets do a bytes worth.
-        unsigned lastCount = 0;
-        for (unsigned i = 0; i < 256; ++i)
-        {
-            auto add = 10u + ((i * 4) / 5);
-            ranges.push_back({lastCount, add});
-            lastCount += add;
-        }
-
-        // make sure all ranges add up to max.
-        ranges.back().count = Range_max_count - ranges.back().min;
-
-        // Just testing I don't hit any asserts.
-        Adapt_every_damned_thing(ranges, 28, 4);
-        Adapt_every_damned_thing(ranges, 28, 1);
-        Adapt_every_damned_thing(ranges, 28, 6);
-        Adapt_every_damned_thing(ranges, 28, 6);
-    }
-
-    {
-        auto ranges = UniformRange(256);
-
-        // Just testing I don't hit any asserts.
-        Adapt_every_damned_thing(ranges, 28, 4);
-        Adapt_every_damned_thing(ranges, 28, 1);
-        Adapt_every_damned_thing(ranges, 28, 6);
-        Adapt_every_damned_thing(ranges, 28, 6);
-    }
-}
 
 void RunLengthTests()
 {
@@ -6017,7 +5239,6 @@ void Tests()
     Range_encoding::Tests();
     RunLengthTests();
     BitVector3Tests();
-    AdaptiveModelTests();
     ZigZagTest();
     TruncateTest();
     GaffersRangeTest();
