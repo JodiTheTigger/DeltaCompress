@@ -376,6 +376,7 @@ private:
 template<class BINARY_MODEL, unsigned BITS>
 class Binary_tree
 {
+public:
     void Encode(Binary_encoder& coder, unsigned value)
     {
         assert(value < MODEL_COUNT);
@@ -415,6 +416,7 @@ private:
 template<class BINARY_MODEL_ZERO, class BINARY_MODEL_ONE>
 class Binary_history
 {
+public:
     Binary_history(
             unsigned last_value = 0,
             BINARY_MODEL_ZERO zero = BINARY_MODEL_ZERO(),
@@ -451,9 +453,9 @@ class Binary_history
     }
 
 private:
+    unsigned            m_last_value;
     BINARY_MODEL_ZERO   m_model_zero;
     BINARY_MODEL_ONE    m_model_one;
-    unsigned            m_last_value;
 };
 
 template<unsigned SIZE, unsigned SLOWEST_UPDATE_RATE>
@@ -675,6 +677,10 @@ void Tests()
             Models::Binary_two_speed<3,4>(),
             Models::Binary_two_speed<3,4>());
 
+        Binary_test(
+            tests,
+            Models::Binary_history<Models::Binary<3>, Models::Binary<3>>(),
+            Models::Binary_history<Models::Binary<3>, Models::Binary<3>>());
     }
 
     // Range Model Tests
