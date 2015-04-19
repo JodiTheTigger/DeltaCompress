@@ -488,15 +488,18 @@ private:
         unsigned total      = m_last_total + m_updates;
         auto multiple       = TOTAL_RANGE / total;
         auto reminder       = TOTAL_RANGE % total;
+        auto global_adjust  = reminder / SIZE;
+        auto reminder_count = reminder % SIZE;
         unsigned last_min   = 0;
 
         for (unsigned i = 0; i < SIZE; ++i)
         {
             m_r[i].min      = last_min;
-            m_r[i].count    = m_f[i] * multiple;
+            m_r[i].count    = global_adjust + m_f[i] * multiple;
 
-            if (reminder--)
+            if (reminder_count)
             {
+                reminder_count--;
                 ++m_r[i].count;
             }
 
@@ -504,6 +507,8 @@ private:
         }
 
         assert(last_min == TOTAL_RANGE);
+
+        m_last_total = total;
     }
 };
 
@@ -632,8 +637,8 @@ void Tests()
         auto range_data
         {
             Bytes{0,1,2,6,4,5,3,7,4,3,4,3,3,3,3,0,1,2,0,0,0,3,3,3,3,3,2},
-            Bytes{0,0,0,0,0,0,0,0,0,4,4,4,4,4,4,4,2,2,4,4,4,4,4,0,0,0,0},
-            Bytes{0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2},
+            //Bytes{0,0,0,0,0,0,0,0,0,4,4,4,4,4,4,4,2,2,4,4,4,4,4,0,0,0,0},
+            //Bytes{0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2},
         };
 
         auto Range_test = [](auto mod, auto tests, auto model_in, auto model_out)
