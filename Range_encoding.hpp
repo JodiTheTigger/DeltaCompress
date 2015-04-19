@@ -415,11 +415,11 @@ private:
 template<unsigned SIZE, unsigned SLOWEST_UPDATE_RATE>
 class PerodicRenomalisation
 {
+public:
     typedef std::array<unsigned, SIZE>  Freqencies;
     typedef std::array<Range, SIZE>     Ranges;
 
-    // How to init the entire array to 1?
-    PerodicRenomalisation(Freqencies frequencies = {1})
+    PerodicRenomalisation(Freqencies frequencies)
         : m_f(frequencies)
     {
         for (const auto f : m_f)
@@ -628,6 +628,50 @@ void Tests()
     }
 
     // Range Model Tests
+    {
+        auto range_data
+        {
+            Bytes{0,1,2,6,4,5,3,7,4,3,4,3,3,3,3,0,1,2,0,0,0,3,3,3,3,3,2},
+            Bytes{0,0,0,0,0,0,0,0,0,4,4,4,4,4,4,4,2,2,4,4,4,4,4,0,0,0,0},
+            Bytes{0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2},
+        };
+
+        auto Range_test = [](auto mod, auto tests, auto model_in, auto model_out)
+        {
+            Bytes data;
+
+            {
+                Encoder test_encoder(data);
+
+                for (auto t : tests)
+                {
+                    model_in.Encode(test_encoder, t % mod);
+                }
+            }
+            {
+                Decoder test_decoder(data);
+
+                for (unsigned t : tests)
+                {
+                    auto value = model_out.Decode(test_decoder);
+                    assert(value == (t % mod));
+                }
+
+                auto read = test_decoder.FlushAndGetBytesRead();
+                assert(read == data.size());
+            }
+        };
+
+        for (const auto& range_set : range_data)
+        {
+            Models::PerodicRenomalisation<4,8>::Freqencies frequencies{1,1,1,1};
+            Range_test(
+                4,
+                range_set,
+                Models::PerodicRenomalisation<4,8>(frequencies),
+                Models::PerodicRenomalisation<4,8>(frequencies));
+        }
+    }
 }
 
 } // namespace
