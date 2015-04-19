@@ -824,9 +824,9 @@ void Flush(Coding& coding)
                 ((temp = coding.low) >> (coding.shift_bits - 8)) & 0xFF);
 
     // I think we can get away with not needing these.
-    // but whenever I remove them both, it goes wrong. I don't know why.
+    // but whenever I remove any of them, it goes wrong. I don't know why.
     coding.bytes.push_back(0);
-    //coding.bytes.push_back(0);
+    coding.bytes.push_back(0);
 }
 
 void Decoder_init(Coding& coding)
@@ -964,8 +964,9 @@ public:
         // but whenever I remove them both, it goes wrong.
         // I don't know why. (Probably something to do with
         // the top and bottom bits, and shift been 23).
+        // Acutually, I can't even remove the last one. still goes wrong.
         Write(0);
-        //Write(0);
+        Write(0);
     }
 
 private:
@@ -3839,8 +3840,7 @@ BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
     Range_coding::Decoder_flush(coding);
 
     // -1 since I had to add that header byte.
-    // -1 for one of the tail bytes I don't transmit.
-    auto bitsUsed = 8 * (coding.read_index - 2);
+    auto bitsUsed = 8 * (coding.read_index - 1);
 
     data.SetOffset(bitsUsed);
 
@@ -3961,8 +3961,7 @@ BitStream RangeEncodeSmarterDecode(BitStream& data, unsigned targetBits = 0)
     Range_coding::Decoder_flush(coding);
 
     // -1 since I had to add that header byte.
-    // -1 for one of the tail bytes I don't transmit.
-    auto bitsUsed = 8 * (coding.read_index - 2);
+    auto bitsUsed = 8 * (coding.read_index - 1);
 
     data.SetOffset(bitsUsed);
 
@@ -4116,8 +4115,7 @@ BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits =
     Range_coding::Decoder_flush(coding);
 
     // -1 since I had to add that header byte.
-    // -1 for one of the tail bytes I don't transmit.
-    auto bitsUsed = 8 * (coding.read_index - 2);
+    auto bitsUsed = 8 * (coding.read_index - 1);
 
     data.SetOffset(bitsUsed);
 
@@ -4248,8 +4246,7 @@ BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits 
     Range_coding::Decoder_flush(coding);
 
     // -1 since I had to add that header byte.
-    // -1 for one of the tail bytes I don't transmit.
-    auto bitsUsed = 8 * (coding.read_index - 2);
+    auto bitsUsed = 8 * (coding.read_index - 1);
 
     data.SetOffset(bitsUsed);
 
@@ -4300,18 +4297,24 @@ void RunLengthTests()
     tests.push_back([](BitStream data)
     {
         auto bits = data.Bits();
-        auto encoded = RangeEncodeSmarterAdaptiveEncode(data);
-        auto decoded = RangeEncodeSmarterAdaptiveDecode(encoded, bits);
+        auto encoded = RangeEncodeSimpleAdaptiveEncode(data);
+        auto bits_encoded = encoded.Bits();
+        auto decoded = RangeEncodeSimpleAdaptiveDecode(encoded, bits);
+        auto bits_consumed = encoded.Bits();
 
+        assert(bits_encoded == bits_consumed);
         assert(data == decoded);
     });
 
     tests.push_back([](BitStream data)
     {
         auto bits = data.Bits();
-        auto encoded = RangeEncodeSimpleAdaptiveEncode(data);
-        auto decoded = RangeEncodeSimpleAdaptiveDecode(encoded, bits);
+        auto encoded = RangeEncodeSmarterAdaptiveEncode(data);
+        auto bits_encoded = encoded.Bits();
+        auto decoded = RangeEncodeSmarterAdaptiveDecode(encoded, bits);
+        auto bits_consumed = encoded.Bits();
 
+        assert(bits_encoded == bits_consumed);
         assert(data == decoded);
     });
 
@@ -4319,8 +4322,11 @@ void RunLengthTests()
     {
         auto bits = data.Bits();
         auto encoded = RangeEncodeSmarterEncode(data);
+        auto bits_encoded = encoded.Bits();
         auto decoded = RangeEncodeSmarterDecode(encoded, bits);
+        auto bits_consumed = encoded.Bits();
 
+        assert(bits_encoded == bits_consumed);
         assert(data == decoded);
     });
 
@@ -4328,8 +4334,11 @@ void RunLengthTests()
     {
         auto bits = data.Bits();
         auto encoded = RangeEncodeSimpleEncode(data);
+        auto bits_encoded = encoded.Bits();
         auto decoded = RangeEncodeSimpleDecode(encoded, bits);
+        auto bits_consumed = encoded.Bits();
 
+        assert(bits_encoded == bits_consumed);
         assert(data == decoded);
     });
 
@@ -4377,6 +4386,12 @@ void RunLengthTests()
     });
 
     std::vector<BitStream> testData;
+
+    {
+        auto four_in_the_middle = ByteVector(113, 0);
+        four_in_the_middle[27] = 4;
+        testData.push_back(BitStream(four_in_the_middle, 901));
+    }
 
     {
         auto one_zeros = ByteVector(113, 0);
@@ -6056,10 +6071,10 @@ Frame Decode(
 
 void Tests()
 {
+    RunLengthTests();
     BitVector3Tests();
     Range_encoding::Tests();
     AdaptiveModelTests();
-    RunLengthTests();
     ZigZagTest();
     TruncateTest();
     GaffersRangeTest();
@@ -6402,9 +6417,9 @@ int main(int, char**)
 
     Config config
     {
-        ChangedArrayEncoding::Exp,
+        ChangedArrayEncoding::RangeSmarterAdaptive,
         PosVector3Packer::BitVector3Sorted,
-        QuatPacker::BitVector3Sorted,
+        QuatPacker::Gaffer,
     };
 
     if (doStats)
