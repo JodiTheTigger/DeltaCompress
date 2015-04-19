@@ -24,7 +24,7 @@
 
 bool doTests        = true;
 bool doStats        = false;
-bool doCompression  = false;
+bool doCompression  = true;
 
 // //////////////////////////////////////////////////////
 
@@ -3765,7 +3765,9 @@ unsigned DecodedToValue(const std::vector<Range>& ranges, unsigned decoded)
     return ranges.size() - 1;
 }
 
-std::vector<float> RangeZeroOne = {0.9041, (1.0 - 0.9041)};
+const unsigned Simple_probability_one =
+        static_cast<unsigned>(
+            round((1.0 - 0.9041) * Range_encoding::TOTAL_RANGE));
 
 BitStream RangeEncodeSimpleEncode(BitStream data)
 {
@@ -3776,73 +3778,42 @@ BitStream RangeEncodeSimpleEncode(BitStream data)
         return data;
     }
 
-    data.Reset();
-    BitStream result;
+    Range_encoding::Bytes result_buffer;
 
-    unsigned count = size;
-    Range_coding::Coding coding;
-
-    static const auto ranges = PercentToRanges(RangeZeroOne);
-
-    for (unsigned i = 0; i < count; ++i)
     {
-        auto value = data.Read(1);
+        Range_encoding::Binary_encoder coder(result_buffer);
 
-        Range_coding::Encode(
-            coding,
-            ranges[value].min,
-            ranges[value].count,
-            Range_max_count);
+        data.Reset();
+        for (unsigned i = 0; i < size; ++i)
+        {
+            auto value = data.Read(1);
+
+            coder.Encode(value, Simple_probability_one);
+        }
     }
 
-    Range_coding::Flush(coding);
-
-    // first byte is a header we can drop.
-    auto no_header = std::vector<uint8_t>(coding.bytes.begin() + 1, coding.bytes.end());
-    BitStream done = {no_header};
-    done.SetOffset(8 * no_header.size());
+    BitStream done = {result_buffer};
+    done.SetOffset(8 * result_buffer.size());
 
     return done;
 }
 
 BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
 {
-    Range_coding::Coding coding;
     auto raw_data = data.Data();
 
-    // coding assumes a header
-    coding.bytes.push_back(0);
-    coding.bytes.insert(
-        coding.bytes.end(),
-        raw_data.begin(),
-        raw_data.end());
-
-    Range_coding::Decoder_init(coding);
+    Range_encoding::Binary_decoder coder(raw_data);
 
     BitStream result;
 
-    static const auto ranges = PercentToRanges(RangeZeroOne);
-
     while (result.Bits() < targetBits)
     {
-        auto value =
-            Range_coding::Decoder_decode(coding, Range_max_count);
-
-        auto bit = DecodedToValue(ranges, value);
-
-        Range_coding::Decoder_update_state(
-            coding,
-            ranges[bit].min,
-            ranges[bit].count,
-            Range_max_count);
+        auto bit = coder.Decode(Simple_probability_one);
 
         result.Write(bit, 1);
     }
 
-    Range_coding::Decoder_flush(coding);
-
-    // -1 since I had to add that header byte.
-    auto bitsUsed = 8 * (coding.read_index - 1);
+    auto bitsUsed = 8 * coder.FlushAndGetBytesRead();
 
     data.SetOffset(bitsUsed);
 
@@ -4047,77 +4018,47 @@ BitStream RangeEncodeSimpleAdaptiveEncode(BitStream data)
         return data;
     }
 
-    data.Reset();
-    BitStream result;
+    Range_encoding::Bytes result_buffer;
 
-    unsigned count = size;
-    Range_coding::Coding coding;
-
-    auto ranges = PercentToRanges(RangeZeroOne);
-
-    for (unsigned i = 0; i < count; ++i)
     {
-        auto value = data.Read(1);
+        Range_encoding::Binary_encoder coder(result_buffer);
+        Range_encoding::Models::Binary<Simple_inertia_bits>
+            model(Simple_probability_one);
 
-        Range_coding::Encode(
-            coding,
-            ranges[value].min,
-            ranges[value].count,
-            Range_max_count);
+        data.Reset();
+        for (unsigned i = 0; i < size; ++i)
+        {
+            auto value = data.Read(1);
 
-        Adapt(ranges, value, Simple_inertia_bits);
+            model.Encode(coder, value);
+        }
     }
 
-    Range_coding::Flush(coding);
-
-    // first byte is a header we can drop.
-    auto no_header = std::vector<uint8_t>(coding.bytes.begin() + 1, coding.bytes.end());
-    BitStream done = {no_header};
-    done.SetOffset(8 * no_header.size());
+    BitStream done = {result_buffer};
+    done.SetOffset(8 * result_buffer.size());
 
     return done;
 }
 
 BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits = 0)
 {
-    Range_coding::Coding coding;
     auto raw_data = data.Data();
 
-    // coding assumes a header
-    coding.bytes.push_back(0);
-    coding.bytes.insert(
-        coding.bytes.end(),
-        raw_data.begin(),
-        raw_data.end());
-
-    Range_coding::Decoder_init(coding);
+    Range_encoding::Binary_decoder coder(raw_data);
+    Range_encoding::Models::Binary<Simple_inertia_bits>
+        model(Simple_probability_one);
 
     BitStream result;
 
-    auto ranges = PercentToRanges(RangeZeroOne);
-
     while (result.Bits() < targetBits)
     {
-        auto value =
-            Range_coding::Decoder_decode(coding, Range_max_count);
-
-        auto bit = DecodedToValue(ranges, value);
-
-        Range_coding::Decoder_update_state(
-            coding,
-            ranges[bit].min,
-            ranges[bit].count,
-            Range_max_count);
+        auto bit = model.Decode(coder);
 
         result.Write(bit, 1);
-
-        Adapt(ranges, bit, Simple_inertia_bits);
     }
 
-    Range_coding::Decoder_flush(coding);
-
     // -1 since I had to add that header byte.
-    auto bitsUsed = 8 * (coding.read_index - 1);
+    auto bitsUsed = 8 * coder.FlushAndGetBytesRead();
 
     data.SetOffset(bitsUsed);
 
