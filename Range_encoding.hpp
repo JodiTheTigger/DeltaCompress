@@ -444,15 +444,16 @@ public:
     unsigned Decode(Decoder& coder)
     {
         auto range = coder.Decode();
-        auto result = 0;
+        unsigned result = 0;
 
-        while (m_r[result].min <= range)
+        while ((m_r[result].min <= range) && (result < SIZE))
         {
             ++result;
         }
 
         --result;
 
+        coder.Update(m_r[result]);
         Adapt(result);
 
         return result;
@@ -637,8 +638,8 @@ void Tests()
         auto range_data
         {
             Bytes{0,1,2,6,4,5,3,7,4,3,4,3,3,3,3,0,1,2,0,0,0,3,3,3,3,3,2},
-            //Bytes{0,0,0,0,0,0,0,0,0,4,4,4,4,4,4,4,2,2,4,4,4,4,4,0,0,0,0},
-            //Bytes{0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2},
+            Bytes{0,0,0,0,0,0,0,0,0,4,4,4,4,4,4,4,2,2,4,4,4,4,4,0,0,0,0},
+            Bytes{0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2},
         };
 
         auto Range_test = [](auto mod, auto tests, auto model_in, auto model_out)
