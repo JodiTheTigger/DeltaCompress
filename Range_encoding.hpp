@@ -315,7 +315,7 @@ private:
 
     void Adapt(unsigned value)
     {
-        if (!value)
+        if (value)
         {
             m_one_probability += (TOTAL_RANGE - m_one_probability) >> INERTIA;
         }
