@@ -770,32 +770,97 @@ void TruncateTest()
 }
 // //////////////////////////////////////////////////////
 
-struct Everything_model
-{
-    // Note: I == investigate if dependency exists.
-    // code quat changed as adaptive history binary
-    // {
-    //   assume no history on largest quat changed, simple binary adaptive
-    //   3 models dependent on largest changed (I)
-    //   {
-    //     dependent model on largest changed to find largest vector index (I)
-    //     dependent model on largest, to get next largest. (I)
-    //     3 models per index
-    //     {
-    //       model on number of bits for first item (per max magnitude value)
-    //       tree model on bits left, but with force 0 so we dictate how many
-    //       bits are actually used. To avoid coding them in the first place.
-    //       don't need to code last bits needed as we know already.
-    //     }
-    //   }
-    //
-    // code position changed dependent on quat changed. Hmm, rygorous does
-    // 8 models, 2x dependent on quat changed, then 2x per quat different
-    // component. weird. (I)
-    // Code position just like quat, but with max magnitude specifying the bits
-    // as well! yay! force zero.
-    // interacting based on current interacting + quat/position changed.
-};
+namespace {
+    using namespace Range_encoding::Models;
+    struct Everything_model
+    {
+        // Note: I == investigate if dependency exists.
+        // code quat changed as adaptive history binary
+        // {
+        //   assume no history on largest quat changed, simple binary adaptive
+        //   3 models dependent on largest changed (I)
+        //   {
+        //     dependent model on largest changed to find largest vector index (I)
+        //     dependent model on largest, to get next largest. (I)
+        //     3 models per index
+        //     {
+        //       model on number of bits for first item (per max magnitude value)
+        //       tree model on bits left, but with force 0 so we dictate how many
+        //       bits are actually used. To avoid coding them in the first place.
+        //       don't need to code last bits needed as we know already.
+        //     }
+        //   }
+        //
+        // code position changed dependent on quat changed. Hmm, rygorous does
+        // 8 models, 2x dependent on quat changed, then 2x per quat different
+        // component. weird. (I)
+        // Code position just like quat, but with max magnitude specifying the bits
+        // as well! yay! force zero.
+        // interacting based on current interacting + quat/position changed.
+        using Simple = Binary<5>;
+
+        Binary_history<Simple, Simple> quant_changed;
+
+        // Test range vs tree
+        Perodic_renomalisation<4, 8> largest_quant_index;
+
+        struct Vector_model
+        {
+            Perodic_renomalisation<3, 8> largest_index;
+            std::array<Simple, 3> next_largest_index;
+
+            // Note: even though I hard code 12, it shouldn't be hard coded.
+            // bits1 = MinBits(RotationMaxBits)
+            // bits2 = MinBits(MaxPositionChangePerSnapshot * MaxFrameDelta)
+            // bits = max(bits1, bits2)
+
+            struct Indicie
+            {
+                Perodic_renomalisation<(1 << 12), 16> bits_for_value;
+                Binary_tree<Simple, 12> value;
+            };
+
+            std::array<Indicie, 3> indicies;
+        };
+
+        // Change my mind, for now, only have one global model.
+        // Investigate multiple models later.
+        Vector_model quant;
+
+        std::array<Simple, 2> position_changed;
+
+        Vector_model position;
+
+        // 1 bit == previous interactive
+        // 1 bit == quant changed
+        // 1 bit == position changed
+        std::array<Simple, 8> interactive;
+    };
+}
+
+//void Encode_frames(
+//    const Frame& base,
+//    const Frame& target,
+//    unsigned,// frameDelta,
+//    )
+//{
+//    using namespace Range_encoding::Models;
+
+//    Everything_model model
+//    {
+
+//    }
+
+//    auto size = base.size();
+//    for (unsigned i = 0; i < size; ++i)
+//    {
+//        auto quant_changed =
+//            (base[i].orientation_largest == target[i].orientation_largest) &&
+//            (base[i].orientation_a == target[i].orientation_a) &&
+//            (base[i].orientation_b == target[i].orientation_b) &&
+//            (base[i].orientation_c == target[i].orientation_c);
+//    }
+//}
 
 // //////////////////////////////////////////////////////
 
