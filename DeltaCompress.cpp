@@ -23,7 +23,7 @@
 // //////////////////////////////////////////////////////
 
 bool doTests        = false;
-bool doStats        = false;
+bool doStats        = true;
 bool doCompression  = true;
 
 // //////////////////////////////////////////////////////
@@ -3282,6 +3282,7 @@ BitStream RangeEncodeSmarterEncode(BitStream data)
                 coder.Encode(value, Smarter_ones_probability_one);
             }
 
+            last = value;
         }
     }
 
@@ -3310,6 +3311,8 @@ BitStream RangeEncodeSmarterDecode(BitStream& data, unsigned targetBits = 0)
         auto bit = coder.Decode(probability_one);
 
         result.Write(bit, 1);
+
+        last = bit;
     }
 
     auto bitsUsed = 8 * coder.FlushAndGetBytesRead();
