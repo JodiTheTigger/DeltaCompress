@@ -770,6 +770,35 @@ void TruncateTest()
 }
 // //////////////////////////////////////////////////////
 
+struct Everything_model
+{
+    // Note: I == investigate if dependency exists.
+    // code quat changed as adaptive history binary
+    // {
+    //   assume no history on largest quat changed, simple binary adaptive
+    //   3 models dependent on largest changed (I)
+    //   {
+    //     dependent model on largest changed to find largest vector index (I)
+    //     dependent model on largest, to get next largest. (I)
+    //     3 models per index
+    //     {
+    //       model on number of bits for first item (per max magnitude value)
+    //       tree model on bits left, but with force 0 so we dictate how many
+    //       bits are actually used. To avoid coding them in the first place.
+    //       don't need to code last bits needed as we know already.
+    //     }
+    //   }
+    //
+    // code position changed dependent on quat changed. Hmm, rygorous does
+    // 8 models, 2x dependent on quat changed, then 2x per quat different
+    // component. weird. (I)
+    // Code position just like quat, but with max magnitude specifying the bits
+    // as well! yay! force zero.
+    // interacting based on current interacting + quat/position changed.
+};
+
+// //////////////////////////////////////////////////////
+
 using RangeBits = std::array<uint8_t, 3>;
 
 unsigned constexpr MaxRange(const RangeBits& ranges)
