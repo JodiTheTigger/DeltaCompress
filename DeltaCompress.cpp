@@ -92,7 +92,7 @@ static_assert(Cubes < ((1 << CubeBits) - 1), "CubeBits is too small.");
 // Using contraints from
 // http://gafferongames.com/networked-physics/snapshot-compression/
 
-// With this technique I’ve found that minimum sufficient precision for
+// With this technique I've found that minimum sufficient precision for
 // my simulation is 9 bits per-smallest component. This gives a result
 // of 2 + 9 + 9 + 9 = 29 bits per-orientation (originally 128!).
 
@@ -103,10 +103,10 @@ static const unsigned RotationMaxBits = 9;
 static const unsigned RotationIndexMaxBits = 2;
 
 // I found a maximum speed of 32 meters per-second is a nice power of two
-// and doesn’t negatively affect the player experience in the cube simulation.
+// and doesn't negatively affect the player experience in the cube simulation.
 static const unsigned MaxSpeedMetersPerSecond = 32;
 
-// Now we have only position to compress. We’ll use the same trick that we used
+// Now we have only position to compress. We'll use the same trick that we used
 // for linear velocity: bound and quantize. Most game worlds are reasonably big
 // so I chose a position bound of [-256,255] meters in the horizontal plane (xy)
 // and since in my cube simulation the floor is at z=0, I chose for z a range of
