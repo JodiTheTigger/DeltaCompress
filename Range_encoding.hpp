@@ -459,13 +459,13 @@ private:
 };
 
 template<unsigned SIZE, unsigned SLOWEST_UPDATE_RATE>
-class PerodicRenomalisation
+class Perodic_renomalisation
 {
 public:
     typedef std::array<unsigned, SIZE>  Freqencies;
     typedef std::array<Range, SIZE>     Ranges;
 
-    PerodicRenomalisation(Freqencies frequencies)
+    Perodic_renomalisation(Freqencies frequencies)
         : m_f(frequencies)
     {
         for (const auto f : m_f)
@@ -734,22 +734,22 @@ void Tests()
 
         for (const auto& range_set : range_data)
         {
-            Models::PerodicRenomalisation<4,8>::Freqencies
+            Models::Perodic_renomalisation<4,8>::Freqencies
                     frequencies{1,1,1,1};
-            Models::PerodicRenomalisation<4,8>::Freqencies
+            Models::Perodic_renomalisation<4,8>::Freqencies
                     overflow{65536,44,100000,34567};
 
             Range_test(
                 4,
                 range_set,
-                Models::PerodicRenomalisation<4,8>(frequencies),
-                Models::PerodicRenomalisation<4,8>(frequencies));
+                Models::Perodic_renomalisation<4,8>(frequencies),
+                Models::Perodic_renomalisation<4,8>(frequencies));
 
             Range_test(
                 4,
                 range_set,
-                Models::PerodicRenomalisation<4,8>(overflow),
-                Models::PerodicRenomalisation<4,8>(overflow));
+                Models::Perodic_renomalisation<4,8>(overflow),
+                Models::Perodic_renomalisation<4,8>(overflow));
         }
     }
 }
