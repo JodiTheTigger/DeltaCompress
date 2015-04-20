@@ -533,6 +533,20 @@ private:
     void Recalculate_ranges()
     {
         unsigned total      = m_last_total + m_updates;
+
+        if (total > TOTAL_RANGE)
+        {
+            // Dunno how to do this nice for now. Brute it.
+            total = 0;
+            for (auto& f : m_f)
+            {
+                f >>= 8;
+                ++f;
+
+                total += f;
+            }
+        }
+
         auto multiple       = TOTAL_RANGE / total;
         auto reminder       = TOTAL_RANGE % total;
         auto global_adjust  = reminder / SIZE;
@@ -720,12 +734,22 @@ void Tests()
 
         for (const auto& range_set : range_data)
         {
-            Models::PerodicRenomalisation<4,8>::Freqencies frequencies{1,1,1,1};
+            Models::PerodicRenomalisation<4,8>::Freqencies
+                    frequencies{1,1,1,1};
+            Models::PerodicRenomalisation<4,8>::Freqencies
+                    overflow{65536,44,100000,34567};
+
             Range_test(
                 4,
                 range_set,
                 Models::PerodicRenomalisation<4,8>(frequencies),
                 Models::PerodicRenomalisation<4,8>(frequencies));
+
+            Range_test(
+                4,
+                range_set,
+                Models::PerodicRenomalisation<4,8>(overflow),
+                Models::PerodicRenomalisation<4,8>(overflow));
         }
     }
 }
