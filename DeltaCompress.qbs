@@ -15,7 +15,7 @@ CppApplication {
 
     files: [
         "DeltaCompress.cpp",
-        "Range_encoding.hpp",
+        "Range_coding.hpp",
     ]
 
     Group {     // Properties for the produced executable
