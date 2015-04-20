@@ -771,7 +771,7 @@ void TruncateTest()
 // //////////////////////////////////////////////////////
 
 namespace {
-    using namespace Range_encoding::Models;
+    using namespace Range_coding::Models;
     struct Everything_model
     {
         // Note: I == investigate if dependency exists.
@@ -3279,10 +3279,12 @@ BitStream BitBitPackDecode(BitStream& data, unsigned targetBits = 0)
 
 const unsigned Simple_probability_one =
         static_cast<unsigned>(
-            round((1.0 - 0.9041) * Range_encoding::TOTAL_RANGE));
+            round((1.0 - 0.9041) * Range_coding::TOTAL_RANGE));
 
 BitStream RangeEncodeSimpleEncode(BitStream data)
 {
+    using namespace Range_coding;
+
     auto size = data.Bits();
 
     if (size < 2)
@@ -3290,10 +3292,10 @@ BitStream RangeEncodeSimpleEncode(BitStream data)
         return data;
     }
 
-    Range_encoding::Bytes result_buffer;
+    Bytes result_buffer;
 
     {
-        Range_encoding::Binary_encoder coder(result_buffer);
+        Coders::Binary_encoder coder(result_buffer);
 
         data.Reset();
         for (unsigned i = 0; i < size; ++i)
@@ -3314,7 +3316,7 @@ BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
 {
     auto raw_data = data.Data();
 
-    Range_encoding::Binary_decoder coder(raw_data);
+    Range_coding::Coders::Binary_decoder coder(raw_data);
 
     BitStream result;
 
@@ -3341,11 +3343,11 @@ BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
 
 const unsigned Smarter_zeros_probability_one =
         static_cast<unsigned>(
-            round((1.0 - 0.9565) * Range_encoding::TOTAL_RANGE));
+            round((1.0 - 0.9565) * Range_coding::TOTAL_RANGE));
 
 const unsigned Smarter_ones_probability_one =
         static_cast<unsigned>(
-            round((1.0 - 0.4203) * Range_encoding::TOTAL_RANGE));
+            round((1.0 - 0.4203) * Range_coding::TOTAL_RANGE));
 
 BitStream RangeEncodeSmarterEncode(BitStream data)
 {
@@ -3356,10 +3358,10 @@ BitStream RangeEncodeSmarterEncode(BitStream data)
         return data;
     }
 
-    Range_encoding::Bytes result_buffer;
+    Range_coding::Bytes result_buffer;
 
     {
-        Range_encoding::Binary_encoder coder(result_buffer);
+        Range_coding::Coders::Binary_encoder coder(result_buffer);
 
         data.Reset();
         unsigned last = 1;
@@ -3390,7 +3392,7 @@ BitStream RangeEncodeSmarterDecode(BitStream& data, unsigned targetBits = 0)
 {
     auto raw_data = data.Data();
 
-    Range_encoding::Binary_decoder coder(raw_data);
+    Range_coding::Coders::Binary_decoder coder(raw_data);
 
     BitStream result;
 
@@ -3429,11 +3431,13 @@ BitStream RangeEncodeSimpleAdaptiveEncode(BitStream data)
         return data;
     }
 
-    Range_encoding::Bytes result_buffer;
+    Range_coding::Bytes result_buffer;
 
     {
-        Range_encoding::Binary_encoder coder(result_buffer);
-        Range_encoding::Models::Binary<Simple_inertia_bits>
+        using namespace Range_coding;
+
+        Coders::Binary_encoder coder(result_buffer);
+        Models::Binary<Simple_inertia_bits>
             model(Simple_probability_one);
 
         data.Reset();
@@ -3453,10 +3457,12 @@ BitStream RangeEncodeSimpleAdaptiveEncode(BitStream data)
 
 BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits = 0)
 {
+    using namespace Range_coding;
+
     auto raw_data = data.Data();
 
-    Range_encoding::Binary_decoder coder(raw_data);
-    Range_encoding::Models::Binary<Simple_inertia_bits>
+    Coders::Binary_decoder coder(raw_data);
+    Models::Binary<Simple_inertia_bits>
         model(Simple_probability_one);
 
     BitStream result;
@@ -3490,12 +3496,12 @@ BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
         return data;
     }
 
-    Range_encoding::Bytes result_buffer;
+    Range_coding::Bytes result_buffer;
 
     {
-        using namespace Range_encoding;
+        using namespace Range_coding;
 
-        Binary_encoder coder(result_buffer);
+        Coders::Binary_encoder coder(result_buffer);
 
         // Phoar, the models are getting complex now...
         Models::Binary_history<
@@ -3522,11 +3528,11 @@ BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
 
 BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits = 0)
 {
-    using namespace Range_encoding;
+    using namespace Range_coding;
 
     auto raw_data = data.Data();
 
-    Range_encoding::Binary_decoder coder(raw_data);
+    Coders::Binary_decoder coder(raw_data);
     Models::Binary_history<
         Models::Binary<Smarter_inertia_bits_zero>,
         Models::Binary<Smarter_inertia_bits_one>> model(
@@ -5333,7 +5339,7 @@ Frame Decode(
 
 void Tests()
 {
-    Range_encoding::Tests();
+    Range_coding::Tests();
     RunLengthTests();
     BitVector3Tests();
     ZigZagTest();
