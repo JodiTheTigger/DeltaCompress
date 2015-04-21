@@ -1086,17 +1086,132 @@ IntVec3 Vector3Decode(
 
 
 
-void Encode_frames(
+auto Encode_frames(
     const Frame& base,
     const Frame& target,
-    unsigned frameDelta
-    )
+    unsigned frameDelta) -> Range_types::Bytes
 {
     // for now use defaults for everything.
-    Everything_model                model;
     Range_types::Bytes              data;
-    Range_coders::Encoder           range(data);
-    Range_coders::Binary_encoder    binary(range);
+
+    {
+        Everything_model                model;
+        Range_coders::Encoder           range(data);
+        Range_coders::Binary_encoder    binary(range);
+
+        model.quant.    Reduce_vector_using_magnitude = false;
+        model.position. Reduce_vector_using_magnitude = true;
+
+        auto size = base.size();
+        for (unsigned i = 0; i < size; ++i)
+        {
+            auto quant_index_changed =
+                base[i].orientation_largest != target[i].orientation_largest;
+
+            auto quant_changed =
+                (quant_index_changed) ||
+                (base[i].orientation_a != target[i].orientation_a) ||
+                (base[i].orientation_b != target[i].orientation_b) ||
+                (base[i].orientation_c != target[i].orientation_c);
+
+            model.quant_changed.Encode(binary, quant_changed);
+
+            if (quant_changed)
+            {
+                model.largest_index_quant_changed.Encode(
+                    binary,
+                    quant_index_changed);
+
+                if (quant_index_changed)
+                {
+                    // RAM: TODO: correlation between previous and current?
+                    // RAM: TODO: Binary tree instead?
+                    model.largest_index_quant.Encode(
+                        range, target[i].orientation_largest);
+
+                    IntVec3 not_delta
+                    {
+                        target[i].orientation_a,
+                        target[i].orientation_b,
+                        target[i].orientation_c
+                    };
+
+                    Vector3Encode(
+                        not_delta,
+                        (1u << RotationMaxBits) - 1,
+                        model.quant,
+                        range,
+                        binary);
+                }
+
+                if (!quant_index_changed)
+                {
+                    IntVec3 delta
+                    {
+                        target[i].orientation_a - base[i].orientation_a,
+                        target[i].orientation_b - base[i].orientation_b,
+                        target[i].orientation_c - base[i].orientation_c
+                    };
+
+                    Vector3Encode(
+                        delta,
+                        (1u << RotationMaxBits) - 1,
+                        model.quant,
+                        range,
+                        binary);
+                }
+            }
+
+            auto pos_changed =
+                (base[i].position_x != target[i].position_x) ||
+                (base[i].position_y != target[i].position_y) ||
+                (base[i].position_z != target[i].position_z);
+
+            model.position_changed[quant_changed].Encode(binary, pos_changed);
+
+            if (pos_changed)
+            {
+                IntVec3 delta
+                {
+                    target[i].position_x - base[i].position_x,
+                    target[i].position_y - base[i].position_y,
+                    target[i].position_z - base[i].position_z
+                };
+
+                unsigned max =
+                    1 + static_cast<unsigned>(
+                        frameDelta * MaxPositionChangePerSnapshot);
+
+                Vector3Encode(
+                    delta,
+                    max,
+                    model.position,
+                    range,
+                    binary);
+            }
+
+            unsigned interactive_index = (base[i].interacting == 1) << 2;
+            interactive_index |= quant_changed << 1;
+            interactive_index |= pos_changed;
+
+            model.interactive[interactive_index].Encode(
+                binary,
+                target[i].interacting);
+        }
+    }
+
+    return data;
+}
+
+auto Decode_frames(
+    const Frame& base,
+    const Range_types::Bytes& data,
+    unsigned frameDelta) -> Frame
+{
+    Frame target;
+    Everything_model                model;
+    Range_coders::Decoder           range(data);
+    Range_coders::Binary_decoder    binary(range);
 
     model.quant.    Reduce_vector_using_magnitude = false;
     model.position. Reduce_vector_using_magnitude = true;
@@ -1104,99 +1219,73 @@ void Encode_frames(
     auto size = base.size();
     for (unsigned i = 0; i < size; ++i)
     {
-        auto quant_index_changed =
-            base[i].orientation_largest != target[i].orientation_largest;
-
         auto quant_changed =
-            (quant_index_changed) ||
-            (base[i].orientation_a != target[i].orientation_a) ||
-            (base[i].orientation_b != target[i].orientation_b) ||
-            (base[i].orientation_c != target[i].orientation_c);
-
-        model.quant_changed.Encode(binary, quant_changed);
+            model.quant_changed.Decode(binary);
 
         if (quant_changed)
         {
-            model.largest_index_quant_changed.Encode(
-                binary,
-                quant_index_changed);
+            auto quant_index_changed =
+                model.largest_index_quant_changed.Decode(binary);
 
             if (quant_index_changed)
             {
-                // RAM: TODO: correlation between previous and current?
-                // RAM: TODO: Binary tree instead?
-                model.largest_index_quant.Encode(
-                    range, target[i].orientation_largest);
+                target[i].orientation_largest =
+                    model.largest_index_quant.Decode(range);
 
-                IntVec3 not_delta
-                {
-                    target[i].orientation_a,
-                    target[i].orientation_b,
-                    target[i].orientation_c
-                };
-
-                Vector3Encode(
-                    not_delta,
+                auto not_delta = Vector3Decode(
                     (1u << RotationMaxBits) - 1,
                     model.quant,
                     range,
                     binary);
+
+                target[i].orientation_a = not_delta.x;
+                target[i].orientation_b = not_delta.y;
+                target[i].orientation_c = not_delta.z;
             }
 
             if (!quant_index_changed)
             {
-                IntVec3 delta
-                {
-                    target[i].orientation_a - base[i].orientation_a,
-                    target[i].orientation_b - base[i].orientation_b,
-                    target[i].orientation_c - base[i].orientation_c
-                };
-
-                Vector3Encode(
-                    delta,
+                IntVec3 delta = Vector3Decode(
                     (1u << RotationMaxBits) - 1,
                     model.quant,
                     range,
                     binary);
+
+                target[i].orientation_a = base[i].orientation_a + delta.x;
+                target[i].orientation_b = base[i].orientation_b + delta.y;
+                target[i].orientation_c = base[i].orientation_c + delta.z;
             }
         }
 
         auto pos_changed =
-            (base[i].position_x != target[i].position_x) ||
-            (base[i].position_y != target[i].position_y) ||
-            (base[i].position_z != target[i].position_z);
-
-        model.position_changed[quant_changed].Encode(binary, pos_changed);
+            model.position_changed[quant_changed].Decode(binary);
 
         if (pos_changed)
         {
-            IntVec3 delta
-            {
-                target[i].position_x - base[i].position_x,
-                target[i].position_y - base[i].position_y,
-                target[i].position_z - base[i].position_z
-            };
-
             unsigned max =
                 1 + static_cast<unsigned>(
                     frameDelta * MaxPositionChangePerSnapshot);
 
-            Vector3Encode(
-                delta,
+            auto delta = Vector3Decode(
                 max,
                 model.position,
                 range,
                 binary);
+
+            target[i].position_x = base[i].position_x + delta.x;
+            target[i].position_y = base[i].position_y + delta.y;
+            target[i].position_z = base[i].position_z + delta.z;
         }
 
         unsigned interactive_index = (base[i].interacting == 1) << 2;
         interactive_index |= quant_changed << 1;
         interactive_index |= pos_changed;
 
-        model.interactive[interactive_index].Encode(
-            binary,
-            target[i].interacting);
+        target[i].interacting =
+            model.interactive[interactive_index].Decode(binary);
     }
+
+    return target;
 }
 
 // //////////////////////////////////////////////////////
