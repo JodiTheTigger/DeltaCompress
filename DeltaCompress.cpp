@@ -1491,15 +1491,15 @@ unsigned BitVector3SortedEncode(
 
     // //////////////////////////////////////////
 
+    auto Code = [&](unsigned zig_zag) -> bool
     {
-        unsigned zig_zag = zx;
         unsigned bits = MinBits(zig_zag);
         bitsUsed += TruncateEncode(bits, maxBitsRequired, target);
 
         if (!bits)
         {
             // everything after is zero, we're done.
-            return bitsUsed;
+            return false;
         }
 
         // Don't need to send the top bit, as we know it's set since
@@ -1517,36 +1517,20 @@ unsigned BitVector3SortedEncode(
 
         maxBitsRequired = 1 + MinBits(maxMagnitude);
         maxBitsRequired = std::min(maxBitsRequired, bits);
-    }
+
+        return true;
+    };
 
     // //////////////////////////////////////////
 
+    if (!Code(zx))
     {
-        unsigned zig_zag = zy;
-        unsigned bits = MinBits(zig_zag);
-        bitsUsed += TruncateEncode(bits, maxBitsRequired, target);
+        return bitsUsed;
+    }
 
-        if (!bits)
-        {
-            // everything after is zero, we're done.
-            return bitsUsed;
-        }
-
-        // Don't need to send the top bit, as we know it's set since
-        // otherwise bits would be smaller.
-        {
-            auto t = zig_zag & ((1 << (bits - 1)) - 1);
-            target.Write(t, bits - 1);
-            bitsUsed += bits - 1;
-        }
-
-        if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
-        {
-            maxMagnitude = Largest_next_magnitude(maxMagnitude, zig_zag);
-        }
-
-        maxBitsRequired = 1 + MinBits(maxMagnitude);
-        maxBitsRequired = std::min(maxBitsRequired, bits);
+    if (!Code(zy))
+    {
+        return bitsUsed;
     }
 
     // //////////////////////////////////////////
