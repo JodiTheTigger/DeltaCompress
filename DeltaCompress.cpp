@@ -873,12 +873,12 @@ auto Largest_next_magnitude(
     return 1 + static_cast<unsigned>(root) / 2;
 }
 
-void Vector3Coder(
+void Vector3Encode(
         IntVec3 vec,
         unsigned max_magnitude,
         Everything_model::Vector_model& model,
-        Encoder& coder,
-        Binary_encoder& binary_coder)
+        Encoder& range,
+        Binary_encoder& binary)
 {
     // +1 for the sign bit.
     unsigned max_bits_required = 1 + MinBits(max_magnitude);
@@ -933,8 +933,8 @@ void Vector3Coder(
 
         assert(zy >= zz);
 
-        model.largest_index.Encode(coder, top);
-        model.next_largest_index[top].Encode(binary_coder, next);
+        model.largest_index.Encode(range, top);
+        model.next_largest_index[top].Encode(binary, next);
     }
 
     // //////////////////////////////////////////
@@ -943,7 +943,7 @@ void Vector3Coder(
     {
         unsigned bits = MinBits(zig_zag);
 
-        model.bits_for_value[model_index].Encode(coder, bits);
+        model.bits_for_value[model_index].Encode(range, bits);
 
         assert(max_bits_required >= bits);
 
@@ -958,7 +958,7 @@ void Vector3Coder(
         {
             auto t = zig_zag & ((1 << (bits - 1)) - 1);
 
-            model.value[model_index].Encode(binary_coder, t, bits);
+            model.value[model_index].Encode(binary, t, bits);
         }
 
         if (model.Reduce_vector_using_magnitude)
@@ -990,8 +990,101 @@ void Vector3Coder(
 
     assert(max_bits_required >= bits);
 
-    model.value[2].Encode(binary_coder, zz, bits);
+    model.value[2].Encode(binary, zz, bits);
 }
+
+IntVec3 Vector3Decode(
+        unsigned max_magnitude,
+        Everything_model::Vector_model& model,
+        Decoder& range,
+        Binary_decoder& binary)
+{
+    IntVec3 result = {0,0,0};
+
+    // +1 for the sign bit.
+    unsigned max_bits_required = 1 + MinBits(max_magnitude);
+
+    // //////////////////////////////////////////
+
+    // Read the Order
+    auto largest = model.largest_index.Decode(range);
+    auto next_largest = model.next_largest_index[largest].Decode(binary);
+
+    auto ReturnSorted = [&largest, &next_largest](IntVec3 vec) -> IntVec3
+    {
+        using std::swap;
+
+        if (next_largest)
+        {
+            swap(vec.y, vec.z);
+        }
+
+        if (largest)
+        {
+            if (largest == 1)
+            {
+                swap(vec.x, vec.y);
+            }
+            else
+            {
+                swap(vec.x, vec.y);
+                swap(vec.y, vec.z);
+            }
+        }
+
+        return vec;
+    };
+
+    // //////////////////////////////////////////
+
+    auto Code = [&](int& target, unsigned model_index) -> bool
+    {
+        auto bits = model.bits_for_value[model_index].Decode(range);
+
+        if (!bits)
+        {
+            return false;
+        }
+
+        auto zig_zag = model.value[model_index].Decode(binary, bits);
+
+        // Don't need to send the top bit, as we know it's set since
+        // otherwise bitsForzx would be smaller.
+        zig_zag |= 1 << (bits - 1);
+        target = ZigZag(zig_zag);
+
+        if (model.Reduce_vector_using_magnitude)
+        {
+            max_magnitude = Largest_next_magnitude(max_magnitude, zig_zag);
+        }
+
+        max_bits_required = 1 + MinBits(max_magnitude);
+        max_bits_required = std::min(max_bits_required, bits);
+
+        return true;
+    };
+
+    // //////////////////////////////////////////
+
+    if (!Code(result.x, 0))
+    {
+        return ReturnSorted(result);
+    }
+
+    if (!Code(result.y, 1))
+    {
+        return ReturnSorted(result);
+    }
+
+    // //////////////////////////////////////////
+
+    auto zz = model.value[2].Decode(binary, max_bits_required);
+    result.z = ZigZag(zz);
+
+    return ReturnSorted(result);
+}
+
+
 
 void Encode_frames(
     const Frame& base,
@@ -1042,7 +1135,7 @@ void Encode_frames(
                     target[i].orientation_c
                 };
 
-                Vector3Coder(
+                Vector3Encode(
                     not_delta,
                     (1u << RotationMaxBits) - 1,
                     model.quant,
@@ -1059,7 +1152,7 @@ void Encode_frames(
                     target[i].orientation_c - base[i].orientation_c
                 };
 
-                Vector3Coder(
+                Vector3Encode(
                     delta,
                     (1u << RotationMaxBits) - 1,
                     model.quant,
@@ -1088,7 +1181,7 @@ void Encode_frames(
                 1 + static_cast<unsigned>(
                     frameDelta * MaxPositionChangePerSnapshot);
 
-            Vector3Coder(
+            Vector3Encode(
                 delta,
                 max,
                 model.position,
