@@ -428,7 +428,7 @@ namespace Range_models
 
             while (rebuilt < count)
             {
-                rebuilt += rebuilt + m_models[rebuilt - 1].decode(coder);
+                rebuilt += rebuilt + m_models[rebuilt - 1].Decode(coder);
             }
 
             // Clear the top bit due to starting rebuilt with 1.
