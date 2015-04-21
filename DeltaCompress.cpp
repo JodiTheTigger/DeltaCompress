@@ -1404,11 +1404,15 @@ auto Largest_next_magnitude(
         unsigned magnitude,
         unsigned zig_zag_axis) -> unsigned
 {
+    // max magnitude for zigzag before we overflow
+    // == sqrt(1 << 32) / 2. == 32768.
+    assert(magnitude < 32768);
+
     // positive zig zag numbers are just number * 2.
-    uint64_t next = magnitude * 2;
+    unsigned next = magnitude * 2;
     next *= next;
 
-    uint64_t axis = zig_zag_axis;
+    unsigned axis = zig_zag_axis;
     axis *= axis;
 
     assert(next >= axis);
@@ -1598,6 +1602,7 @@ IntVec3 BitVector3SortedDecode(
         }
 
         auto zig_zag = source.Read(bits - 1);
+
         // Don't need to send the top bit, as we know it's set since
         // otherwise bitsForzx would be smaller.
         zig_zag |= 1 << (bits - 1);
