@@ -246,36 +246,36 @@ namespace Range_coders
     class Binary_encoder
     {
     public:
-        Binary_encoder(Bytes& bytes)
-            : m_encoder(bytes)
+        Binary_encoder(Encoder& coder)
+            : m_encoder(&coder)
         {}
 
         void Encode(unsigned value, uint16_t one_probability)
         {
             // Note: First range is for one_probability, not zero.
-            m_encoder.Encode(
+            m_encoder->Encode(
                 value ?
                     Range{0, one_probability} :
                     Range{one_probability, TOTAL_RANGE - one_probability});
         }
 
     private:
-        Encoder m_encoder;
+        Encoder* m_encoder;
     };
 
     class Binary_decoder
     {
     public:
-        Binary_decoder(const Bytes& bytes)
-            : m_decoder(bytes)
+        Binary_decoder(Decoder& coder)
+            : m_decoder(&coder)
         {}
 
         unsigned Decode(unsigned one_probability)
         {
-            auto symbol = m_decoder.Decode();
+            auto symbol = m_decoder->Decode();
             auto result = (symbol < one_probability);
 
-            m_decoder.Update(
+            m_decoder->Update(
                 result ?
                     Range{0, one_probability} :
                     Range{one_probability, TOTAL_RANGE - one_probability});
@@ -285,11 +285,11 @@ namespace Range_coders
 
         uint32_t FlushAndGetBytesRead()
         {
-            return m_decoder.FlushAndGetBytesRead();
+            return m_decoder->FlushAndGetBytesRead();
         }
 
     private:
-        Decoder m_decoder;
+        Decoder* m_decoder;
     };
 
 } // namespace Range_coders
@@ -394,13 +394,21 @@ namespace Range_models
     class Binary_tree
     {
     public:
-        void Encode(Binary_encoder& coder, unsigned value)
+        void Encode(Binary_encoder& coder, unsigned value, unsigned bits = BITS)
         {
             assert(value < MODEL_COUNT);
+            assert(bits <= BITS);
 
             // Model the MSB first, then work our way down.
             // Seems adds are better than << 1.
-            unsigned rebuilt = 1;
+            unsigned rebuilt = 1;            
+
+            unsigned skips = bits - BITS;
+            while (skips)
+            {
+                value += value;
+                rebuilt += rebuilt;
+            }
 
             while (rebuilt < MODEL_COUNT)
             {
@@ -411,16 +419,20 @@ namespace Range_models
             }
         }
 
-        unsigned Decode(Binary_decoder& coder)
+        unsigned Decode(Binary_decoder& coder, unsigned bits = BITS)
         {
+            assert(bits <= BITS);
+
             unsigned rebuilt = 1;
-            while (rebuilt < MODEL_COUNT)
+            unsigned count = MODEL_COUNT >> (bits - BITS);
+
+            while (rebuilt < count)
             {
                 rebuilt += rebuilt + m_models[rebuilt - 1].decode(coder);
             }
 
             // Clear the top bit due to starting rebuilt with 1.
-            return rebuilt - MODEL_COUNT;
+            return rebuilt - count;
         }
 
     private:
@@ -481,6 +493,18 @@ namespace Range_models
     public:
         typedef std::array<unsigned, SIZE>  Freqencies;
         typedef std::array<Range, SIZE>     Ranges;
+
+        Perodic_renomalisation()
+            : m_f()
+        {
+            for (auto& f : m_f)
+            {
+                f = 1;
+                m_last_total += f;
+            }
+
+            Recalculate_ranges();
+        }
 
         Perodic_renomalisation(Freqencies frequencies)
             : m_f(frequencies)
@@ -641,7 +665,8 @@ void Range_tests()
         auto tests = {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
 
         {
-            Binary_encoder encoder(data);
+            Encoder range_encoder(data);
+            Binary_encoder encoder(range_encoder);
 
             for (const unsigned t : tests)
             {
@@ -650,7 +675,8 @@ void Range_tests()
         }
 
         {
-            Binary_decoder decoder(data);
+            Decoder range_decoder(data);
+            Binary_decoder decoder(range_decoder);
 
             for (const unsigned t : tests)
             {
@@ -672,7 +698,8 @@ void Range_tests()
             Bytes data;
 
             {
-                Binary_encoder test_encoder(data);
+                Encoder range_encoder(data);
+                Binary_encoder test_encoder(range_encoder);
 
                 for (auto t : tests)
                 {
@@ -680,7 +707,8 @@ void Range_tests()
                 }
             }
             {
-                Binary_decoder test_decoder(data);
+                Decoder range_decoder(data);
+                Binary_decoder test_decoder(range_decoder);
 
                 for (unsigned t : tests)
                 {
