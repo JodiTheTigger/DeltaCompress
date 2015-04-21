@@ -15,6 +15,7 @@
 
 #include <array>
 #include <vector>
+#include <algorithm>
 #include <functional>
 #include <cmath>
 
@@ -22,7 +23,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = false;
+bool doTests        = true;
 bool doStats        = true;
 bool doCompression  = true;
 
@@ -802,6 +803,7 @@ namespace {
         Binary_history<Simple, Simple> quant_changed;
 
         // Test range vs tree
+        // test if needed multiple models depending on previous model.
         Perodic_renomalisation<4, 8> largest_quant_index;
 
         struct Vector_model
@@ -814,13 +816,10 @@ namespace {
             // bits2 = MinBits(MaxPositionChangePerSnapshot * MaxFrameDelta)
             // bits = max(bits1, bits2)
 
-            struct Indicie
-            {
-                Perodic_renomalisation<(1 << 12), 16> bits_for_value;
-                Binary_tree<Simple, 12> value;
-            };
+            std::array<Perodic_renomalisation<(1 << 12), 16>, 2> bits_for_value;
+            std::array<Binary_tree<Simple, 12>, 3> value;
 
-            std::array<Indicie, 3> indicies;
+            bool Reduce_indicies_using_vector_magnitude;
         };
 
         // Change my mind, for now, only have one global model.
@@ -838,29 +837,197 @@ namespace {
     };
 }
 
-//void Encode_frames(
-//    const Frame& base,
-//    const Frame& target,
-//    unsigned,// frameDelta,
-//    )
-//{
-//    using namespace Range_encoding::Models;
+void Vector3Coder(
+        Everything_model::Vector_model& model,
+        Encoder& coder,
+        Binary_encoder& binary_coder,
+        std::array<int, 3> vec,
+        unsigned max_magnitude)
+{
+    // +1 for the sign bit.
+    unsigned max_bits_required = 1 + MinBits(max_magnitude);
 
-//    Everything_model model
-//    {
+    // //////////////////////////////////////////
 
-//    }
+    // Sort from largest to smallest
+    auto zx = ZigZag(vec[0]);
+    auto zy = ZigZag(vec[1]);
+    auto zz = ZigZag(vec[2]);
 
-//    auto size = base.size();
-//    for (unsigned i = 0; i < size; ++i)
-//    {
-//        auto quant_changed =
-//            (base[i].orientation_largest == target[i].orientation_largest) &&
-//            (base[i].orientation_a == target[i].orientation_a) &&
-//            (base[i].orientation_b == target[i].orientation_b) &&
-//            (base[i].orientation_c == target[i].orientation_c);
-//    }
-//}
+    assert(abs(vec[0]) <= static_cast<int>(max_magnitude));
+    assert(abs(vec[1]) <= static_cast<int>(max_magnitude));
+    assert(abs(vec[2]) <= static_cast<int>(max_magnitude));
+
+    // default order, x,y,z.
+    {
+        using std::swap;
+
+        auto top = 0;
+        auto next = 0;
+
+        if  (
+                (zy > zx) &&
+                (zy >= zz)
+            )
+        {
+            swap(zx, zy);
+            swap(vec[0], vec[1]);
+            top = 1;
+        }
+        else
+        {
+            if  (
+                    (zz > zx) &&
+                    (zz >= zy)
+                )
+            {
+                swap(zx, zz);
+                swap(zy, zz);
+
+                swap(vec[0], vec[2]);
+                swap(vec[1], vec[2]);
+                top = 2;
+            }
+        }
+
+        assert(zx >= zy);
+        assert(zx >= zz);
+
+        if (zz > zy)
+        {
+            swap(zy, zz);
+            next = 1;
+        }
+
+        assert(zy >= zz);
+
+        model.largest_index.Encode(coder, top);
+        model.next_largest_index[top].Encode(binary_coder, next);
+    }
+
+    // //////////////////////////////////////////
+
+    unsigned bits_zx = MinBits(zx);
+
+    model.bits_for_value[0].Encode(coder, bits_zx);
+
+    // Don't need to send the top bit, as we know it's set since
+    // otherwise bitsForzx would be smaller.
+    if (bits_zx)
+    {
+        zx &= (1 << (bits_zx - 1)) - 1;
+
+        model.value[0].Encode(binary_coder, zx, bits_zx);
+    }
+    else
+    {
+        // everything after is zero, we're done.
+        return;
+    }
+
+    if (model.Reduce_indicies_using_vector_magnitude)
+    {
+        float next = static_cast<float>(max_magnitude * max_magnitude);
+        next -= vec[0] * vec[0];
+        assert(next >= 0);
+        max_magnitude = static_cast<unsigned>(sqrt(next) + 1);
+    }
+
+    // //////////////////////////////////////////
+
+    max_bits_required = 1 + MinBits(max_magnitude);
+    max_bits_required = std::min(max_bits_required, bits_zx);
+
+    unsigned bits_zy = MinBits(zy);
+
+    assert(max_bits_required >= bits_zy);
+
+    model.bits_for_value[1].Encode(coder, bits_zy);
+
+    if (bits_zy)
+    {
+        zy &= (1 << (bits_zy - 1)) - 1;
+
+        model.value[1].Encode(binary_coder, zy, bits_zy);
+    }
+    else
+    {
+        // everything after is zero, we're done.
+        return;
+    }
+
+    if (model.Reduce_indicies_using_vector_magnitude)
+    {
+        auto next = static_cast<float>(max_magnitude * max_magnitude);
+        next -= vec[1] * vec[1];
+        assert(next >= 0);
+        max_magnitude = static_cast<unsigned>(sqrt(next) + 1);
+    }
+
+    // //////////////////////////////////////////
+
+    max_bits_required = 1 + MinBits(max_magnitude);
+    max_bits_required = std::min(max_bits_required, bits_zy);
+
+    unsigned bits_zz = MinBits(zz);
+
+    assert(max_bits_required >= bits_zz);
+
+    model.value[2].Encode(binary_coder, zz, bits_zz);
+}
+
+void Encode_frames(
+    const Frame& base,
+    const Frame& target,
+    unsigned// frameDelta,
+    )
+{
+    // for now use defaults for everything.
+    Everything_model                model;
+    Range_types::Bytes              data;
+    Range_coders::Encoder           range(data);
+    Range_coders::Binary_encoder    binary(range);
+
+    auto size = base.size();
+    for (unsigned i = 0; i < size; ++i)
+    {
+        auto quant_changed =
+            (base[i].orientation_largest != target[i].orientation_largest) ||
+            (base[i].orientation_a != target[i].orientation_a) ||
+            (base[i].orientation_b != target[i].orientation_b) ||
+            (base[i].orientation_c != target[i].orientation_c);
+
+        model.quant_changed.Encode(binary, quant_changed);
+
+        if (quant_changed)
+        {
+            // RAM: TODO: correlation between previous and current?
+            // RAM: TODO: Binary tree instead?
+            model.largest_quant_index.Encode(
+                range, target[i].orientation_largest);
+        }
+
+        auto pos_changed =
+            (base[i].position_x != target[i].position_x) ||
+            (base[i].position_y != target[i].position_y) ||
+            (base[i].position_z != target[i].position_z);
+
+        model.position_changed[quant_changed].Encode(binary, pos_changed);
+
+        if (pos_changed)
+        {
+
+        }
+
+        unsigned interactive_index = (base[i].interacting == 1) << 2;
+        interactive_index |= quant_changed << 1;
+        interactive_index |= pos_changed;
+
+        model.interactive[interactive_index].Encode(
+            binary,
+            target[i].interacting);
+    }
+}
 
 // //////////////////////////////////////////////////////
 
@@ -1257,6 +1424,8 @@ unsigned BitVector3SortedEncode(
 
     // default order, x,y,z.
     {
+        using std::swap;
+
         auto top = 0;
         auto next = 0;
 
@@ -1265,14 +1434,8 @@ unsigned BitVector3SortedEncode(
                 (zy >= zz)
             )
         {
-            auto temp = zy;
-            zy = zx;
-            zx = temp;
-
-            auto tempf = vec.y;
-            vec.y = vec.x;
-            vec.x = tempf;
-
+            swap(zx, zy);
+            swap(vec.x, vec.y);
             top = 1;
         }
         else
@@ -1282,16 +1445,11 @@ unsigned BitVector3SortedEncode(
                     (zz >= zy)
                 )
             {
-                auto temp = zz;
-                zz = zy;
-                zy = zx;
-                zx = temp;
+                swap(zx, zz);
+                swap(zy, zz);
 
-                auto tempf = vec.z;
-                vec.z = vec.y;
-                vec.y = vec.x;
-                vec.x = tempf;
-
+                swap(vec.x, vec.z);
+                swap(vec.y, vec.z);
                 top = 2;
             }
         }
@@ -1301,10 +1459,7 @@ unsigned BitVector3SortedEncode(
 
         if (zz > zy)
         {
-            auto temp = zz;
-            zz = zy;
-            zy = temp;
-
+            swap(zy, zz);
             next = 1;
         }
 
@@ -1406,27 +1561,23 @@ IntVec3 BitVector3SortedDecode(
 
     auto ReturnSorted = [&largest, &nextLargest](IntVec3 vec) -> IntVec3
     {
+        using std::swap;
+
         if (nextLargest)
         {
-            auto temp = vec.y;
-            vec.y = vec.z;
-            vec.z = temp;
+            swap(vec.y, vec.z);
         }
 
         if (largest)
         {
             if (largest == 1)
             {
-                auto temp = vec.y;
-                vec.y = vec.x;
-                vec.x = temp;
+                swap(vec.x, vec.y);
             }
             else
             {
-                auto temp = vec.x;
-                vec.x = vec.y;
-                vec.y = vec.z;
-                vec.z = temp;
+                swap(vec.x, vec.y);
+                swap(vec.y, vec.z);
             }
         }
 
@@ -3293,7 +3444,8 @@ BitStream RangeEncodeSimpleEncode(BitStream data)
     Bytes result_buffer;
 
     {
-        Range_coders::Binary_encoder coder(result_buffer);
+        Range_coders::Encoder range(result_buffer);
+        Range_coders::Binary_encoder coder(range);
 
         data.Reset();
         for (unsigned i = 0; i < size; ++i)
@@ -3314,7 +3466,8 @@ BitStream RangeEncodeSimpleDecode(BitStream& data, unsigned targetBits = 0)
 {
     auto raw_data = data.Data();
 
-    Range_coders::Binary_decoder coder(raw_data);
+    Range_coders::Decoder range(raw_data);
+    Range_coders::Binary_decoder coder(range);
 
     BitStream result;
 
@@ -3359,7 +3512,8 @@ BitStream RangeEncodeSmarterEncode(BitStream data)
     Range_types::Bytes result_buffer;
 
     {
-        Range_coders::Binary_encoder coder(result_buffer);
+        Range_coders::Encoder range(result_buffer);
+        Range_coders::Binary_encoder coder(range);
 
         data.Reset();
         unsigned last = 1;
@@ -3390,7 +3544,8 @@ BitStream RangeEncodeSmarterDecode(BitStream& data, unsigned targetBits = 0)
 {
     auto raw_data = data.Data();
 
-    Range_coders::Binary_decoder coder(raw_data);
+    Range_coders::Decoder range(raw_data);
+    Range_coders::Binary_decoder coder(range);
 
     BitStream result;
 
@@ -3432,7 +3587,8 @@ BitStream RangeEncodeSimpleAdaptiveEncode(BitStream data)
     Range_types::Bytes result_buffer;
 
     {
-        Range_coders::Binary_encoder coder(result_buffer);
+        Range_coders::Encoder range(result_buffer);
+        Range_coders::Binary_encoder coder(range);
         Range_models::Binary<Simple_inertia_bits>
             model(Simple_probability_one);
 
@@ -3455,7 +3611,8 @@ BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits =
 {
     auto raw_data = data.Data();
 
-    Range_coders::Binary_decoder coder(raw_data);
+    Range_coders::Decoder range(raw_data);
+    Range_coders::Binary_decoder coder(range);
     Range_models::Binary<Simple_inertia_bits>
         model(Simple_probability_one);
 
@@ -3493,7 +3650,8 @@ BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
     Range_types::Bytes result_buffer;
 
     {
-        Range_coders::Binary_encoder coder(result_buffer);
+        Range_coders::Encoder range(result_buffer);
+        Range_coders::Binary_encoder coder(range);
 
         // Phoar, the models are getting complex now...
         Range_models::Binary_history<
@@ -3522,7 +3680,8 @@ BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits 
 {
     auto raw_data = data.Data();
 
-    Range_coders::Binary_decoder coder(raw_data);
+    Range_coders::Decoder range(raw_data);
+    Range_coders::Binary_decoder coder(range);
     Range_models::Binary_history<
         Range_models::Binary<Smarter_inertia_bits_zero>,
         Range_models::Binary<Smarter_inertia_bits_one>> model(
