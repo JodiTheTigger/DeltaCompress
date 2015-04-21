@@ -837,11 +837,18 @@ namespace {
     };
 }
 
+struct IntVec3
+{
+    int x;
+    int y;
+    int z;
+};
+
 void Vector3Coder(
         Everything_model::Vector_model& model,
         Encoder& coder,
         Binary_encoder& binary_coder,
-        std::array<int, 3> vec,
+        IntVec3 vec,
         unsigned max_magnitude)
 {
     // +1 for the sign bit.
@@ -850,13 +857,13 @@ void Vector3Coder(
     // //////////////////////////////////////////
 
     // Sort from largest to smallest
-    auto zx = ZigZag(vec[0]);
-    auto zy = ZigZag(vec[1]);
-    auto zz = ZigZag(vec[2]);
+    auto zx = ZigZag(vec.x);
+    auto zy = ZigZag(vec.y);
+    auto zz = ZigZag(vec.z);
 
-    assert(abs(vec[0]) <= static_cast<int>(max_magnitude));
-    assert(abs(vec[1]) <= static_cast<int>(max_magnitude));
-    assert(abs(vec[2]) <= static_cast<int>(max_magnitude));
+    assert(abs(vec.x) <= static_cast<int>(max_magnitude));
+    assert(abs(vec.y) <= static_cast<int>(max_magnitude));
+    assert(abs(vec.z) <= static_cast<int>(max_magnitude));
 
     // default order, x,y,z.
     {
@@ -871,7 +878,7 @@ void Vector3Coder(
             )
         {
             swap(zx, zy);
-            swap(vec[0], vec[1]);
+            swap(vec.x, vec.y);
             top = 1;
         }
         else
@@ -884,8 +891,8 @@ void Vector3Coder(
                 swap(zx, zz);
                 swap(zy, zz);
 
-                swap(vec[0], vec[2]);
-                swap(vec[1], vec[2]);
+                swap(vec.x, vec.z);
+                swap(vec.y, vec.z);
                 top = 2;
             }
         }
@@ -928,7 +935,7 @@ void Vector3Coder(
     if (model.Reduce_indicies_using_vector_magnitude)
     {
         float next = static_cast<float>(max_magnitude * max_magnitude);
-        next -= vec[0] * vec[0];
+        next -= vec.x * vec.x;
         assert(next >= 0);
         max_magnitude = static_cast<unsigned>(sqrt(next) + 1);
     }
@@ -959,7 +966,7 @@ void Vector3Coder(
     if (model.Reduce_indicies_using_vector_magnitude)
     {
         auto next = static_cast<float>(max_magnitude * max_magnitude);
-        next -= vec[1] * vec[1];
+        next -= vec.y * vec.y;
         assert(next >= 0);
         max_magnitude = static_cast<unsigned>(sqrt(next) + 1);
     }
@@ -1136,13 +1143,6 @@ void GaffersRangeTest()
 }
 
 // //////////////////////////////////////////////////////
-
-struct IntVec3
-{
-    int x;
-    int y;
-    int z;
-};
 
 unsigned BitVector3Encode(
         IntVec3 vec,
@@ -1400,6 +1400,14 @@ enum class Use_magnitude_as
     Vector_Magnitude,
 };
 
+auto Largest_next_magnitude(unsigned magnitude, int axis) -> unsigned
+{
+    float next = static_cast<float>(magnitude * magnitude);
+    next -= axis * axis;
+    assert(next >= 0);
+    return static_cast<unsigned>(sqrt(next) + 1);
+}
+
 unsigned BitVector3SortedEncode(
         IntVec3 vec,
         unsigned maxMagnitude,
@@ -1491,10 +1499,7 @@ unsigned BitVector3SortedEncode(
 
     if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
     {
-        float next = static_cast<float>(maxMagnitude * maxMagnitude);
-        next -= vec.x * vec.x;
-        assert(next >= 0);
-        maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+        maxMagnitude = Largest_next_magnitude(maxMagnitude, vec.x);
     }
 
     // //////////////////////////////////////////
@@ -1522,10 +1527,7 @@ unsigned BitVector3SortedEncode(
 
     if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
     {
-        auto next = static_cast<float>(maxMagnitude * maxMagnitude);
-        next -= vec.y * vec.y;
-        assert(next >= 0);
-        maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+        maxMagnitude = Largest_next_magnitude(maxMagnitude, vec.y);
     }
 
     // //////////////////////////////////////////
@@ -1603,10 +1605,7 @@ IntVec3 BitVector3SortedDecode(
 
     if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
     {
-        float next = static_cast<float>(maxMagnitude * maxMagnitude);
-        next -= result.x * result.x;
-        assert(next >= 0);
-        maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+        maxMagnitude = Largest_next_magnitude(maxMagnitude, result.x);
     }
 
     // //////////////////////////////////////////
@@ -1628,10 +1627,7 @@ IntVec3 BitVector3SortedDecode(
 
     if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
     {
-        auto next = static_cast<float>(maxMagnitude * maxMagnitude);
-        next -= result.y * result.y;
-        assert(next >= 0);
-        maxMagnitude = static_cast<unsigned>(sqrt(next) + 1);
+        maxMagnitude = Largest_next_magnitude(maxMagnitude, result.y);
     }
 
     // //////////////////////////////////////////
