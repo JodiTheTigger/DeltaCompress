@@ -1468,6 +1468,7 @@ unsigned BitVector3SortedEncode(
         if (zz > zy)
         {
             swap(zy, zz);
+            swap(vec.y, vec.z);
             next = 1;
         }
 
