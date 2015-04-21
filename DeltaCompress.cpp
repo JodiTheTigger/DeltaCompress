@@ -804,7 +804,8 @@ namespace {
 
         // Test range vs tree
         // test if needed multiple models depending on previous model.
-        Perodic_renomalisation<4, 8> largest_quant_index;
+        Simple largest_index_quant_changed;
+        Perodic_renomalisation<4, 8> largest_index_quant;
 
         struct Vector_model
         {
@@ -819,11 +820,12 @@ namespace {
             std::array<Perodic_renomalisation<(1 << 12), 16>, 2> bits_for_value;
             std::array<Binary_tree<Simple, 12>, 3> value;
 
-            bool Reduce_indicies_using_vector_magnitude;
+            bool Reduce_vector_using_magnitude;
         };
 
         // Change my mind, for now, only have one global model.
         // Investigate multiple models later.
+        Vector_model quant_delta;
         Vector_model quant;
 
         std::array<Simple, 2> position_changed;
@@ -844,26 +846,53 @@ struct IntVec3
     int z;
 };
 
+auto Largest_next_magnitude(
+        unsigned magnitude,
+        unsigned zig_zag_axis) -> unsigned
+{
+    // max magnitude for zigzag before we overflow
+    // == sqrt(1 << 32) / 2. == 32768.
+    assert(magnitude < 32768);
+
+    // positive zig zag numbers are just number * 2.
+    unsigned next = magnitude * 2;
+    next *= next;
+
+    unsigned axis = zig_zag_axis;
+    axis *= axis;
+
+    assert(next >= axis);
+
+    next -= axis;
+
+    // C++11 casts the int into a double for sqrt, would it be faster
+    // if I manually cast to a float instead?
+    auto root = sqrt(next);
+
+    // +1 for rounding.
+    return 1 + static_cast<unsigned>(root) / 2;
+}
+
 void Vector3Coder(
+        IntVec3 vec,
+        unsigned max_magnitude,
         Everything_model::Vector_model& model,
         Encoder& coder,
-        Binary_encoder& binary_coder,
-        IntVec3 vec,
-        unsigned max_magnitude)
+        Binary_encoder& binary_coder)
 {
     // +1 for the sign bit.
     unsigned max_bits_required = 1 + MinBits(max_magnitude);
 
     // //////////////////////////////////////////
 
+    assert(abs(vec.x) <= static_cast<int>(max_magnitude));
+    assert(abs(vec.y) <= static_cast<int>(max_magnitude));
+    assert(abs(vec.z) <= static_cast<int>(max_magnitude));
+
     // Sort from largest to smallest
     auto zx = ZigZag(vec.x);
     auto zy = ZigZag(vec.y);
     auto zz = ZigZag(vec.z);
-
-    assert(abs(vec.x) <= static_cast<int>(max_magnitude));
-    assert(abs(vec.y) <= static_cast<int>(max_magnitude));
-    assert(abs(vec.z) <= static_cast<int>(max_magnitude));
 
     // default order, x,y,z.
     {
@@ -878,7 +907,6 @@ void Vector3Coder(
             )
         {
             swap(zx, zy);
-            swap(vec.x, vec.y);
             top = 1;
         }
         else
@@ -890,9 +918,6 @@ void Vector3Coder(
             {
                 swap(zx, zz);
                 swap(zy, zz);
-
-                swap(vec.x, vec.z);
-                swap(vec.y, vec.z);
                 top = 2;
             }
         }
@@ -914,79 +939,64 @@ void Vector3Coder(
 
     // //////////////////////////////////////////
 
-    unsigned bits_zx = MinBits(zx);
-
-    model.bits_for_value[0].Encode(coder, bits_zx);
-
-    // Don't need to send the top bit, as we know it's set since
-    // otherwise bitsForzx would be smaller.
-    if (bits_zx)
+    auto Code = [&](unsigned zig_zag, unsigned model_index) -> bool
     {
-        zx &= (1 << (bits_zx - 1)) - 1;
+        unsigned bits = MinBits(zig_zag);
 
-        model.value[0].Encode(binary_coder, zx, bits_zx);
-    }
-    else
+        model.bits_for_value[model_index].Encode(coder, bits);
+
+        assert(max_bits_required >= bits);
+
+        if (!bits)
+        {
+            // everything after is zero, we're done.
+            return false;
+        }
+
+        // Don't need to send the top bit, as we know it's set since
+        // otherwise bits would be smaller.
+        {
+            auto t = zig_zag & ((1 << (bits - 1)) - 1);
+
+            model.value[model_index].Encode(binary_coder, t, bits);
+        }
+
+        if (model.Reduce_vector_using_magnitude)
+        {
+            max_magnitude = Largest_next_magnitude(max_magnitude, zig_zag);
+        }
+
+        max_bits_required = 1 + MinBits(max_magnitude);
+        max_bits_required = std::min(max_bits_required, bits);
+
+        return true;
+    };
+
+    // //////////////////////////////////////////
+
+    if (!Code(zx, 0))
     {
-        // everything after is zero, we're done.
         return;
     }
 
-    if (model.Reduce_indicies_using_vector_magnitude)
+    if (!Code(zy, 1))
     {
-        float next = static_cast<float>(max_magnitude * max_magnitude);
-        next -= vec.x * vec.x;
-        assert(next >= 0);
-        max_magnitude = static_cast<unsigned>(sqrt(next) + 1);
+        return;
     }
 
     // //////////////////////////////////////////
 
-    max_bits_required = 1 + MinBits(max_magnitude);
-    max_bits_required = std::min(max_bits_required, bits_zx);
+    unsigned bits = MinBits(zz);
 
-    unsigned bits_zy = MinBits(zy);
+    assert(max_bits_required >= bits);
 
-    assert(max_bits_required >= bits_zy);
-
-    model.bits_for_value[1].Encode(coder, bits_zy);
-
-    if (bits_zy)
-    {
-        zy &= (1 << (bits_zy - 1)) - 1;
-
-        model.value[1].Encode(binary_coder, zy, bits_zy);
-    }
-    else
-    {
-        // everything after is zero, we're done.
-        return;
-    }
-
-    if (model.Reduce_indicies_using_vector_magnitude)
-    {
-        auto next = static_cast<float>(max_magnitude * max_magnitude);
-        next -= vec.y * vec.y;
-        assert(next >= 0);
-        max_magnitude = static_cast<unsigned>(sqrt(next) + 1);
-    }
-
-    // //////////////////////////////////////////
-
-    max_bits_required = 1 + MinBits(max_magnitude);
-    max_bits_required = std::min(max_bits_required, bits_zy);
-
-    unsigned bits_zz = MinBits(zz);
-
-    assert(max_bits_required >= bits_zz);
-
-    model.value[2].Encode(binary_coder, zz, bits_zz);
+    model.value[2].Encode(binary_coder, zz, bits);
 }
 
 void Encode_frames(
     const Frame& base,
     const Frame& target,
-    unsigned// frameDelta,
+    unsigned frameDelta
     )
 {
     // for now use defaults for everything.
@@ -995,11 +1005,17 @@ void Encode_frames(
     Range_coders::Encoder           range(data);
     Range_coders::Binary_encoder    binary(range);
 
+    model.quant.    Reduce_vector_using_magnitude = false;
+    model.position. Reduce_vector_using_magnitude = true;
+
     auto size = base.size();
     for (unsigned i = 0; i < size; ++i)
     {
+        auto quant_index_changed =
+            base[i].orientation_largest != target[i].orientation_largest;
+
         auto quant_changed =
-            (base[i].orientation_largest != target[i].orientation_largest) ||
+            (quant_index_changed) ||
             (base[i].orientation_a != target[i].orientation_a) ||
             (base[i].orientation_b != target[i].orientation_b) ||
             (base[i].orientation_c != target[i].orientation_c);
@@ -1008,10 +1024,48 @@ void Encode_frames(
 
         if (quant_changed)
         {
-            // RAM: TODO: correlation between previous and current?
-            // RAM: TODO: Binary tree instead?
-            model.largest_quant_index.Encode(
-                range, target[i].orientation_largest);
+            model.largest_index_quant_changed.Encode(
+                binary,
+                quant_index_changed);
+
+            if (quant_index_changed)
+            {
+                // RAM: TODO: correlation between previous and current?
+                // RAM: TODO: Binary tree instead?
+                model.largest_index_quant.Encode(
+                    range, target[i].orientation_largest);
+
+                IntVec3 not_delta
+                {
+                    target[i].orientation_a,
+                    target[i].orientation_b,
+                    target[i].orientation_c
+                };
+
+                Vector3Coder(
+                    not_delta,
+                    (1u << RotationMaxBits) - 1,
+                    model.quant,
+                    range,
+                    binary);
+            }
+
+            if (!quant_index_changed)
+            {
+                IntVec3 delta
+                {
+                    target[i].orientation_a - base[i].orientation_a,
+                    target[i].orientation_b - base[i].orientation_b,
+                    target[i].orientation_c - base[i].orientation_c
+                };
+
+                Vector3Coder(
+                    delta,
+                    (1u << RotationMaxBits) - 1,
+                    model.quant,
+                    range,
+                    binary);
+            }
         }
 
         auto pos_changed =
@@ -1023,7 +1077,23 @@ void Encode_frames(
 
         if (pos_changed)
         {
+            IntVec3 delta
+            {
+                target[i].position_x - base[i].position_x,
+                target[i].position_y - base[i].position_y,
+                target[i].position_z - base[i].position_z
+            };
 
+            unsigned max =
+                1 + static_cast<unsigned>(
+                    frameDelta * MaxPositionChangePerSnapshot);
+
+            Vector3Coder(
+                delta,
+                max,
+                model.position,
+                range,
+                binary);
         }
 
         unsigned interactive_index = (base[i].interacting == 1) << 2;
@@ -1400,33 +1470,6 @@ enum class Use_magnitude_as
     Vector_Magnitude,
 };
 
-auto Largest_next_magnitude(
-        unsigned magnitude,
-        unsigned zig_zag_axis) -> unsigned
-{
-    // max magnitude for zigzag before we overflow
-    // == sqrt(1 << 32) / 2. == 32768.
-    assert(magnitude < 32768);
-
-    // positive zig zag numbers are just number * 2.
-    unsigned next = magnitude * 2;
-    next *= next;
-
-    unsigned axis = zig_zag_axis;
-    axis *= axis;
-
-    assert(next >= axis);
-
-    next -= axis;
-
-    // C++11 casts the int into a double for sqrt, would it be faster
-    // if I manually cast to a float instead?
-    auto root = sqrt(next);
-
-    // +1 for rounding.
-    return 1 + static_cast<unsigned>(root) / 2;
-}
-
 unsigned BitVector3SortedEncode(
         IntVec3 vec,
         unsigned maxMagnitude,
@@ -1498,6 +1541,9 @@ unsigned BitVector3SortedEncode(
     auto Code = [&](unsigned zig_zag) -> bool
     {
         unsigned bits = MinBits(zig_zag);
+
+        assert(maxBitsRequired >= bits);
+
         bitsUsed += TruncateEncode(bits, maxBitsRequired, target);
 
         if (!bits)
