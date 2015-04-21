@@ -1400,12 +1400,27 @@ enum class Use_magnitude_as
     Vector_Magnitude,
 };
 
-auto Largest_next_magnitude(unsigned magnitude, int axis) -> unsigned
+auto Largest_next_magnitude(
+        unsigned magnitude,
+        unsigned zig_zag_axis) -> unsigned
 {
-    float next = static_cast<float>(magnitude * magnitude);
-    next -= axis * axis;
-    assert(next >= 0);
-    return static_cast<unsigned>(sqrt(next) + 1);
+    // positive zig zag numbers are just number * 2.
+    uint64_t next = magnitude * 2;
+    next *= next;
+
+    uint64_t axis = zig_zag_axis;
+    axis *= axis;
+
+    assert(next >= axis);
+
+    next -= axis;
+
+    // C++11 casts the int into a double for sqrt, would it be faster
+    // if I manually cast to a float instead?
+    auto root = sqrt(next);
+
+    // +1 for rounding.
+    return 1 + static_cast<unsigned>(root) / 2;
 }
 
 unsigned BitVector3SortedEncode(
@@ -1443,7 +1458,6 @@ unsigned BitVector3SortedEncode(
             )
         {
             swap(zx, zy);
-            swap(vec.x, vec.y);
             top = 1;
         }
         else
@@ -1455,9 +1469,6 @@ unsigned BitVector3SortedEncode(
             {
                 swap(zx, zz);
                 swap(zy, zz);
-
-                swap(vec.x, vec.z);
-                swap(vec.y, vec.z);
                 top = 2;
             }
         }
@@ -1468,7 +1479,6 @@ unsigned BitVector3SortedEncode(
         if (zz > zy)
         {
             swap(zy, zz);
-            swap(vec.y, vec.z);
             next = 1;
         }
 
@@ -1488,8 +1498,8 @@ unsigned BitVector3SortedEncode(
     // otherwise bitsForzx would be smaller.
     if (bitsForzx)
     {
-        zx &= (1 << (bitsForzx - 1)) - 1;
-        target.Write(zx, bitsForzx - 1);
+        auto t = zx & ((1 << (bitsForzx - 1)) - 1);
+        target.Write(t, bitsForzx - 1);
         bitsUsed += bitsForzx - 1;
     }
     else
@@ -1500,7 +1510,7 @@ unsigned BitVector3SortedEncode(
 
     if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
     {
-        maxMagnitude = Largest_next_magnitude(maxMagnitude, vec.x);
+        maxMagnitude = Largest_next_magnitude(maxMagnitude, zx);
     }
 
     // //////////////////////////////////////////
@@ -1516,8 +1526,8 @@ unsigned BitVector3SortedEncode(
 
     if (bitsForzy)
     {
-        zy &= (1 << (bitsForzy - 1)) - 1;
-        target.Write(zy, bitsForzy - 1);
+        auto t = zy & ((1 << (bitsForzy - 1)) - 1);
+        target.Write(t, bitsForzy - 1);
         bitsUsed += bitsForzy - 1;
     }
     else
@@ -1528,7 +1538,7 @@ unsigned BitVector3SortedEncode(
 
     if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
     {
-        maxMagnitude = Largest_next_magnitude(maxMagnitude, vec.y);
+        maxMagnitude = Largest_next_magnitude(maxMagnitude, zy);
     }
 
     // //////////////////////////////////////////
@@ -1591,22 +1601,20 @@ IntVec3 BitVector3SortedDecode(
 
     auto bitsX = TruncateDecode(maxBitsRequired, source);
 
-    if (bitsX)
-    {
-        auto zx = source.Read(bitsX - 1);
-        // Don't need to send the top bit, as we know it's set since
-        // otherwise bitsForzx would be smaller.
-        zx |= 1 << (bitsX - 1);
-        result.x = ZigZag(zx);
-    }
-    else
+    if (!bitsX)
     {
         return ReturnSorted(result);
     }
 
+    auto zx = source.Read(bitsX - 1);
+    // Don't need to send the top bit, as we know it's set since
+    // otherwise bitsForzx would be smaller.
+    zx |= 1 << (bitsX - 1);
+    result.x = ZigZag(zx);
+
     if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
     {
-        maxMagnitude = Largest_next_magnitude(maxMagnitude, result.x);
+        maxMagnitude = Largest_next_magnitude(maxMagnitude, zx);
     }
 
     // //////////////////////////////////////////
@@ -1615,20 +1623,19 @@ IntVec3 BitVector3SortedDecode(
     maxBitsRequired = std::min(maxBitsRequired, bitsX);
 
     auto bitsY = TruncateDecode(maxBitsRequired, source);
-    if (bitsY)
-    {
-        auto zy = source.Read(bitsY - 1);
-        zy |= 1 << (bitsY - 1);
-        result.y = ZigZag(zy);
-    }
-    else
+
+    if (!bitsY)
     {
         return ReturnSorted(result);
     }
 
+    auto zy = source.Read(bitsY - 1);
+    zy |= 1 << (bitsY - 1);
+    result.y = ZigZag(zy);
+
     if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
     {
-        maxMagnitude = Largest_next_magnitude(maxMagnitude, result.y);
+        maxMagnitude = Largest_next_magnitude(maxMagnitude, zy);
     }
 
     // //////////////////////////////////////////
