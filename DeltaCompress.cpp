@@ -25,7 +25,7 @@
 
 bool doTests            = false;
 bool doStats            = false;
-bool doCompression      = true;
+bool doCompression      = false;
 bool doRangeCompression = true;
 
 // //////////////////////////////////////////////////////
@@ -799,7 +799,7 @@ namespace {
         // Code position just like quat, but with max magnitude specifying the bits
         // as well! yay! force zero.
         // interacting based on current interacting + quat/position changed.
-        using Simple = Binary<5>;
+        using Simple = Binary<4>;
 
         Binary_history<Simple, Simple> quant_changed;
 
@@ -818,7 +818,7 @@ namespace {
             // bits2 = MinBits(MaxPositionChangePerSnapshot * MaxFrameDelta)
             // bits = max(bits1, bits2)
 
-            std::array<Perodic_renomalisation<14, 16>, 2> bits_for_value;
+            std::array<Perodic_renomalisation<12, 16>, 2> bits_for_value;
             std::array<Binary_tree<Simple, 12>, 3> value;
 
             bool Reduce_vector_using_magnitude;
@@ -1315,7 +1315,7 @@ auto Model_tests()
 
         IntVec3 data =
         {
-            -1634,
+            -434,
             -90,
             0,
         };
