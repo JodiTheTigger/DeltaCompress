@@ -818,7 +818,7 @@ namespace {
             // bits2 = MinBits(MaxPositionChangePerSnapshot * MaxFrameDelta)
             // bits = max(bits1, bits2)
 
-            std::array<Perodic_renomalisation<(1 << 12), 16>, 2> bits_for_value;
+            std::array<Perodic_renomalisation<14, 16>, 2> bits_for_value;
             std::array<Binary_tree<Simple, 12>, 3> value;
 
             bool Reduce_vector_using_magnitude;
@@ -1162,7 +1162,7 @@ auto Encode_frames(
                     Vector3Encode(
                         delta,
                         (1u << RotationMaxBits) - 1,
-                        model.quant,
+                        model.quant_delta,
                         range,
                         binary);
                 }
@@ -1253,7 +1253,7 @@ auto Decode_frames(
             {
                 IntVec3 delta = Vector3Decode(
                     (1u << RotationMaxBits) - 1,
-                    model.quant,
+                    model.quant_delta,
                     range,
                     binary);
 
