@@ -23,9 +23,10 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests        = true;
-bool doStats        = true;
-bool doCompression  = true;
+bool doTests            = false;
+bool doStats            = false;
+bool doCompression      = false;
+bool doRangeCompression = true;
 
 // //////////////////////////////////////////////////////
 
@@ -955,10 +956,11 @@ void Vector3Encode(
 
         // Don't need to send the top bit, as we know it's set since
         // otherwise bits would be smaller.
+        if (bits > 1)
         {
             auto t = zig_zag & ((1 << (bits - 1)) - 1);
 
-            model.value[model_index].Encode(binary, t, bits);
+            model.value[model_index].Encode(binary, t, bits - 1);
         }
 
         if (model.Reduce_vector_using_magnitude)
@@ -1046,7 +1048,9 @@ IntVec3 Vector3Decode(
             return false;
         }
 
-        auto zig_zag = model.value[model_index].Decode(binary, bits);
+        auto zig_zag = bits > 1 ?
+            model.value[model_index].Decode(binary, bits - 1) :
+            0;
 
         // Don't need to send the top bit, as we know it's set since
         // otherwise bitsForzx would be smaller.
@@ -1101,6 +1105,10 @@ auto Encode_frames(
 
         model.quant.    Reduce_vector_using_magnitude = false;
         model.position. Reduce_vector_using_magnitude = true;
+
+        unsigned max_position_delta =
+            1 + static_cast<unsigned>(
+                frameDelta * MaxPositionChangePerSnapshot);
 
         auto size = base.size();
         for (unsigned i = 0; i < size; ++i)
@@ -1178,13 +1186,9 @@ auto Encode_frames(
                     target[i].position_z - base[i].position_z
                 };
 
-                unsigned max =
-                    1 + static_cast<unsigned>(
-                        frameDelta * MaxPositionChangePerSnapshot);
-
                 Vector3Encode(
                     delta,
-                    max,
+                    max_position_delta,
                     model.position,
                     range,
                     binary);
@@ -1215,6 +1219,10 @@ auto Decode_frames(
 
     model.quant.    Reduce_vector_using_magnitude = false;
     model.position. Reduce_vector_using_magnitude = true;
+
+    unsigned max_position_delta =
+        1 + static_cast<unsigned>(
+            frameDelta * MaxPositionChangePerSnapshot);
 
     auto size = base.size();
     for (unsigned i = 0; i < size; ++i)
@@ -1251,10 +1259,21 @@ auto Decode_frames(
                     range,
                     binary);
 
+                target[i].orientation_largest =
+                        base[i].orientation_largest;
                 target[i].orientation_a = base[i].orientation_a + delta.x;
                 target[i].orientation_b = base[i].orientation_b + delta.y;
                 target[i].orientation_c = base[i].orientation_c + delta.z;
             }
+        }
+
+        if (!quant_changed)
+        {
+            target[i].orientation_largest =
+                    base[i].orientation_largest;
+            target[i].orientation_a = base[i].orientation_a;
+            target[i].orientation_b = base[i].orientation_b;
+            target[i].orientation_c = base[i].orientation_c;
         }
 
         auto pos_changed =
@@ -1262,12 +1281,8 @@ auto Decode_frames(
 
         if (pos_changed)
         {
-            unsigned max =
-                1 + static_cast<unsigned>(
-                    frameDelta * MaxPositionChangePerSnapshot);
-
             auto delta = Vector3Decode(
-                max,
+                max_position_delta,
                 model.position,
                 range,
                 binary);
@@ -1275,6 +1290,13 @@ auto Decode_frames(
             target[i].position_x = base[i].position_x + delta.x;
             target[i].position_y = base[i].position_y + delta.y;
             target[i].position_z = base[i].position_z + delta.z;
+        }
+
+        if (!pos_changed)
+        {
+            target[i].position_x = base[i].position_x;
+            target[i].position_y = base[i].position_y;
+            target[i].position_z = base[i].position_z;
         }
 
         unsigned interactive_index = (base[i].interacting == 1) << 2;
@@ -2635,7 +2657,7 @@ void BitVector3Tests()
     int const max = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
     for (const auto& test : tests)
     {
-        auto values
+        auto values =
         {
             IntVec3{    -1, -1586,  0},
             IntVec3{    0,  0,      1},
@@ -6011,6 +6033,47 @@ void Compress(std::vector<Frame>& frames, const Config& config)
     printf("\n==============================================\n");
 }
 
+void Range_compress(std::vector<Frame>& frames)
+{
+    auto packets = frames.size();
+    unsigned bytes = 0;
+    unsigned packetsCoded = 0;
+
+    for (size_t i = PacketDelta; i < packets; ++i)
+    {
+        auto buffer = Encode_frames(
+            frames[i-PacketDelta],
+            frames[i],
+            PacketDelta);
+
+        bytes += buffer.size();
+
+        auto back = Decode_frames(
+            frames[i-PacketDelta],
+            buffer,
+            PacketDelta);
+
+        assert(back == frames[i]);
+
+        packetsCoded++;
+    }
+
+    float packetSizeAverge = ((float) bytes) / packetsCoded;
+    float bytesPerSecondAverage = packetSizeAverge * 60.0f;
+    float kbps = bytesPerSecondAverage * 8 / 1000.0f;
+
+    printf("\n");
+    printf("== Compression (model) =======================\n\n");
+
+    PRINT_INT(packetsCoded)
+    PRINT_INT(bytes)
+    PRINT_FLOAT(bytesPerSecondAverage)
+    PRINT_FLOAT(packetSizeAverge)
+    PRINT_FLOAT(kbps)
+
+    printf("\n==============================================\n");
+}
+
 int main(int, char**)
 {
     auto frames = []() -> std::vector<Frame>
@@ -6068,6 +6131,11 @@ int main(int, char**)
     if (doCompression)
     {
         Compress(frames, config);
+    }
+
+    if (doRangeCompression)
+    {
+        Range_compress(frames);
     }
 
     return 0;
