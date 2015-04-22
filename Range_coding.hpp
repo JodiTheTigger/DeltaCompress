@@ -403,12 +403,9 @@ namespace Range_models
             // Seems adds are better than << 1.
             unsigned rebuilt = 1;            
 
-            unsigned skips = bits - BITS;
-            while (skips)
-            {
-                value += value;
-                rebuilt += rebuilt;
-            }
+            unsigned skips = BITS - bits;
+            value <<= skips;
+            rebuilt <<= skips;
 
             while (rebuilt < MODEL_COUNT)
             {
@@ -423,8 +420,8 @@ namespace Range_models
         {
             assert(bits <= BITS);
 
-            unsigned rebuilt = 1;
-            unsigned count = MODEL_COUNT >> (bits - BITS);
+            unsigned rebuilt = 1 << (BITS - bits);
+            unsigned count = MODEL_COUNT;
 
             while (rebuilt < count)
             {
@@ -747,7 +744,7 @@ void Range_tests()
 
     // Range Model Tests
     {
-        auto range_data
+        auto range_data =
         {
             Bytes{0,1,2,6,4,5,3,7,4,3,4,3,3,3,3,0,1,2,0,0,0,3,3,3,3,3,2},
             Bytes{0,0,0,0,0,0,0,0,0,4,4,4,4,4,4,4,2,2,4,4,4,4,4,0,0,0,0},
