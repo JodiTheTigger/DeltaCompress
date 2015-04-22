@@ -25,7 +25,7 @@
 
 bool doTests            = false;
 bool doStats            = false;
-bool doCompression      = false;
+bool doCompression      = true;
 bool doRangeCompression = true;
 
 // //////////////////////////////////////////////////////
@@ -988,11 +988,9 @@ void Vector3Encode(
 
     // //////////////////////////////////////////
 
-    unsigned bits = MinBits(zz);
+    assert(max_bits_required >= MinBits(zz));
 
-    assert(max_bits_required >= bits);
-
-    model.value[2].Encode(binary, zz, bits);
+    model.value[2].Encode(binary, zz, max_bits_required);
 }
 
 IntVec3 Vector3Decode(
@@ -1009,21 +1007,21 @@ IntVec3 Vector3Decode(
     // //////////////////////////////////////////
 
     // Read the Order
-    auto largest = model.largest_index.Decode(range);
-    auto next_largest = model.next_largest_index[largest].Decode(binary);
+    auto top = model.largest_index.Decode(range);
+    auto next = model.next_largest_index[top].Decode(binary);
 
-    auto ReturnSorted = [&largest, &next_largest](IntVec3 vec) -> IntVec3
+    auto ReturnSorted = [&top, &next](IntVec3 vec) -> IntVec3
     {
         using std::swap;
 
-        if (next_largest)
+        if (next)
         {
             swap(vec.y, vec.z);
         }
 
-        if (largest)
+        if (top)
         {
-            if (largest == 1)
+            if (top == 1)
             {
                 swap(vec.x, vec.y);
             }
@@ -1308,6 +1306,62 @@ auto Decode_frames(
     }
 
     return target;
+}
+
+auto Model_tests()
+{
+    {
+        int const max = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
+
+        IntVec3 data =
+        {
+            -1634,
+            -90,
+            0,
+        };
+
+        Range_coders::Bytes bytes;
+
+
+        {
+            Everything_model::Vector_model  model;
+            Range_coders::Encoder           e_range(bytes);
+            Range_coders::Binary_encoder    e_binary(e_range);
+
+            model.Reduce_vector_using_magnitude = true;
+
+            for (auto l = 0; l < 2; ++l)
+            {
+                Vector3Encode(
+                    data,
+                    max,
+                    model,
+                    e_range,
+                    e_binary);
+            }
+        }
+
+        {
+            Everything_model::Vector_model  model;
+            Range_coders::Decoder           d_range(bytes);
+            Range_coders::Binary_decoder    d_binary(d_range);
+
+            model.Reduce_vector_using_magnitude = true;
+
+            for (auto l = 0; l < 2; ++l)
+            {
+                auto decoded = Vector3Decode(
+                    max,
+                    model,
+                    d_range,
+                    d_binary);
+
+                assert(data.x == decoded.x);
+                assert(data.y == decoded.y);
+                assert(data.z == decoded.z);
+            }
+        }
+    }
 }
 
 // //////////////////////////////////////////////////////
@@ -1789,9 +1843,7 @@ unsigned BitVector3SortedEncode(
 
     // //////////////////////////////////////////
 
-    unsigned bitsForzz = MinBits(zz);
-
-    assert(maxBitsRequired >= bitsForzz);
+    assert(maxBitsRequired >= MinBits(zz));
 
     target.Write(zz, maxBitsRequired);
     bitsUsed += maxBitsRequired;
@@ -5732,6 +5784,7 @@ Frame Decode(
 
 void Tests()
 {
+    Model_tests();
     Range_tests();
     RunLengthTests();
     BitVector3Tests();
