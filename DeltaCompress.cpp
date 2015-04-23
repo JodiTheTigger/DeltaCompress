@@ -25,7 +25,7 @@
 
 bool doTests            = false;
 bool doStats            = false;
-bool doCompression      = false;
+bool doCompression      = true;
 bool doRangeCompression = true;
 
 // //////////////////////////////////////////////////////
@@ -1104,6 +1104,10 @@ auto Encode_frames(
         model.quant.    Reduce_vector_using_magnitude = false;
         model.position. Reduce_vector_using_magnitude = true;
 
+        // Setting tuned defaults - does it help?
+        // (tests). Yup.
+        model.quant_changed = {7926,31};
+
         unsigned max_position_delta =
             1 + static_cast<unsigned>(
                 frameDelta * MaxPositionChangePerSnapshot);
@@ -1217,6 +1221,8 @@ auto Decode_frames(
 
     model.quant.    Reduce_vector_using_magnitude = false;
     model.position. Reduce_vector_using_magnitude = true;
+
+    model.quant_changed = {7926,31};
 
     unsigned max_position_delta =
         1 + static_cast<unsigned>(
