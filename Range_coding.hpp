@@ -313,7 +313,9 @@ namespace Range_models
                 unsigned initial_probability = (TOTAL_RANGE / 2))
             : m_inertia(inertia)
             , m_one_probability(initial_probability)
-        {}
+        {
+            assert(inertia > 0);
+        }
 
         void Encode(Binary_encoder& coder, unsigned value)
         {
@@ -347,14 +349,17 @@ namespace Range_models
         }
     };
 
-    template<unsigned INERTIA_1, unsigned INERTIA_2>
     class Binary_two_speed
     {
     public:
         Binary_two_speed(
+                unsigned inertia_1 = 4,
+                unsigned inertia_2 = 4,
                 unsigned initial_probability_1 = QUARTER_RANGE,
                 unsigned initial_probability_2 = QUARTER_RANGE)
-            : m_probabilities_1(initial_probability_1)
+            : m_inertia_1(inertia_1)
+            , m_inertia_2(inertia_2)
+            , m_probabilities_1(initial_probability_1)
             , m_probabilities_2(initial_probability_2)
         {}
 
@@ -376,20 +381,22 @@ namespace Range_models
         static const unsigned HALF_RANGE    = TOTAL_RANGE / 2;
         static const unsigned QUARTER_RANGE = HALF_RANGE / 2;
 
-        uint16_t  m_probabilities_1;
-        uint16_t  m_probabilities_2;
+        unsigned m_inertia_1;
+        unsigned m_inertia_2;
+        uint16_t m_probabilities_1;
+        uint16_t m_probabilities_2;
 
         void Adapt(unsigned value)
         {
             if (value)
             {
-                m_probabilities_1 += (HALF_RANGE - m_probabilities_1) >> INERTIA_1;
-                m_probabilities_2 += (HALF_RANGE - m_probabilities_2) >> INERTIA_2;
+                m_probabilities_1 += (HALF_RANGE - m_probabilities_1) >> m_inertia_1;
+                m_probabilities_2 += (HALF_RANGE - m_probabilities_2) >> m_inertia_2;
             }
             else
             {
-                m_probabilities_1 -= m_probabilities_1 >> INERTIA_1;
-                m_probabilities_2 -= m_probabilities_2 >> INERTIA_2;
+                m_probabilities_1 -= m_probabilities_1 >> m_inertia_1;
+                m_probabilities_2 -= m_probabilities_2 >> m_inertia_2;
             }
         }
     };
@@ -729,16 +736,16 @@ void Range_tests()
 
         Binary_test(
             tests,
-            Binary_two_speed<5,2>(),
-            Binary_two_speed<5,2>());
+            Binary_two_speed(5,2),
+            Binary_two_speed(5,2));
         Binary_test(
             tests,
-            Binary_two_speed<6,1>(),
-            Binary_two_speed<6,1>());
+            Binary_two_speed(6,1),
+            Binary_two_speed(6,1));
         Binary_test(
             tests,
-            Binary_two_speed<3,4>(),
-            Binary_two_speed<3,4>());
+            Binary_two_speed(3,4),
+            Binary_two_speed(3,4));
 
         Binary_test(
             tests,
