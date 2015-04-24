@@ -25,8 +25,9 @@
 
 bool doTests            = false;
 bool doStats            = false;
-bool doCompression      = true;
-bool doRangeCompression = true;
+bool doCompression      = false;
+bool doRangeCompression = false;
+bool doRangeSearch      = true;
 
 // //////////////////////////////////////////////////////
 
@@ -6134,6 +6135,77 @@ void Range_compress(std::vector<Frame>& frames)
     printf("\n==============================================\n");
 }
 
+void Range_search(std::vector<Frame>& frames)
+{
+    auto packets = frames.size();
+
+    std::vector<MinMaxSum> quat_changed_binary;
+    for (auto j = 0; j < 8; ++j)
+    {
+        quat_changed_binary.push_back({100000,0,0,0});
+    }
+
+    for (size_t p = PacketDelta; p < packets; ++p)
+    {
+        // Test best params for quat changed.
+        {
+            struct Test_set
+            {
+                Range_types::Bytes      data;
+                Range_models::Binary    model;
+            };
+
+            std::vector<Test_set> tests;
+
+            auto& base = frames[p-PacketDelta];
+            auto& target = frames[p];
+
+            for (unsigned j = 0; j < 8; ++j)
+            {
+                if (j == 0)
+                {
+                    tests.push_back({{}, {1}});
+                    continue;
+                }
+
+                tests.push_back({{}, {j}});
+
+                {
+                    Range_coders::Encoder           range(tests[j].data);
+                    Range_coders::Binary_encoder    binary(range);
+
+                    auto size = base.size();
+                    for (unsigned i = 0; i < size; ++i)
+                    {
+                        auto quant_index_changed =
+                            base[i].orientation_largest != target[i].orientation_largest;
+
+                        auto quant_changed =
+                            (quant_index_changed) ||
+                            (base[i].orientation_a != target[i].orientation_a) ||
+                            (base[i].orientation_b != target[i].orientation_b) ||
+                            (base[i].orientation_c != target[i].orientation_c);
+
+                        tests[j].model.Encode(binary, quant_changed);
+                    }
+                }
+
+                quat_changed_binary[j].Update(tests[j].data.size());
+            }
+        }
+    }
+
+    printf("\n");
+
+    for (auto& s : quat_changed_binary)
+    {
+        printf("%d - %d - %f\n", s.min, s.max, Average(s));
+    }
+
+    printf("\n==============================================\n");
+}
+
+
 int main(int, char**)
 {
     auto frames = []() -> std::vector<Frame>
@@ -6196,6 +6268,11 @@ int main(int, char**)
     if (doRangeCompression)
     {
         Range_compress(frames);
+    }
+
+    if (doRangeSearch)
+    {
+        Range_search(frames);
     }
 
     return 0;
