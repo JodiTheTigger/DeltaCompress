@@ -305,12 +305,14 @@ namespace Range_models
 
     // Ideas from https://github.com/rygorous/gaffer_net/blob/master/main.cpp
 
-    template<unsigned INERTIA>
     class Binary
     {
     public:
-        Binary(unsigned initial_probability = (TOTAL_RANGE / 2))
-            : m_one_probability(initial_probability)
+        Binary(
+                unsigned inertia = 4,
+                unsigned initial_probability = (TOTAL_RANGE / 2))
+            : m_inertia(inertia)
+            , m_one_probability(initial_probability)
         {}
 
         void Encode(Binary_encoder& coder, unsigned value)
@@ -328,17 +330,19 @@ namespace Range_models
         }
 
     private:
-        uint16_t  m_one_probability;
+        uint16_t m_inertia;
+        uint16_t m_one_probability;
 
         void Adapt(unsigned value)
         {
             if (value)
             {
-                m_one_probability += (TOTAL_RANGE - m_one_probability) >> INERTIA;
+                m_one_probability +=
+                    (TOTAL_RANGE - m_one_probability) >> m_inertia;
             }
             else
             {
-                m_one_probability -= m_one_probability >> INERTIA;
+                m_one_probability -= m_one_probability >> m_inertia;
             }
         }
     };
@@ -718,9 +722,9 @@ void Range_tests()
             }
         };
 
-        Binary_test(tests, Binary<5>(), Binary<5>());
-        Binary_test(tests, Binary<1>(), Binary<1>());
-        Binary_test(tests, Binary<2>(), Binary<2>());
+        Binary_test(tests, Binary(5), Binary(5));
+        Binary_test(tests, Binary(1), Binary(1));
+        Binary_test(tests, Binary(2), Binary(2));
 
 
         Binary_test(
@@ -738,8 +742,8 @@ void Range_tests()
 
         Binary_test(
             tests,
-            Binary_history<Binary<3>, Binary<3>>(),
-            Binary_history<Binary<3>, Binary<3>>());
+            Binary_history<Binary, Binary>(0, Binary(3), Binary(3)),
+            Binary_history<Binary, Binary>(0, Binary(3), Binary(3)));
     }
 
     // Range Model Tests

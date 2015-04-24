@@ -799,7 +799,7 @@ namespace {
         // Code position just like quat, but with max magnitude specifying the bits
         // as well! yay! force zero.
         // interacting based on current interacting + quat/position changed.
-        using Simple = Binary<4>;
+        using Simple = Binary;
 
         Binary_history<Simple, Simple> quant_changed;
 
@@ -1106,7 +1106,8 @@ auto Encode_frames(
 
         // Setting tuned defaults - does it help?
         // (tests). Yup.
-        model.quant_changed = {7926,31};
+        //model.quant_changed = {1, {4, 7926},{4, 31}};
+        model.quant_changed = {1, {4, 31}};
 
         unsigned max_position_delta =
             1 + static_cast<unsigned>(
@@ -1222,7 +1223,7 @@ auto Decode_frames(
     model.quant.    Reduce_vector_using_magnitude = false;
     model.position. Reduce_vector_using_magnitude = true;
 
-    model.quant_changed = {7926,31};
+    model.quant_changed = {1, {4, 31}};
 
     unsigned max_position_delta =
         1 + static_cast<unsigned>(
@@ -3891,8 +3892,8 @@ BitStream RangeEncodeSimpleAdaptiveEncode(BitStream data)
     {
         Range_coders::Encoder range(result_buffer);
         Range_coders::Binary_encoder coder(range);
-        Range_models::Binary<Simple_inertia_bits>
-            model(Simple_probability_one);
+        Range_models::Binary
+            model(Simple_inertia_bits, Simple_probability_one);
 
         data.Reset();
         for (unsigned i = 0; i < size; ++i)
@@ -3915,8 +3916,8 @@ BitStream RangeEncodeSimpleAdaptiveDecode(BitStream& data, unsigned targetBits =
 
     Range_coders::Decoder range(raw_data);
     Range_coders::Binary_decoder coder(range);
-    Range_models::Binary<Simple_inertia_bits>
-        model(Simple_probability_one);
+    Range_models::Binary
+        model(Simple_inertia_bits, Simple_probability_one);
 
     BitStream result;
 
@@ -3957,11 +3958,11 @@ BitStream RangeEncodeSmarterAdaptiveEncode(BitStream data)
 
         // Phoar, the models are getting complex now...
         Range_models::Binary_history<
-            Range_models::Binary<Smarter_inertia_bits_zero>,
-            Range_models::Binary<Smarter_inertia_bits_one>> model(
+            Range_models::Binary,
+            Range_models::Binary> model(
                 1,
-                Smarter_zeros_probability_one,
-                Smarter_ones_probability_one);
+                {Smarter_inertia_bits_zero, Smarter_zeros_probability_one},
+                {Smarter_inertia_bits_one, Smarter_ones_probability_one});
 
         data.Reset();
         for (unsigned i = 0; i < size; ++i)
@@ -3985,11 +3986,11 @@ BitStream RangeEncodeSmarterAdaptiveDecode(BitStream& data, unsigned targetBits 
     Range_coders::Decoder range(raw_data);
     Range_coders::Binary_decoder coder(range);
     Range_models::Binary_history<
-        Range_models::Binary<Smarter_inertia_bits_zero>,
-        Range_models::Binary<Smarter_inertia_bits_one>> model(
+        Range_models::Binary,
+        Range_models::Binary> model(
             1,
-            Smarter_zeros_probability_one,
-            Smarter_ones_probability_one);
+            {Smarter_inertia_bits_zero, Smarter_zeros_probability_one},
+            {Smarter_inertia_bits_one, Smarter_ones_probability_one});
 
     BitStream result;
 
