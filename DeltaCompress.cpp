@@ -6137,69 +6137,101 @@ void Range_compress(std::vector<Frame>& frames)
 
 void Range_search(std::vector<Frame>& frames)
 {
-    auto packets = frames.size();
+    // RAM: TODO: Make encode/decode virtual so I can group all models into
+    // one array. Print out id of model so I can see which one is best.
+    using namespace Range_models;
 
-    std::vector<MinMaxSum> quat_changed_binary;
-    for (auto j = 0; j < 8; ++j)
+    // Generate our test itesm
+    std::vector<Binary> binarys;
+    for (auto i = 1 ; i < 8; ++i)
     {
-        quat_changed_binary.push_back({100000,0,0,0});
+        binarys.push_back(Binary(i));
     }
 
-    for (size_t p = PacketDelta; p < packets; ++p)
+    std::vector<Binary_two_speed> binary_two_speeds;
+    for (auto i = 1 ; i < 8; ++i)
     {
-        // Test best params for quat changed.
+        for (auto j = i ; j < 8; ++j)
         {
-            struct Test_set
-            {
-                Range_types::Bytes      data;
-                Range_models::Binary    model;
-            };
+            binary_two_speeds.push_back(Binary_two_speed(i,j));
+        }
+    }
 
-            std::vector<Test_set> tests;
+    std::vector<Binary_history<Binary, Binary>> histories;
+    for (auto a : binarys)
+    {
+        for (auto b : binarys)
+        {
+            histories.push_back(Binary_history<Binary, Binary>(0,a,b));
+            histories.push_back(Binary_history<Binary, Binary>(1,a,b));
+        }
+    }
 
+    std::vector<Range_models::Binary_history<Binary_two_speed, Binary_two_speed>>
+        histories_two_speed;
+
+    for (auto a : binary_two_speeds)
+    {
+        for (auto b : binary_two_speeds)
+        {
+            histories_two_speed.push_back(
+                Range_models::Binary_history<Binary_two_speed, Binary_two_speed>(0,a,b));
+            histories_two_speed.push_back(
+                Range_models::Binary_history<Binary_two_speed, Binary_two_speed>(1,a,b));
+        }
+    }
+
+    auto Run = [&](auto model) -> MinMaxSum
+    {
+        auto packets = frames.size();
+        MinMaxSum result = {10000,0,0,0};
+
+        for (size_t p = PacketDelta; p < packets; ++p)
+        {
             auto& base = frames[p-PacketDelta];
             auto& target = frames[p];
+            Range_types::Bytes data;
 
-            for (unsigned j = 0; j < 8; ++j)
             {
-                if (j == 0)
+                Range_coders::Encoder           range(data);
+                Range_coders::Binary_encoder    binary(range);
+
+                auto size = base.size();
+                for (unsigned i = 0; i < size; ++i)
                 {
-                    tests.push_back({{}, {1}});
-                    continue;
+                    auto quant_index_changed =
+                        base[i].orientation_largest != target[i].orientation_largest;
+
+                    auto quant_changed =
+                        (quant_index_changed) ||
+                        (base[i].orientation_a != target[i].orientation_a) ||
+                        (base[i].orientation_b != target[i].orientation_b) ||
+                        (base[i].orientation_c != target[i].orientation_c);
+
+                    model.Encode(binary, quant_changed);
                 }
-
-                tests.push_back({{}, {j}});
-
-                {
-                    Range_coders::Encoder           range(tests[j].data);
-                    Range_coders::Binary_encoder    binary(range);
-
-                    auto size = base.size();
-                    for (unsigned i = 0; i < size; ++i)
-                    {
-                        auto quant_index_changed =
-                            base[i].orientation_largest != target[i].orientation_largest;
-
-                        auto quant_changed =
-                            (quant_index_changed) ||
-                            (base[i].orientation_a != target[i].orientation_a) ||
-                            (base[i].orientation_b != target[i].orientation_b) ||
-                            (base[i].orientation_c != target[i].orientation_c);
-
-                        tests[j].model.Encode(binary, quant_changed);
-                    }
-                }
-
-                quat_changed_binary[j].Update(tests[j].data.size());
             }
+
+            result.Update(data.size());
         }
+
+        return result;
+    };
+
+    for (auto b : binarys)
+    {
+        auto r = Run(b);
+
+        printf("%d - %d - %f\n", r.min, r.max, Average(r));
     }
 
     printf("\n");
 
-    for (auto& s : quat_changed_binary)
+    for (auto b : binary_two_speeds)
     {
-        printf("%d - %d - %f\n", s.min, s.max, Average(s));
+        auto r = Run(b);
+
+        printf("%d - %d - %f\n", r.min, r.max, Average(r));
     }
 
     printf("\n==============================================\n");
