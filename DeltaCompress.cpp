@@ -6135,6 +6135,13 @@ void Range_compress(std::vector<Frame>& frames)
     printf("\n==============================================\n");
 }
 
+template<class MODEL>
+struct Test
+{
+    int id;
+    MODEL model;
+};
+
 void Range_search(std::vector<Frame>& frames)
 {
     // RAM: TODO: Make encode/decode virtual so I can group all models into
@@ -6142,46 +6149,70 @@ void Range_search(std::vector<Frame>& frames)
     using namespace Range_models;
 
     // Generate our test itesm
-    std::vector<Binary> binarys;
+    std::vector<Test<Binary>> binarys;
     for (auto i = 1 ; i < 8; ++i)
     {
-        binarys.push_back(Binary(i));
+        binarys.push_back({i,Binary(i)});
     }
 
-    std::vector<Binary_two_speed> binary_two_speeds;
+    std::vector<Test<Binary_two_speed>> binary_two_speeds;
     for (auto i = 1 ; i < 8; ++i)
     {
         for (auto j = i ; j < 8; ++j)
         {
-            binary_two_speeds.push_back(Binary_two_speed(i,j));
+            binary_two_speeds.push_back({i*10 + j, Binary_two_speed(i,j)});
         }
     }
 
-    std::vector<Binary_history<Binary, Binary>> histories;
+    std::vector<Test<Binary_history<Binary, Binary>>> histories;
     for (auto a : binarys)
     {
         for (auto b : binarys)
         {
-            histories.push_back(Binary_history<Binary, Binary>(0,a,b));
-            histories.push_back(Binary_history<Binary, Binary>(1,a,b));
+            // first been 0 or 1 only matters to about 0.0001 bits.
+            histories.push_back({100 + a.id * 10 + b.id, Binary_history<Binary, Binary>(0,a.model,b.model)});
         }
     }
 
-    std::vector<Range_models::Binary_history<Binary_two_speed, Binary_two_speed>>
+    std::vector<Test<Range_models::Binary_history<Binary_two_speed, Binary_two_speed>>>
         histories_two_speed;
 
     for (auto a : binary_two_speeds)
     {
         for (auto b : binary_two_speeds)
         {
-            histories_two_speed.push_back(
-                Range_models::Binary_history<Binary_two_speed, Binary_two_speed>(0,a,b));
-            histories_two_speed.push_back(
-                Range_models::Binary_history<Binary_two_speed, Binary_two_speed>(1,a,b));
+            histories_two_speed.push_back({10000 + 100 * a.id + b.id,
+                Range_models::Binary_history<Binary_two_speed, Binary_two_speed>(0,a.model,b.model)});
         }
     }
 
-    auto Run = [&](auto model) -> MinMaxSum
+    // lets go wtf for a moment.
+    std::vector<Test<Binary_history<Binary_history<Binary,Binary>, Binary_history<Binary,Binary>>>>
+        histories_two_history_binary;
+
+    for (auto a : binarys)
+    {
+        for (auto b : binarys)
+        {
+            for (auto a2 : binarys)
+            {
+                for (auto b2 : binarys)
+                {
+                    // first been 0 or 1 only matters to about 0.0001 bits.
+                    histories_two_history_binary.push_back(
+                    {
+                        (100 * (a.id * 10 + b.id)) + a2.id * 10 + b2.id,
+                        Binary_history<Binary_history<Binary,Binary>, Binary_history<Binary,Binary>>(
+                            0,
+                            {0,a.model,b.model},
+                            {1,a2.model,b2.model})
+                    });
+                }
+            }
+        }
+    }
+
+    auto Run = [&](auto test) -> MinMaxSum
     {
         auto packets = frames.size();
         MinMaxSum result = {10000,0,0,0};
@@ -6191,6 +6222,7 @@ void Range_search(std::vector<Frame>& frames)
             auto& base = frames[p-PacketDelta];
             auto& target = frames[p];
             Range_types::Bytes data;
+            data.reserve(70);
 
             {
                 Range_coders::Encoder           range(data);
@@ -6208,7 +6240,7 @@ void Range_search(std::vector<Frame>& frames)
                         (base[i].orientation_b != target[i].orientation_b) ||
                         (base[i].orientation_c != target[i].orientation_c);
 
-                    model.Encode(binary, quant_changed);
+                    test.Encode(binary, quant_changed);
                 }
             }
 
@@ -6218,21 +6250,37 @@ void Range_search(std::vector<Frame>& frames)
         return result;
     };
 
-    for (auto b : binarys)
+    auto Loop = [&](const auto& group, const char* name)
     {
-        auto r = Run(b);
+        printf("%s\n", name);
 
-        printf("%d - %d - %f\n", r.min, r.max, Average(r));
-    }
+        float best = 100000;
+        int best_id = -1;
 
-    printf("\n");
+        for (auto model : group)
+        {
+            auto r = Run(model.model);
 
-    for (auto b : binary_two_speeds)
-    {
-        auto r = Run(b);
+            auto a = Average(r);
 
-        printf("%d - %d - %f\n", r.min, r.max, Average(r));
-    }
+            if (a < best)
+            {
+                best = a;
+                best_id = model.id;
+            }
+
+            printf("%d: %d - %d - %f\n", model.id, r.min, r.max, Average(r));
+        }
+
+        printf("\nBest: %d -> %f\n", best_id, best);
+        printf("\n");
+    };
+
+    Loop(binarys, "Binarys");
+    Loop(binary_two_speeds, "binary_two_speeds");
+    Loop(histories, "histories");
+    Loop(histories_two_speed, "histories_two_speed");
+    Loop(histories_two_history_binary, "histories_two_history_binary");
 
     printf("\n==============================================\n");
 }
