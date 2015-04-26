@@ -26,8 +26,8 @@
 bool doTests            = false;
 bool doStats            = false;
 bool doCompression      = false;
-bool doRangeCompression = false;
-bool doRangeSearch      = true;
+bool doRangeCompression = true;
+bool doRangeSearch      = false;
 
 // //////////////////////////////////////////////////////
 
@@ -802,7 +802,20 @@ namespace {
         // interacting based on current interacting + quat/position changed.
         using Simple = Binary;
 
-        Binary_history<Simple, Simple> quant_changed;
+        Binary_history<Simple, Simple> quant_changed =
+        {
+            1,
+            {4, 31}
+        };
+
+//        Binary_history<
+//            Binary_history<Simple, Simple>,
+//            Binary_history<Simple, Simple>> quant_changed =
+//        {
+//            0,
+//            {0,6,7},
+//            {1,7,7}
+//        };
 
         // Test range vs tree
         // test if needed multiple models depending on previous model.
@@ -1105,11 +1118,6 @@ auto Encode_frames(
         model.quant.    Reduce_vector_using_magnitude = false;
         model.position. Reduce_vector_using_magnitude = true;
 
-        // Setting tuned defaults - does it help?
-        // (tests). Yup.
-        //model.quant_changed = {1, {4, 7926},{4, 31}};
-        model.quant_changed = {1, {4, 31}};
-
         unsigned max_position_delta =
             1 + static_cast<unsigned>(
                 frameDelta * MaxPositionChangePerSnapshot);
@@ -1223,8 +1231,6 @@ auto Decode_frames(
 
     model.quant.    Reduce_vector_using_magnitude = false;
     model.position. Reduce_vector_using_magnitude = true;
-
-    model.quant_changed = {1, {4, 31}};
 
     unsigned max_position_delta =
         1 + static_cast<unsigned>(
