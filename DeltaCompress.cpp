@@ -1742,6 +1742,186 @@ enum class Use_magnitude_as
     Vector_Magnitude,
 };
 
+unsigned BitVector3SortedReduxEncode(
+        IntVec3 vec,
+        unsigned maxMagnitude,
+        Use_magnitude_as use_magnitude_as,
+        BitStream& target)
+{
+    unsigned bitsUsed = 0;
+
+    // +1 for the sign bit.
+    unsigned maxBitsRequired = 1 + MinBits(maxMagnitude);
+
+    // //////////////////////////////////////////
+
+    assert(abs(vec.x) <= static_cast<int>(maxMagnitude));
+    assert(abs(vec.y) <= static_cast<int>(maxMagnitude));
+    assert(abs(vec.z) <= static_cast<int>(maxMagnitude));
+
+    // Sort from largest to smallest
+    auto zx = ZigZag(vec.x);
+    auto zy = ZigZag(vec.y);
+    auto zz = ZigZag(vec.z);
+
+    // default order, x,y,z.
+
+    auto top = 0;
+    auto next = 0;
+
+    {
+        using std::swap;
+
+        if  (
+                (zy > zx) &&
+                (zy >= zz)
+            )
+        {
+            swap(zx, zy);
+            top = 1;
+        }
+        else
+        {
+            if  (
+                    (zz > zx) &&
+                    (zz >= zy)
+                )
+            {
+                swap(zx, zz);
+                swap(zy, zz);
+                top = 2;
+            }
+        }
+
+        assert(zx >= zy);
+        assert(zx >= zz);
+
+        if (zz > zy)
+        {
+            swap(zy, zz);
+            next = 1;
+        }
+
+        assert(zy >= zz);
+    }
+
+    // //////////////////////////////////////////
+
+    // Send the most bits needed. Send the -ve so that
+    // if the values are normally large truncated encoding saves us
+    // a bit (RAM: TODO: TEST)
+    unsigned bits = MinBits(zx);
+
+    assert(maxBitsRequired >= bits);
+
+    auto bits_inverse = maxBitsRequired - bits;
+
+    bitsUsed += TruncateEncode(bits_inverse, maxBitsRequired, target);
+
+    if (!bits)
+    {
+        // everything after is zero, we're done.
+        return bitsUsed;
+    }
+
+    // We can drop the first bit since we know the exact
+    // amount of bits needed for the first term
+    {
+        auto zig_zag_max_magnitude = ZigZag(-maxMagnitude);
+        auto bits = MinBits(zig_zag_max_magnitude);
+
+        assert(bits <= maxBitsRequired);
+
+        // Don't need to send the top bit, as we know it's set since
+        // otherwise bits would be smaller.
+        {
+            auto mask = ((1 << (bits - 1)) - 1);
+            auto t = zig_zag & mask;
+
+            if (bits == maxBitsRequired)
+            {
+                // can truncate encode.
+                auto max_value = ZigZag(-maxMagnitude) & mask;
+                bitsUsed += TruncateEncode(t, max_value, target);
+            }
+            else
+            {
+                target.Write(t, bits - 1);
+                bitsUsed += bits - 1;
+            }
+        }
+
+        if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
+        {
+            maxMagnitude = Largest_next_magnitude(maxMagnitude, zig_zag);
+        }
+
+        maxBitsRequired = 1 + MinBits(maxMagnitude);
+        maxBitsRequired = std::min(maxBitsRequired, bits);
+    }
+
+    auto Code = [&](unsigned zig_zag, unsigned zig_zag_max_magnitude)
+    {
+        auto bits = MinBits(zig_zag_max_magnitude);
+
+        assert(bits <= maxBitsRequired);
+
+        target.Write(zig_zag, bits);
+        bitsUsed += bits;
+
+        if (use_magnitude_as == Use_magnitude_as::Vector_Magnitude)
+        {
+            maxMagnitude = Largest_next_magnitude(maxMagnitude, zig_zag);
+        }
+
+        maxBitsRequired = 1 + MinBits(maxMagnitude);
+        maxBitsRequired = std::min(maxBitsRequired, bits);
+    };
+
+    // //////////////////////////////////////////
+
+    Code(zy, zx);
+    Code(zz, zy);
+
+    // //////////////////////////////////////////
+
+    // Send the order everything is in.
+    {
+        if ((zx > zy) && (zy > zz))
+        {
+            bitsUsed += TruncateEncode(top, 3, target);
+            target.Write(next, 1);
+            ++bitsUsed;
+        }
+        else
+        {
+            // Only specify the full order if we need to.
+            if (!((zx == zy) && (zy == zz)))
+            {
+                // if two are equal, only send the position of
+                // the different one.
+                if (zx == zy)
+                {
+                    bitsUsed += TruncateEncode(3, 3, target);
+                }
+
+                if (zy == zz)
+                {
+                    bitsUsed += TruncateEncode(1, 3, target);
+                }
+
+                if (zz == zx)
+                {
+                    bitsUsed += TruncateEncode(2, 3, target);
+                }
+            }
+        }
+    }
+
+    return bitsUsed;
+}
+
+
 unsigned BitVector3SortedEncode(
         IntVec3 vec,
         unsigned maxMagnitude,
