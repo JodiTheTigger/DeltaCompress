@@ -23,7 +23,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = false;
+bool doTests            = true;
 bool doStats            = true;
 bool doCompression      = true;
 bool doRangeCompression = false;
@@ -1736,6 +1736,167 @@ IntVec3 BitVector3TruncatedDecode(
     result.z = ZigZag(zz);
 
     return result;
+}
+
+// //////////////////////////////////////////////////////
+
+using Quat = std::array<float, 4>;
+
+struct Gaffer
+{
+    unsigned largest_index;
+    int a;
+    int b;
+    int c;
+};
+
+float constexpr Magnitude_squared(const Quat& quat)
+{
+    return
+        quat[0] * quat[0] +
+        quat[1] * quat[1] +
+        quat[2] * quat[2] +
+        quat[3] * quat[3];
+}
+
+float q_to_g = 256.0 * 1.414213562373095048801688724209698078569671875;
+float g_to_q = 1.0 / (256.0 * 1.414213562373095048801688724209698078569671875);
+
+Quat ConvertGaffer(const Gaffer& gaffer)
+{
+    Quat result
+    {
+        (gaffer.a - 256) * g_to_q,
+        (gaffer.b - 256) * g_to_q,
+        (gaffer.c - 256) * g_to_q,
+        0.0,
+    };
+
+    // RAM: TODO: This still is broken.
+    auto largest = 1.0f - sqrt(Magnitude_squared(result));
+
+    assert(largest >= 0);
+
+    if (gaffer.largest_index == 0)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+        result[1] = result[0];
+    }
+
+    if (gaffer.largest_index == 1)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+    }
+
+    if (gaffer.largest_index == 2)
+    {
+        result[3] = result[2];
+    }
+
+    result[gaffer.largest_index] = largest;
+
+    {
+        auto mag = Magnitude_squared(result);
+        assert(std::abs(256 * (mag - 1.0f)) < 0.5f);
+    }
+
+    return result;
+}
+
+Gaffer ConvertGaffer(const Quat& quat)
+{
+    const auto size = quat.size();
+    unsigned largest_index = 0;
+    float largest = 0;
+
+    Quat squared
+    {
+        quat[0] * quat[0],
+        quat[1] * quat[1],
+        quat[2] * quat[2],
+        quat[3] * quat[3],
+    };
+
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if (squared[i] > std::abs(largest))
+        {
+            largest = squared[i];
+            largest_index = i;
+        }
+    }
+
+    auto write_index = 0;
+    Quat gaffer;
+
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if (i != largest_index)
+        {
+            gaffer[write_index] = quat[i];
+        }
+    }
+
+    return
+    {
+        largest_index,
+        static_cast<int>(round(gaffer[0] * q_to_g)),
+        static_cast<int>(round(gaffer[1] * q_to_g)),
+        static_cast<int>(round(gaffer[2] * q_to_g)),
+    };
+}
+
+void Gaffer_tests()
+{
+    for (int i = 0; i < 512; ++i)
+    {
+        for (int j = 0; j < 512; j += 11)
+        {
+            for (int k = 0; k < 512; k += 37)
+            {
+                // Ahah! I spot an oppertunity to compress
+                // Not all permitations of the gaffer are valid.
+                Quat g
+                {
+                    (i - 256) * g_to_q,
+                    (j - 256) * g_to_q,
+                    (k - 256) * g_to_q,
+                    0.0,
+                };
+
+                auto largest = 1.0f - sqrt(Magnitude_squared(g));
+
+                bool valid = (largest >= 0);
+                valid &= largest >= std::abs(g[0]);
+                valid &= largest >= std::abs(g[1]);
+                valid &= largest >= std::abs(g[2]);
+
+                if (valid)
+                {
+                    for (unsigned l = 0; l < 4; ++l)
+                    {
+                        auto gaffer = Gaffer
+                        {
+                            l,
+                            i,
+                            j,
+                            k
+                        };
+
+                        auto quat = ConvertGaffer(gaffer);
+                        auto result = ConvertGaffer(quat);
+
+                        assert(result.largest_index == gaffer.largest_index);
+                        assert(result.a == gaffer.a);
+                        assert(result.b == gaffer.b);
+                        assert(result.c == gaffer.c);
+                    }
+                }
+            }
+        }
+    }
 }
 
 // //////////////////////////////////////////////////////
@@ -6177,6 +6338,7 @@ Frame Decode(
 
 void Tests()
 {
+    Gaffer_tests();
     Model_tests();
     Range_tests();
     RunLengthTests();
