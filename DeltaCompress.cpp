@@ -1766,11 +1766,27 @@ unsigned Sorted_no_bit_count_Encode(
     auto zz = ZigZag(vec.z);
 
     // default order, x,y,z.
+    auto top = 0;
+    auto next = 0;
+    auto odd = -1;
+
+    {
+        if ((zx != zy) && (zy == zz))
+        {
+            odd = 0;
+        }
+        if ((zx != zy) && (zx == zz))
+        {
+            odd = 1;
+        }
+        if ((zx == zy) && (zy != zz))
+        {
+            odd = 2;
+        }
+    }
+
     {
         using std::swap;
-
-        auto top = 0;
-        auto next = 0;
 
         if  (
                 (zy > zx) &&
@@ -1803,10 +1819,6 @@ unsigned Sorted_no_bit_count_Encode(
         }
 
         assert(zy >= zz);
-
-        bitsUsed += TruncateEncode(top, 3, target);
-        target.Write(next, 1);
-        ++bitsUsed;
     }
 
     // //////////////////////////////////////////
@@ -1835,19 +1847,33 @@ unsigned Sorted_no_bit_count_Encode(
 
     Code(zx);
 
-    if (!zx)
+    if (zx)
     {
-        return bitsUsed;
+        Code(zy);
+
+        if (zy)
+        {
+            Code(zz);
+        }
     }
 
-    Code(zy);
+    // //////////////////////////////////////////
 
-    if (!zy)
+    bool all_same = (zx == zy) && (zy == zz);
+
+    if (!all_same)
     {
-        return bitsUsed;
+        if (odd < 0)
+        {
+            bitsUsed += TruncateEncode(top, 3, target);
+            target.Write(next, 1);
+            ++bitsUsed;
+        }
+        else
+        {
+            bitsUsed += TruncateEncode(odd, 3, target);
+        }
     }
-
-    Code(zz);
 
     return bitsUsed;
 }
@@ -1862,8 +1888,8 @@ IntVec3 Sorted_no_bit_count_Decode(
     // //////////////////////////////////////////
 
     // Read the Order
-    auto largest = TruncateDecode(3, source);
-    auto nextLargest = source.Read(1);
+    auto largest = 0;
+    auto nextLargest = 0;
 
     auto ReturnSorted = [&largest, &nextLargest](IntVec3 vec) -> IntVec3
     {
@@ -1916,19 +1942,63 @@ IntVec3 Sorted_no_bit_count_Decode(
 
     Code(result.x);
 
-    if (!result.x)
+    if (result.x)
     {
-        return ReturnSorted(result);
+        Code(result.y);
+
+        if (result.y)
+        {
+            Code(result.z);
+        }
     }
 
-    Code(result.y);
+    // //////////////////////////////////////////
 
-    if (!result.y)
+    if ((result.x != result.y) || (result.y != result.z))
     {
-        return ReturnSorted(result);
-    }
+        if ((result.x != result.y) && (result.y != result.z))
+        {
+            largest = TruncateDecode(3, source);
+            nextLargest = source.Read(1);
+        }
+        else
+        {
+            bool all_same = (result.x == result.y) && (result.y == result.z);
 
-    Code(result.z);
+            if (!all_same)
+            {
+                auto odd_one = TruncateDecode(3, source);
+
+                if (result.x != result.y)
+                {
+                    largest = odd_one;
+                }
+                else
+                {
+                    switch (odd_one)
+                    {
+                        default:
+                        case 0:
+                        {
+                            largest = 1;
+                            nextLargest = 1;
+                            break;
+                        }
+                        case 1:
+                        {
+                            largest = 0;
+                            nextLargest = 1;
+                            break;
+                        }
+                        case 2:
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     return ReturnSorted(result);
 }
@@ -2930,9 +3000,11 @@ void BitVector3Tests()
     {
         auto values =
         {
+            IntVec3{    68,   -32,    68},
+            IntVec3{    68,    68,   -32},
+            IntVec3{   -1,    -1586,  0},
             IntVec3{   -1634, -106,   17},
             IntVec3{   -1634, -106,   0},
-            IntVec3{   -1,    -1586,  0},
             IntVec3{    0,     0,     1},
             IntVec3{    0,     0,     0},
         };
