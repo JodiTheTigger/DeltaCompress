@@ -1773,7 +1773,7 @@ Quat ConvertGaffer(const Gaffer& gaffer)
     };
 
     // RAM: TODO: This still is broken.
-    auto largest = 1.0f - sqrt(Magnitude_squared(result));
+    auto largest = sqrt(1.0f - Magnitude_squared(result));
 
     assert(largest >= 0);
 
@@ -1799,7 +1799,8 @@ Quat ConvertGaffer(const Gaffer& gaffer)
 
     {
         auto mag = Magnitude_squared(result);
-        assert(std::abs(256 * (mag - 1.0f)) < 0.5f);
+        auto quantised = 256 * (mag - 1.0f);
+        assert(std::abs(quantised) < 0.5f);
     }
 
     return result;
@@ -1821,7 +1822,7 @@ Gaffer ConvertGaffer(const Quat& quat)
 
     for (unsigned i = 0; i < size; ++i)
     {
-        if (squared[i] > std::abs(largest))
+        if (squared[i] > largest)
         {
             largest = squared[i];
             largest_index = i;
@@ -1835,16 +1836,16 @@ Gaffer ConvertGaffer(const Quat& quat)
     {
         if (i != largest_index)
         {
-            gaffer[write_index] = quat[i];
+            gaffer[write_index++] = quat[i];
         }
     }
 
     return
     {
         largest_index,
-        static_cast<int>(round(gaffer[0] * q_to_g)),
-        static_cast<int>(round(gaffer[1] * q_to_g)),
-        static_cast<int>(round(gaffer[2] * q_to_g)),
+        256 + static_cast<int>(round(gaffer[0] * q_to_g)),
+        256 + static_cast<int>(round(gaffer[1] * q_to_g)),
+        256 + static_cast<int>(round(gaffer[2] * q_to_g)),
     };
 }
 
