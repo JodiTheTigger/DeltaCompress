@@ -3219,96 +3219,142 @@ IntVec3 GafferDecode(
 
 void BitVector3Tests()
 {
+    {
+        auto max = 256;
+
+        for (auto i = 5 - max; i < max; i+=23)
+        {
+            for (auto j = 53 - max; j < max; j+=37)
+            {
+                for (auto k = 0; k < max; k+=17)
+                {
+                    {
+                        IntVec3 q
+                        {
+                            i * i,
+                            j * j,
+                            k * k
+                        };
+
+                        auto largest = q.x;
+                        if (q.y > largest)
+                        {
+                            largest = q.y;
+                        }
+                        if (q.z > largest)
+                        {
+                            largest = q.z;
+                        }
+
+                        auto mag = sqrt(largest + q.x + q.y + q.z);
+                        auto mag_q = mag * g_to_q;
+                        if (mag_q > 1.0)
+                        {
+                            continue;
+                        }
+                    }
+
+                    IntVec3 data =
+                    {
+                        i,
+                        j,
+                        k,
+                    };
+
+                    BitStream encoded;
+
+                    Sorted_no_bit_count_Encode(
+                        data,
+                        256,
+                        Use_magnitude_as::Gaffer_Encode,
+                        encoded);
+
+                    encoded.Reset();
+
+                    auto decoded = Sorted_no_bit_count_Decode(
+                        256,
+                        Use_magnitude_as::Gaffer_Encode,
+                        encoded);
+
+                    assert(data.x == decoded.x);
+                    assert(data.y == decoded.y);
+                    assert(data.z == decoded.z);
+                }
+            }
+        }
+    }
+
+    // //////////////////////////////////////////////////
+
     using namespace std::placeholders;
 
     struct Test
     {
         std::function<unsigned(IntVec3, unsigned, BitStream&)> encode;
         std::function<IntVec3(unsigned, BitStream&)> decode;
-        int max_magnitude;
     };
-
-    const int max_for_position = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
-    const int max_for_quat = 256;
 
     std::vector<Test> tests;
 
     tests.push_back(
     {
-        std::bind(Sorted_no_bit_count_Encode, _1, _2, Use_magnitude_as::Gaffer_Encode, _3),
-        std::bind(Sorted_no_bit_count_Decode, _1, Use_magnitude_as::Gaffer_Encode, _2),
-        max_for_quat,
-    });
-
-    tests.push_back(
-    {
         std::bind(Sorted_no_bit_count_Encode, _1, _2, Use_magnitude_as::Vector_Magnitude, _3),
         std::bind(Sorted_no_bit_count_Decode, _1, Use_magnitude_as::Vector_Magnitude, _2),
-        max_for_position,
     });
 
     tests.push_back(
     {
         std::bind(Sorted_no_bit_count_Encode, _1, _2, Use_magnitude_as::Constant, _3),
         std::bind(Sorted_no_bit_count_Decode, _1, Use_magnitude_as::Constant, _2),
-        max_for_position,
     });
 
     tests.push_back(
     {
         std::bind(BitVector3SortedEncode, _1, _2, Use_magnitude_as::Vector_Magnitude, _3),
         std::bind(BitVector3SortedDecode, _1, Use_magnitude_as::Vector_Magnitude, _2),
-        max_for_position,
     });
 
     tests.push_back(
     {
         std::bind(BitVector3SortedEncode, _1, _2, Use_magnitude_as::Constant, _3),
         std::bind(BitVector3SortedDecode, _1, Use_magnitude_as::Constant, _2),
-        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3UnrelatedEncode,
         BitVector3UnrelatedDecode,
-        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3BitCountEncode,
         BitVector3BitCountDecode,
-        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3TruncatedEncode,
         BitVector3TruncatedDecode,
-        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3Encode2BitExpPrefix,
         BitVector3Decode2BitExpPrefix,
-        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3Encode,
         BitVector3Decode,
-        max_for_position,
     });
 
+    int const max = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
     for (const auto& test : tests)
     {
         auto values =
         {
-            IntVec3{   -113,  -55,    221},
-            IntVec3{   -251,  -18,    0},
             IntVec3{    68,   -32,    68},
             IntVec3{    68,    68,   -32},
             IntVec3{   -1,    -1586,  0},
@@ -3322,38 +3368,29 @@ void BitVector3Tests()
         {
             BitStream encoded;
 
-            if  (
-                    (abs(data.x) > test.max_magnitude) ||
-                    (abs(data.y) > test.max_magnitude) ||
-                    (abs(data.z) > test.max_magnitude)
-                )
-            {
-                continue;
-            }
-
             test.encode(
                 data,
-                test.max_magnitude,
+                max,
                 encoded);
 
             encoded.Reset();
 
-            auto decoded = test.decode(test.max_magnitude, encoded);
+            auto decoded = test.decode(max, encoded);
 
             assert(data.x == decoded.x);
             assert(data.y == decoded.y);
             assert(data.z == decoded.z);
         }
 
-        for (auto i = 5 - test.max_magnitude; i < test.max_magnitude; i+=23)
+        for (auto i = 5 - max; i < max; i+=23)
         {
-            for (auto j = 53 - test.max_magnitude; j < test.max_magnitude; j+=37)
+            for (auto j = 53 - max; j < max; j+=37)
             {
-                for (auto k = 0; k < test.max_magnitude; k+=17)
+                for (auto k = 0; k < max; k+=17)
                 {
                     auto mag = sqrt(i*i + j*j + k*k);
 
-                    if (mag > test.max_magnitude)
+                    if (mag > max)
                     {
                         continue;
                     }
@@ -3369,12 +3406,12 @@ void BitVector3Tests()
 
                     test.encode(
                         data,
-                        test.max_magnitude,
+                        max,
                         encoded);
 
                     encoded.Reset();
 
-                    auto decoded = test.decode(test.max_magnitude, encoded);
+                    auto decoded = test.decode(max, encoded);
 
                     assert(data.x == decoded.x);
                     assert(data.y == decoded.y);
@@ -3447,7 +3484,7 @@ void BitVector3Tests()
             for (const auto& b : testValues)
             {
                 for (const auto& c : testValues)
-                {                    
+                {
                     IntVec3 base{a,b,c};
                     IntVec3 target{c,a,b};
 
@@ -6495,12 +6532,12 @@ Frame Decode(
 
 void Tests()
 {
+    BitVector3Tests();
     Max_gaffer_tests();
     Gaffer_tests();
     Model_tests();
     Range_tests();
     RunLengthTests();
-    BitVector3Tests();
     ZigZagTest();
     TruncateTest();
     GaffersRangeTest();
