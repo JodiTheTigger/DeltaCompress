@@ -23,9 +23,9 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = true;
-bool doStats            = false;
-bool doCompression      = false;
+bool doTests            = false;
+bool doStats            = true;
+bool doCompression      = true;
 bool doRangeCompression = false;
 bool doRangeSearch      = false;
 
@@ -5054,11 +5054,35 @@ std::vector<uint8_t> EncodeStats(
                         else
                         {
                             deltas.Write(1, 1);
-                            deltas.Write(target[i].orientation_a, RotationMaxBits);
-                            deltas.Write(target[i].orientation_b, RotationMaxBits);
-                            deltas.Write(target[i].orientation_c, RotationMaxBits);
 
-                            bitsWritten += 1 + vec3BitsUncompressed;
+//                            if (config.quatPacker == QuatPacker::Sorted_no_bit_count)
+//                            {
+//                                IntVec3 full
+//                                {
+//                                    target[i].orientation_a - 256,
+//                                    target[i].orientation_b - 256,
+//                                    target[i].orientation_c - 256,
+//                                };
+
+//                                BitStream encoded2;
+
+//                                auto codedBits = Sorted_no_bit_count_Encode(
+//                                    full,
+//                                    (1 << RotationMaxBits) - 1,
+//                                    Use_magnitude_as::Constant,
+//                                    encoded2);
+
+//                                deltas.Write(encoded);
+//                                bitsWritten += 1 + codedBits;
+//                            }
+//                            else
+                            {
+                                deltas.Write(target[i].orientation_a, RotationMaxBits);
+                                deltas.Write(target[i].orientation_b, RotationMaxBits);
+                                deltas.Write(target[i].orientation_c, RotationMaxBits);
+
+                                bitsWritten += 1 + vec3BitsUncompressed;
+                            }
                         }
                     }
                     else
@@ -7060,7 +7084,7 @@ int main(int, char**)
     {
         ChangedArrayEncoding::RangeSmarterAdaptive,
         PosVector3Packer::Sorted_no_bit_count,
-        QuatPacker::Gaffer,
+        QuatPacker::BitVector3Sorted,
     };
 
     if (doStats)
