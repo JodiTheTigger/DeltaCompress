@@ -24,8 +24,8 @@
 // //////////////////////////////////////////////////////
 
 bool doTests            = true;
-bool doStats            = true;
-bool doCompression      = true;
+bool doStats            = false;
+bool doCompression      = false;
 bool doRangeCompression = false;
 bool doRangeSearch      = false;
 
@@ -1759,8 +1759,8 @@ float constexpr Magnitude_squared(const Quat& quat)
         quat[3] * quat[3];
 }
 
-float q_to_g = 256.0 * 1.414213562373095048801688724209698078569671875;
-float g_to_q = 1.0 / (256.0 * 1.414213562373095048801688724209698078569671875);
+float q_to_g = 255.0 * 1.414213562373095048801688724209698078569671875;
+float g_to_q = 1.0 / (255.0 * 1.414213562373095048801688724209698078569671875);
 
 Quat ConvertGaffer(const Gaffer& gaffer)
 {
@@ -1867,7 +1867,7 @@ void Gaffer_tests()
                     0.0,
                 };
 
-                auto largest = 1.0f - sqrt(Magnitude_squared(g));
+                auto largest = sqrt(1.0f - Magnitude_squared(g));
 
                 bool valid = (largest >= 0);
                 valid &= largest >= std::abs(g[0]);
@@ -1900,12 +1900,85 @@ void Gaffer_tests()
     }
 }
 
+int Max_gaffer_value(int second_largest)
+{
+    float second = second_largest * g_to_q;
+
+    // next value is the largest if the lagest value is the smallest.
+    // The smallest fir lagest can be is the same size as the second
+    // largest.
+    // And since the magnitude sums to one, we can get a max bound
+    // for the third value.
+    float s = 2 * second * second;
+
+    if (s >= 1.0f)
+    {
+        return 0;
+    }
+
+    float mag = sqrt(1.0f - s);
+    auto quantised = mag * q_to_g;
+
+    if (quantised < 0.5f)
+    {
+        return 0;
+    }
+
+    return static_cast<int>(quantised) + 1;
+}
+
+int Max_gaffer_value(int second_largest, int third_largest)
+{
+    float second = second_largest * g_to_q;
+    float third = third_largest * g_to_q;
+    float s = (2 * second * second) + (third * third);
+
+    if (s >= 1.0f)
+    {
+        return 0;
+    }
+
+    float mag = sqrt(1.0f - s);
+    auto quantised = mag * q_to_g;
+
+    if (quantised < 0.5f)
+    {
+        return 0;
+    }
+
+    return static_cast<int>(quantised) + 1;
+}
+
+void Max_gaffer_tests()
+{
+    {
+        auto should_be_zero = Max_gaffer_value(256);
+        assert(should_be_zero == 0);
+    }
+
+//    for (int i = 0; i < 256; ++i)
+//    {
+//        auto result = std::min(i, Max_gaffer_value(i));
+//        printf("%d: -> %d\n", i, result);
+//    }
+
+//    for (int i = 0; i < 256; ++i)
+//    {
+//        for (int j = 0; j < i; ++j)
+//        {
+//            auto result = std::min(j, Max_gaffer_value(i, j));
+//            printf("%d, %d: -> %d\n", i, j, result);
+//        }
+//    }
+}
+
 // //////////////////////////////////////////////////////
 
 enum class Use_magnitude_as
 {
     Constant,
     Vector_Magnitude,
+    Gaffer_Encode,
 };
 
 unsigned Sorted_no_bit_count_Encode(
@@ -1986,6 +2059,10 @@ unsigned Sorted_no_bit_count_Encode(
     // //////////////////////////////////////////
 
     auto zig_zag_max = ZigZag(-static_cast<int>(maxMagnitude));
+    auto index_count = 0;
+
+    // Ick
+    auto x = ZigZag(zx);
 
     // //////////////////////////////////////////
 
@@ -2000,6 +2077,30 @@ unsigned Sorted_no_bit_count_Encode(
             maxMagnitude = Largest_next_magnitude(maxMagnitude, zig_zag);
         }
 
+        if (use_magnitude_as == Use_magnitude_as::Gaffer_Encode)
+        {
+            switch (index_count++)
+            {
+                case 0:
+                {
+                    maxMagnitude = Max_gaffer_value(x);
+                    break;
+                }
+                case 1:
+                {
+                    maxMagnitude = Max_gaffer_value(x,ZigZag(zig_zag));
+                    break;
+                }
+
+                default:
+                case 2:
+                {
+                    maxMagnitude = 0;
+                    break;
+                }
+            }
+        }
+
         zig_zag_max = std::min(
             zig_zag,
             ZigZag(-static_cast<int>(maxMagnitude)));
@@ -2009,11 +2110,11 @@ unsigned Sorted_no_bit_count_Encode(
 
     Code(zx);
 
-    if (zx)
+    if ((zx) && (zig_zag_max))
     {
         Code(zy);
 
-        if (zy)
+        if ((zy) && (zig_zag_max))
         {
             Code(zz);
         }
@@ -2081,6 +2182,7 @@ IntVec3 Sorted_no_bit_count_Decode(
     // //////////////////////////////////////////
 
     auto zig_zag_max = ZigZag(-static_cast<int>(maxMagnitude));
+    auto index_count = 0;
 
     // //////////////////////////////////////////
 
@@ -2095,6 +2197,30 @@ IntVec3 Sorted_no_bit_count_Decode(
             maxMagnitude = Largest_next_magnitude(maxMagnitude, zig_zag);
         }
 
+        if (use_magnitude_as == Use_magnitude_as::Gaffer_Encode)
+        {
+            switch (index_count++)
+            {
+                case 0:
+                {
+                    maxMagnitude = Max_gaffer_value(target);
+                    break;
+                }
+                case 1:
+                {
+                    maxMagnitude = Max_gaffer_value(result.x,target);
+                    break;
+                }
+
+                default:
+                case 2:
+                {
+                    maxMagnitude = 0;
+                    break;
+                }
+            }
+        }
+
         zig_zag_max = std::min(
             zig_zag,
             ZigZag(-static_cast<int>(maxMagnitude)));
@@ -2104,11 +2230,11 @@ IntVec3 Sorted_no_bit_count_Decode(
 
     Code(result.x);
 
-    if (result.x)
+    if ((result.x) && (zig_zag_max))
     {
         Code(result.y);
 
-        if (result.y)
+        if ((result.y) && (zig_zag_max))
         {
             Code(result.z);
         }
@@ -3099,69 +3225,90 @@ void BitVector3Tests()
     {
         std::function<unsigned(IntVec3, unsigned, BitStream&)> encode;
         std::function<IntVec3(unsigned, BitStream&)> decode;
+        int max_magnitude;
     };
+
+    const int max_for_position = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
+    const int max_for_quat = 256;
 
     std::vector<Test> tests;
 
     tests.push_back(
     {
+        std::bind(Sorted_no_bit_count_Encode, _1, _2, Use_magnitude_as::Gaffer_Encode, _3),
+        std::bind(Sorted_no_bit_count_Decode, _1, Use_magnitude_as::Gaffer_Encode, _2),
+        max_for_quat,
+    });
+
+    tests.push_back(
+    {
         std::bind(Sorted_no_bit_count_Encode, _1, _2, Use_magnitude_as::Vector_Magnitude, _3),
         std::bind(Sorted_no_bit_count_Decode, _1, Use_magnitude_as::Vector_Magnitude, _2),
+        max_for_position,
     });
 
     tests.push_back(
     {
         std::bind(Sorted_no_bit_count_Encode, _1, _2, Use_magnitude_as::Constant, _3),
         std::bind(Sorted_no_bit_count_Decode, _1, Use_magnitude_as::Constant, _2),
+        max_for_position,
     });
 
     tests.push_back(
     {
         std::bind(BitVector3SortedEncode, _1, _2, Use_magnitude_as::Vector_Magnitude, _3),
         std::bind(BitVector3SortedDecode, _1, Use_magnitude_as::Vector_Magnitude, _2),
+        max_for_position,
     });
 
     tests.push_back(
     {
         std::bind(BitVector3SortedEncode, _1, _2, Use_magnitude_as::Constant, _3),
         std::bind(BitVector3SortedDecode, _1, Use_magnitude_as::Constant, _2),
+        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3UnrelatedEncode,
         BitVector3UnrelatedDecode,
+        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3BitCountEncode,
         BitVector3BitCountDecode,
+        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3TruncatedEncode,
         BitVector3TruncatedDecode,
+        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3Encode2BitExpPrefix,
         BitVector3Decode2BitExpPrefix,
+        max_for_position,
     });
 
     tests.push_back(
     {
         BitVector3Encode,
         BitVector3Decode,
+        max_for_position,
     });
 
-    int const max = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
     for (const auto& test : tests)
     {
         auto values =
         {
+            IntVec3{   -113,  -55,    221},
+            IntVec3{   -251,  -18,    0},
             IntVec3{    68,   -32,    68},
             IntVec3{    68,    68,   -32},
             IntVec3{   -1,    -1586,  0},
@@ -3175,29 +3322,38 @@ void BitVector3Tests()
         {
             BitStream encoded;
 
+            if  (
+                    (abs(data.x) > test.max_magnitude) ||
+                    (abs(data.y) > test.max_magnitude) ||
+                    (abs(data.z) > test.max_magnitude)
+                )
+            {
+                continue;
+            }
+
             test.encode(
                 data,
-                max,
+                test.max_magnitude,
                 encoded);
 
             encoded.Reset();
 
-            auto decoded = test.decode(max, encoded);
+            auto decoded = test.decode(test.max_magnitude, encoded);
 
             assert(data.x == decoded.x);
             assert(data.y == decoded.y);
             assert(data.z == decoded.z);
         }
 
-        for (auto i = 5 - max; i < max; i+=23)
+        for (auto i = 5 - test.max_magnitude; i < test.max_magnitude; i+=23)
         {
-            for (auto j = 53 - max; j < max; j+=37)
+            for (auto j = 53 - test.max_magnitude; j < test.max_magnitude; j+=37)
             {
-                for (auto k = 0; k < max; k+=17)
+                for (auto k = 0; k < test.max_magnitude; k+=17)
                 {
                     auto mag = sqrt(i*i + j*j + k*k);
 
-                    if (mag > max)
+                    if (mag > test.max_magnitude)
                     {
                         continue;
                     }
@@ -3213,12 +3369,12 @@ void BitVector3Tests()
 
                     test.encode(
                         data,
-                        max,
+                        test.max_magnitude,
                         encoded);
 
                     encoded.Reset();
 
-                    auto decoded = test.decode(max, encoded);
+                    auto decoded = test.decode(test.max_magnitude, encoded);
 
                     assert(data.x == decoded.x);
                     assert(data.y == decoded.y);
@@ -6339,6 +6495,7 @@ Frame Decode(
 
 void Tests()
 {
+    Max_gaffer_tests();
     Gaffer_tests();
     Model_tests();
     Range_tests();
