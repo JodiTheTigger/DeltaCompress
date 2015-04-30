@@ -23,7 +23,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = true;
+bool doTests            = false;
 bool doStats            = true;
 bool doCompression      = true;
 bool doRangeCompression = false;
@@ -771,6 +771,7 @@ void TruncateTest()
 
     auto Test = [](const std::vector<Set>& sets)
     {
+        BitStream coded2;
         BitStream coded;
 
         for (const auto& set : sets)
@@ -5132,7 +5133,7 @@ std::vector<uint8_t> EncodeStats(
                                     Use_magnitude_as::Gaffer_Encode,
                                     encoded2);
 
-                                deltas.Write(encoded);
+                                deltas.Write(encoded2);
                                 bitsWritten += 1 + codedBits;
                             }
                             else
@@ -5832,7 +5833,7 @@ std::vector<uint8_t> Encode(
                                     Use_magnitude_as::Gaffer_Encode,
                                     encoded2);
 
-                                deltas.Write(encoded);
+                                deltas.Write(encoded2);
                                 bitsWritten += 1 + codedBits;
                             }
                             else
