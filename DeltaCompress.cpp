@@ -1948,11 +1948,6 @@ int Max_gaffer_value(int second_largest)
     // for the third value.
     auto s = 2 * second * second;
 
-    if (s >= (256 * 256 * 2))
-    {
-        return 0;
-    }
-
     float mag = sqrt(q_max_s - s);
     auto quantised = mag;
 
@@ -1969,11 +1964,6 @@ int Max_gaffer_value(int second_largest, int third_largest)
     auto second = second_largest;
     auto third = third_largest;
     auto s = (2 * second * second) + (third * third);
-
-    if (s >= (256 * 256 * 2))
-    {
-        return 0;
-    }
 
     float mag = sqrt(q_max_s - s);
     auto quantised = mag;
@@ -3396,7 +3386,7 @@ void BitVector3Tests()
     {
         auto values =
         {
-            IntVec3{    120,   223,   31},
+            IntVec3{   -256,   5,     -6},
             IntVec3{   -1,    -32,   -255},
             IntVec3{   -155,   58,   -228},
             IntVec3{    68,   -32,    68},
@@ -5832,6 +5822,9 @@ std::vector<uint8_t> Encode(
                                     (1 << RotationMaxBits) - 1,
                                     Use_magnitude_as::Gaffer_Encode,
                                     encoded2);
+
+                                // Bother :-(
+                                assert(codedBits <= vec3BitsUncompressed);
 
                                 deltas.Write(encoded2);
                                 bitsWritten += 1 + codedBits;
