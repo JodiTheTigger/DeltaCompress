@@ -763,14 +763,46 @@ void TruncateTest()
     const unsigned count = 10;
     const unsigned max = count - 1;
 
-    for (unsigned i = 0; i < count; ++i)
+    struct Set
+    {
+        unsigned i;
+        unsigned max;
+    };
+
+    auto Test = [](const std::vector<Set>& sets)
     {
         BitStream coded;
-        TruncateEncode(i, max, coded);
-        coded.Reset();
-        auto result = TruncateDecode(max, coded);
 
-        assert(result == i);
+        for (const auto& set : sets)
+        {
+            TruncateEncode(set.i, set.max, coded);
+        }
+
+        coded.Reset();
+
+        for (const auto& set : sets)
+        {
+            auto result = TruncateDecode(set.max, coded);
+
+            assert(result == set.i);
+        }
+    };
+
+    {
+        std::vector<Set> set
+        {
+            {446, 1021},
+            {240, 359},
+            {62, 240},
+        };
+
+        Test(set);
+    }
+
+    for (unsigned i = 0; i < count; ++i)
+    {
+        std::vector<Set> set = {{i, max}};
+        Test(set);
     }
 }
 // //////////////////////////////////////////////////////
@@ -3363,6 +3395,7 @@ void BitVector3Tests()
     {
         auto values =
         {
+            IntVec3{    120,   223,   31},
             IntVec3{   -1,    -32,   -255},
             IntVec3{   -155,   58,   -228},
             IntVec3{    68,   -32,    68},
@@ -6375,8 +6408,6 @@ Frame Decode(
                     }
                     else
                     {
-
-
                         if (config.quatPacker == QuatPacker::Sorted_no_bit_count)
                         {
                             auto g = Sorted_no_bit_count_Decode(
@@ -6610,6 +6641,7 @@ Frame Decode(
 
 void Tests()
 {
+    TruncateTest();
     BitVector3Tests();
     Max_gaffer_tests();
     Gaffer_tests();
@@ -6617,7 +6649,6 @@ void Tests()
     Range_tests();
     RunLengthTests();
     ZigZagTest();
-    TruncateTest();
     GaffersRangeTest();
     BitStreamTest();
 }
