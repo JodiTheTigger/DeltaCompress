@@ -23,7 +23,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = false;
+bool doTests            = true;
 bool doStats            = true;
 bool doCompression      = true;
 bool doRangeCompression = false;
@@ -1759,8 +1759,12 @@ float constexpr Magnitude_squared(const Quat& quat)
         quat[3] * quat[3];
 }
 
-float q_to_g = 255.0 * 1.414213562373095048801688724209698078569671875;
-float g_to_q = 1.0 / (255.0 * 1.414213562373095048801688724209698078569671875);
+float q_to_g = 256.0 * 1.414213562373095048801688724209698078569671875;
+float g_to_q = 1.0 / (256.0 * 1.414213562373095048801688724209698078569671875);
+
+// stupid float precision and quantising
+const float q_max_s = 256.49 * 256.49 * 2.0;
+const float q_max = std::truncf(sqrt(q_max_s)) + 0.49;
 
 Quat ConvertGaffer(const Gaffer& gaffer)
 {
@@ -1902,22 +1906,22 @@ void Gaffer_tests()
 
 int Max_gaffer_value(int second_largest)
 {
-    float second = second_largest * g_to_q;
+    auto second = second_largest;
 
     // next value is the largest if the lagest value is the smallest.
     // The smallest fir lagest can be is the same size as the second
     // largest.
     // And since the magnitude sums to one, we can get a max bound
     // for the third value.
-    float s = 2 * second * second;
+    auto s = 2 * second * second;
 
-    if (s >= 1.0f)
+    if (s >= (256 * 256 * 2))
     {
         return 0;
     }
 
-    float mag = sqrt(1.0f - s);
-    auto quantised = mag * q_to_g;
+    float mag = sqrt(q_max_s - s);
+    auto quantised = mag;
 
     if (quantised < 0.5f)
     {
@@ -1929,17 +1933,17 @@ int Max_gaffer_value(int second_largest)
 
 int Max_gaffer_value(int second_largest, int third_largest)
 {
-    float second = second_largest * g_to_q;
-    float third = third_largest * g_to_q;
-    float s = (2 * second * second) + (third * third);
+    auto second = second_largest;
+    auto third = third_largest;
+    auto s = (2 * second * second) + (third * third);
 
-    if (s >= 1.0f)
+    if (s >= (256 * 256 * 2))
     {
         return 0;
     }
 
-    float mag = sqrt(1.0f - s);
-    auto quantised = mag * q_to_g;
+    float mag = sqrt(q_max_s - s);
+    auto quantised = mag;
 
     if (quantised < 0.5f)
     {
@@ -3231,27 +3235,48 @@ void BitVector3Tests()
 
     auto Valid_gaffer = [](int i, int j, int k, int) -> bool
     {
-        IntVec3 q
+        IntVec3 qs
         {
-            i * i,
-            j * j,
-            k * k
+            i*i,
+            j*j,
+            k*k,
         };
 
-        auto largest = q.x;
-        if (q.y > largest)
+        if (qs.x < qs.z)
         {
-            largest = q.y;
+            qs = {qs.z, qs.y, qs.x};
         }
-        if (q.z > largest)
+        if (qs.y < qs.z)
         {
-            largest = q.z;
+            qs = {qs.x, qs.z, qs.y};
         }
 
-        auto mag = sqrt(largest + q.x + q.y + q.z);
-        auto mag_q = mag * g_to_q;
+        auto second = Max_gaffer_value(sqrt(qs.x));
+        auto third = Max_gaffer_value(sqrt(qs.x),sqrt(qs.y));
 
-        return (mag_q < 1.0f);
+        if (sqrt(qs.y) > second)
+        {
+            return false;
+        }
+        if (sqrt(qs.z) > third)
+        {
+            return false;
+        }
+
+        auto largest = qs.x;
+        if (qs.y > largest)
+        {
+            largest = qs.y;
+        }
+        if (qs.z > largest)
+        {
+            largest = qs.z;
+        }
+
+        auto mag = sqrt(qs.x + qs.y + qs.z + largest);
+        auto max = q_max;
+
+        return (mag < max);
     };
 
     auto Valid_position = [](int i, int j, int k, int max) -> bool
@@ -3338,6 +3363,8 @@ void BitVector3Tests()
     {
         auto values =
         {
+            IntVec3{   -1,    -32,   -255},
+            IntVec3{   -155,   58,   -228},
             IntVec3{    68,   -32,    68},
             IntVec3{    68,    68,   -32},
             IntVec3{   -1,    -1586,  0},
@@ -5055,27 +5082,27 @@ std::vector<uint8_t> EncodeStats(
                         {
                             deltas.Write(1, 1);
 
-//                            if (config.quatPacker == QuatPacker::Sorted_no_bit_count)
-//                            {
-//                                IntVec3 full
-//                                {
-//                                    target[i].orientation_a - 256,
-//                                    target[i].orientation_b - 256,
-//                                    target[i].orientation_c - 256,
-//                                };
+                            if (config.quatPacker == QuatPacker::Sorted_no_bit_count)
+                            {
+                                IntVec3 full
+                                {
+                                    target[i].orientation_a - 256,
+                                    target[i].orientation_b - 256,
+                                    target[i].orientation_c - 256,
+                                };
 
-//                                BitStream encoded2;
+                                BitStream encoded2;
 
-//                                auto codedBits = Sorted_no_bit_count_Encode(
-//                                    full,
-//                                    (1 << RotationMaxBits) - 1,
-//                                    Use_magnitude_as::Constant,
-//                                    encoded2);
+                                auto codedBits = Sorted_no_bit_count_Encode(
+                                    full,
+                                    (1 << RotationMaxBits) - 1,
+                                    Use_magnitude_as::Gaffer_Encode,
+                                    encoded2);
 
-//                                deltas.Write(encoded);
-//                                bitsWritten += 1 + codedBits;
-//                            }
-//                            else
+                                deltas.Write(encoded);
+                                bitsWritten += 1 + codedBits;
+                            }
+                            else
                             {
                                 deltas.Write(target[i].orientation_a, RotationMaxBits);
                                 deltas.Write(target[i].orientation_b, RotationMaxBits);
@@ -5753,12 +5780,36 @@ std::vector<uint8_t> Encode(
                         }
                         else
                         {
-                            deltas.Write(1, 1);
-                            deltas.Write(target[i].orientation_a, RotationMaxBits);
-                            deltas.Write(target[i].orientation_b, RotationMaxBits);
-                            deltas.Write(target[i].orientation_c, RotationMaxBits);
+                            deltas.Write(1, 1);                            
 
-                            bitsWritten += 1 + vec3BitsUncompressed;
+                            if (config.quatPacker == QuatPacker::Sorted_no_bit_count)
+                            {
+                                IntVec3 full
+                                {
+                                    target[i].orientation_a - 256,
+                                    target[i].orientation_b - 256,
+                                    target[i].orientation_c - 256,
+                                };
+
+                                BitStream encoded2;
+
+                                auto codedBits = Sorted_no_bit_count_Encode(
+                                    full,
+                                    (1 << RotationMaxBits) - 1,
+                                    Use_magnitude_as::Gaffer_Encode,
+                                    encoded2);
+
+                                deltas.Write(encoded);
+                                bitsWritten += 1 + codedBits;
+                            }
+                            else
+                            {
+                                deltas.Write(target[i].orientation_a, RotationMaxBits);
+                                deltas.Write(target[i].orientation_b, RotationMaxBits);
+                                deltas.Write(target[i].orientation_c, RotationMaxBits);
+
+                                bitsWritten += 1 + vec3BitsUncompressed;
+                            }
                         }
                     }
                     else
@@ -6324,9 +6375,26 @@ Frame Decode(
                     }
                     else
                     {
-                        result[i].orientation_a = bits.Read(RotationMaxBits);
-                        result[i].orientation_b = bits.Read(RotationMaxBits);
-                        result[i].orientation_c = bits.Read(RotationMaxBits);
+
+
+                        if (config.quatPacker == QuatPacker::Sorted_no_bit_count)
+                        {
+                            auto g = Sorted_no_bit_count_Decode(
+                                (1 << RotationMaxBits) - 1,
+                                Use_magnitude_as::Gaffer_Encode,
+                                bits);
+
+                            result[i].orientation_a = g.x + 256;
+                            result[i].orientation_b = g.y + 256;
+                            result[i].orientation_c = g.z + 256;
+                        }
+                        else
+                        {
+
+                            result[i].orientation_a = bits.Read(RotationMaxBits);
+                            result[i].orientation_b = bits.Read(RotationMaxBits);
+                            result[i].orientation_c = bits.Read(RotationMaxBits);
+                        }
                     }
 
                     break;
@@ -7082,9 +7150,9 @@ int main(int, char**)
 
     Config config
     {
-        ChangedArrayEncoding::RangeSmarterAdaptive,
+        ChangedArrayEncoding::Exp,
         PosVector3Packer::Sorted_no_bit_count,
-        QuatPacker::BitVector3Sorted,
+        QuatPacker::Sorted_no_bit_count,
     };
 
     if (doStats)
