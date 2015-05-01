@@ -305,6 +305,126 @@ enum class QuatPacker
 
 // //////////////////////////////////////////////////////
 
+struct Quat2
+{
+    std::array<float, 4> q;
+
+    float constexpr operator [](unsigned index)
+    {
+        return q[index];
+    }
+};
+
+struct Rotor
+{
+    std::array<float, 3> r;
+
+    float constexpr operator [](unsigned index)
+    {
+        return r[index];
+    }
+};
+
+float constexpr Magnitude_squared(const Quat2& q)
+{
+    return
+        q[0] * q[0] +
+        q[1] * q[1] +
+        q[2] * q[2] +
+        q[3] * q[3];
+}
+
+float constexpr Magnitude_squared(const Rotor& r)
+{
+    return
+        r[0] * r[0] +
+        r[1] * r[1] +
+        r[2] * r[2];
+}
+
+Quat2 constexpr Mul(const Quat2& lhs, float rhs)
+{
+    return
+    {
+        lhs[0]*rhs,
+        lhs[1]*rhs,
+        lhs[2]*rhs,
+        lhs[3]*rhs
+    };
+}
+
+Rotor constexpr Mul(const Rotor& lhs, float rhs)
+{
+    return
+    {
+        lhs[0]*rhs,
+        lhs[1]*rhs,
+        lhs[2]*rhs
+    };
+}
+
+Quat2 constexpr Mul(const Quat2& lhs, const Quat2& rhs)
+{
+    return
+    {
+        (lhs[0]*rhs[0] - lhs[1]*rhs[1] - lhs[2]*rhs[2] - lhs[3]*rhs[3]),
+        (lhs[0]*rhs[1] + lhs[1]*rhs[0] + lhs[2]*rhs[3] - lhs[3]*rhs[2]),
+        (lhs[0]*rhs[2] - lhs[1]*rhs[3] + lhs[2]*rhs[0] + lhs[3]*rhs[1]),
+        (lhs[0]*rhs[3] + lhs[1]*rhs[2] - lhs[2]*rhs[1] + lhs[3]*rhs[0])
+    };
+}
+
+Quat2 constexpr Normalise(const Quat2& q)
+{
+    return Mul(q, 1.0f / sqrt(Magnitude_squared(q)));
+}
+
+Quat2 constexpr q_star(const Quat2& q)
+{
+    return
+    {
+        q[0],
+        -q[1],
+        -q[2],
+        -q[3]
+    };
+}
+
+// http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
+Quat2 constexpr R(const Quat2& q0, const Quat2& q1)
+{
+    // RAM: TODO: verify multiplication order!
+    return Mul(q1, q_star(q0));
+}
+
+Rotor constexpr B(const Quat2& r)
+{
+    return
+    {
+        r[1] / (1.0f + r[0]),
+        r[2] / (1.0f + r[0]),
+        r[3] / (1.0f + r[0]),
+    };
+}
+
+Quat2 constexpr R(const Rotor& b)
+{
+    return
+    {
+        (1.0f - Magnitude_squared(b)) / (1 + Magnitude_squared(b)),
+        (b[0] * 2.0f) / (1 + Magnitude_squared(b)),
+        (b[1] * 2.0f) / (1 + Magnitude_squared(b)),
+        (b[2] * 2.0f) / (1 + Magnitude_squared(b)),
+    };
+}
+
+void Quat_tests()
+{
+    // RAM: TODO! for (auto i = -10; i < )
+}
+
+// //////////////////////////////////////////////////////
+
 inline constexpr uint32_t ZigZag(int32_t n)
 {
     return (n << 1) ^ (n >> 31);
@@ -7177,7 +7297,7 @@ int main(int, char**)
     {
         ChangedArrayEncoding::Exp,
         PosVector3Packer::Sorted_no_bit_count,
-        QuatPacker::Sorted_no_bit_count,
+        QuatPacker::BitVector3Unrelated,
     };
 
     if (doStats)
