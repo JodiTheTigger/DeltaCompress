@@ -391,13 +391,13 @@ Quat2 constexpr q_star(const Quat2& q)
 }
 
 // http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
-Quat2 constexpr R(const Quat2& q0, const Quat2& q1)
+Quat2 constexpr R(const Quat2& base, const Quat2& target)
 {
     // RAM: TODO: verify multiplication order!
-    return Mul(q1, q_star(q0));
+    return Mul(target, q_star(base));
 }
 
-Rotor constexpr B(const Quat2& r)
+Rotor constexpr to_rotor(const Quat2& r)
 {
     return
     {
@@ -407,7 +407,7 @@ Rotor constexpr B(const Quat2& r)
     };
 }
 
-Quat2 constexpr R(const Rotor& b)
+Quat2 constexpr to_quat(const Rotor& b)
 {
     return
     {
@@ -418,7 +418,6 @@ Quat2 constexpr R(const Rotor& b)
     };
 }
 
-//const float EPISLON_U8 = 1.0f / 256.5f;
 const float EPISLON_U16 = 1.0f / 65536.5f;
 
 void assert_float_eq(float a, float b, float epislon = EPISLON_U16)
@@ -429,14 +428,6 @@ void assert_float_eq(float a, float b, float epislon = EPISLON_U16)
 
 void Quat_tests()
 {
-    Quat2 identity
-    {
-        1.0f,
-        0,
-        0,
-        0,
-    };
-
     for (float i = -10; i < 20; ++i)
     {
         for (float j  = -10; j < 15; ++j)
@@ -450,20 +441,30 @@ void Quat_tests()
                         continue;
                     }
 
-                    auto q = Normalise(Quat2{i,j,k,l});
-                    auto mag_squared = Magnitude_squared(q);
+                    auto base = Normalise(Quat2{i,j,k,l});
+                    auto mag_squared = Magnitude_squared(base);
 
                     assert_float_eq(mag_squared, 1.0f);
 
-                    auto r = R(identity, q);
-                    auto b = B(r);
+                    auto target = Normalise(Quat2{i,k,j,j});
 
-                    auto r2 = R(b);
+                    auto difference = R(base, target);
+                    auto b = to_rotor(difference);
 
-                    assert_float_eq(r[0], r2[0]);
-                    assert_float_eq(r[1], r2[1]);
-                    assert_float_eq(r[2], r2[2]);
-                    assert_float_eq(r[3], r2[3]);
+                    auto d2 = to_quat(b);
+                    auto result = Mul(d2, base);
+
+                    // cannot just compare the results since
+                    // we might get -q. Since -q == q.
+
+                    auto should_be_identity = R(result, target);
+                    // get rid of sign bit.
+                    should_be_identity.q[0] *= should_be_identity.q[0];
+
+                    assert_float_eq(should_be_identity[0], 1.0f);
+                    assert_float_eq(should_be_identity[1], 0.0f);
+                    assert_float_eq(should_be_identity[2], 0.0f);
+                    assert_float_eq(should_be_identity[3], 0.0f);
                 }
             }
         }
