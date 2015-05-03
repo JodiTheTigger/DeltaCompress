@@ -23,7 +23,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = false;
+bool doTests            = true;
 bool doStats            = true;
 bool doCompression      = true;
 bool doRangeCompression = false;
@@ -309,7 +309,7 @@ struct Quat2
 {
     std::array<float, 4> q;
 
-    float constexpr operator [](unsigned index)
+    float constexpr operator[](unsigned index) const
     {
         return q[index];
     }
@@ -319,7 +319,7 @@ struct Rotor
 {
     std::array<float, 3> r;
 
-    float constexpr operator [](unsigned index)
+    float constexpr operator[](unsigned index) const
     {
         return r[index];
     }
@@ -374,7 +374,7 @@ Quat2 constexpr Mul(const Quat2& lhs, const Quat2& rhs)
     };
 }
 
-Quat2 constexpr Normalise(const Quat2& q)
+Quat2 Normalise(const Quat2& q)
 {
     return Mul(q, 1.0f / sqrt(Magnitude_squared(q)));
 }
@@ -420,6 +420,41 @@ Quat2 constexpr R(const Rotor& b)
 
 void Quat_tests()
 {
+    Quat2 identity
+    {
+        1.0f,
+        0,
+        0,
+        0,
+    };
+
+    for (float i = -10; i < 20; ++i)
+    {
+        for (float j  = -10; j < 15; ++j)
+        {
+            for (float k = -5; k < 16; ++k)
+            {
+                for (float l = -55; l < 10; ++l)
+                {
+                    auto q = Normalise(Quat2{i,j,k,l});
+
+                    assert(Magnitude_squared(q) == 1.0f);
+
+                    auto r = R(identity, q);
+                    auto b = B(r);
+
+                    auto r2 = R(b);
+
+                    // RAM: TODO: Epislon compare, since direct compare doesn't
+                    // work.
+                    assert(r[0] == r2[0]);
+                    assert(r[1] == r2[1]);
+                    assert(r[2] == r2[2]);
+                    assert(r[3] == r2[3]);
+                }
+            }
+        }
+    }
     // RAM: TODO! for (auto i = -10; i < )
 }
 
@@ -6755,6 +6790,7 @@ Frame Decode(
 
 void Tests()
 {
+    Quat_tests();
     TruncateTest();
     BitVector3Tests();
     Max_gaffer_tests();
