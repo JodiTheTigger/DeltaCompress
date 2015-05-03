@@ -418,6 +418,15 @@ Quat2 constexpr R(const Rotor& b)
     };
 }
 
+//const float EPISLON_U8 = 1.0f / 256.5f;
+const float EPISLON_U16 = 1.0f / 65536.5f;
+
+void assert_float_eq(float a, float b, float epislon = EPISLON_U16)
+{
+    assert((a - b) < epislon);
+    assert((b - a) < epislon);
+}
+
 void Quat_tests()
 {
     Quat2 identity
@@ -436,26 +445,29 @@ void Quat_tests()
             {
                 for (float l = -55; l < 10; ++l)
                 {
-                    auto q = Normalise(Quat2{i,j,k,l});
+                    if (!j)
+                    {
+                        continue;
+                    }
 
-                    assert(Magnitude_squared(q) == 1.0f);
+                    auto q = Normalise(Quat2{i,j,k,l});
+                    auto mag_squared = Magnitude_squared(q);
+
+                    assert_float_eq(mag_squared, 1.0f);
 
                     auto r = R(identity, q);
                     auto b = B(r);
 
                     auto r2 = R(b);
 
-                    // RAM: TODO: Epislon compare, since direct compare doesn't
-                    // work.
-                    assert(r[0] == r2[0]);
-                    assert(r[1] == r2[1]);
-                    assert(r[2] == r2[2]);
-                    assert(r[3] == r2[3]);
+                    assert_float_eq(r[0], r2[0]);
+                    assert_float_eq(r[1], r2[1]);
+                    assert_float_eq(r[2], r2[2]);
+                    assert_float_eq(r[3], r2[3]);
                 }
             }
         }
     }
-    // RAM: TODO! for (auto i = -10; i < )
 }
 
 // //////////////////////////////////////////////////////
