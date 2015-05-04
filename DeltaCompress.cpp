@@ -445,6 +445,24 @@ Quat2 constexpr to_quat(const Rotor& b)
     };
 }
 
+bool Equal(const Quat2& lhs, const Quat2& rhs, float epislon = EPISLON_U16)
+{
+    const auto size = lhs.q.size();
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if ((lhs[i] - rhs[i]) >= epislon)
+        {
+            return false;
+        }
+        if ((rhs[i] - lhs[i]) >= epislon)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void assert_float_eq(float a, float b, float epislon = EPISLON_U16)
 {
     assert((a - b) < epislon);
@@ -461,6 +479,7 @@ void Quat_tests()
             {
                 for (float l = -55; l < 10; ++l)
                 {
+                    // Skip malformed quats (vector == 0)
                     if (!j)
                     {
                         continue;
@@ -482,14 +501,21 @@ void Quat_tests()
                                     j
                                 }));
 
+                    // Skip if the same
+                    if (Equal(target, Mul(base, -1.0f)))
+                    {
+                        continue;
+                    }
+                    if (Equal(target, base))
+                    {
+                        continue;
+                    }
+
                     auto difference = R(base, target);
                     auto b = to_rotor(difference);
 
                     auto d2 = to_quat(b);
                     auto result = Mul(d2, base);
-
-                    // cannot just compare the results since
-                    // we might get -q. Since -q == q.
 
                     auto should_be_identity = R(result, target);
                     // get rid of sign bit.
