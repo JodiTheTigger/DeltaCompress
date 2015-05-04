@@ -379,6 +379,33 @@ Quat2 Normalise(const Quat2& q)
     return Mul(q, 1.0f / sqrt(Magnitude_squared(q)));
 }
 
+const float EPISLON_U16 = 1.0f / 65536.5f;
+
+Quat2 Make_largest_positive(const Quat2& q)
+{
+    float largest = 0;
+    for (const auto qi : q.q)
+    {
+        if (std::abs(qi) > (largest + EPISLON_U16))
+        {
+            largest = qi;
+        }
+    }
+
+    if (largest < 0)
+    {
+        return
+        {
+            -q[0],
+            -q[1],
+            -q[2],
+            -q[3],
+        };
+    }
+
+    return q;
+}
+
 Quat2 constexpr q_star(const Quat2& q)
 {
     return
@@ -418,8 +445,6 @@ Quat2 constexpr to_quat(const Rotor& b)
     };
 }
 
-const float EPISLON_U16 = 1.0f / 65536.5f;
-
 void assert_float_eq(float a, float b, float epislon = EPISLON_U16)
 {
     assert((a - b) < epislon);
@@ -446,7 +471,16 @@ void Quat_tests()
 
                     assert_float_eq(mag_squared, 1.0f);
 
-                    auto target = Normalise(Quat2{i,k,j,j});
+                    auto target =
+                        Make_largest_positive(
+                            Normalise(
+                                Quat2
+                                {
+                                    i,
+                                    k,
+                                    j,
+                                    j
+                                }));
 
                     auto difference = R(base, target);
                     auto b = to_rotor(difference);
@@ -465,6 +499,13 @@ void Quat_tests()
                     assert_float_eq(should_be_identity[1], 0.0f);
                     assert_float_eq(should_be_identity[2], 0.0f);
                     assert_float_eq(should_be_identity[3], 0.0f);
+
+                    result = Make_largest_positive(result);
+
+                    assert_float_eq(result[0], target[0]);
+                    assert_float_eq(result[1], target[1]);
+                    assert_float_eq(result[2], target[2]);
+                    assert_float_eq(result[3], target[3]);
                 }
             }
         }
