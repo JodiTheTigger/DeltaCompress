@@ -1134,45 +1134,6 @@ struct IntVec3
 
 // //////////////////////////////////////////////////////
 
-// RAM: Need to actuall figure out these values
-//static const float      MAX_ANGULAR_VELOCITY_PER_FRAME = 10.0f;
-static const unsigned   ROTOR_BITS = 4;
-static const unsigned   ROTOR_MULTIPLE = 1 << ROTOR_BITS;
-static const float      ROTOR_MULTIPLE_INV = 1.0 / ROTOR_MULTIPLE;
-
-IntVec3 Chris_Doran(const Quat2& base, const Quat2& target)
-{
-    assert(!Equal(base, target));
-
-    auto r = R(base, target);
-    auto rotor = to_rotor(r);
-
-    // RAM: Do i need to round or truncate?
-    return
-    {
-        static_cast<int>(rotor[0] * ROTOR_MULTIPLE),
-        static_cast<int>(rotor[1] * ROTOR_MULTIPLE),
-        static_cast<int>(rotor[2] * ROTOR_MULTIPLE),
-    };
-}
-
-Quat2 Chris_Doran(const Quat2& base, IntVec3& encoded)
-{
-    Rotor rotor =
-    {
-        encoded.x * ROTOR_MULTIPLE_INV,
-        encoded.y * ROTOR_MULTIPLE_INV,
-        encoded.z * ROTOR_MULTIPLE_INV,
-    };
-
-    auto r = to_quat(rotor);
-    auto result = Mul(r, base);
-
-    return result;
-}
-
-// //////////////////////////////////////////////////////
-
 auto Largest_next_magnitude(
         unsigned magnitude,
         unsigned zig_zag_axis) -> unsigned
@@ -2162,6 +2123,63 @@ Gaffer ConvertGaffer(const Quat& quat)
         256 + static_cast<int>(round(gaffer[2] * q_to_g)),
     };
 }
+
+// //////////////////////////////////////////////////////
+
+// RAM: Need to actuall figure out these values
+//static const float      MAX_ANGULAR_VELOCITY_PER_FRAME = 10.0f;
+static const unsigned   ROTOR_BITS = 4;
+static const unsigned   ROTOR_MULTIPLE = 1 << ROTOR_BITS;
+static const float      ROTOR_MULTIPLE_INV = 1.0 / ROTOR_MULTIPLE;
+
+IntVec3 Chris_Doran(const Quat2& base, const Quat2& target)
+{
+    assert(!Equal(base, target));
+
+    auto r = R(base, target);
+    auto rotor = to_rotor(r);
+
+    // RAM: Do i need to round or truncate?
+    return
+    {
+        static_cast<int>(rotor[0] * ROTOR_MULTIPLE),
+        static_cast<int>(rotor[1] * ROTOR_MULTIPLE),
+        static_cast<int>(rotor[2] * ROTOR_MULTIPLE),
+    };
+}
+
+Quat2 Chris_Doran(const Quat2& base, const IntVec3& encoded)
+{
+    Rotor rotor =
+    {
+        encoded.x * ROTOR_MULTIPLE_INV,
+        encoded.y * ROTOR_MULTIPLE_INV,
+        encoded.z * ROTOR_MULTIPLE_INV,
+    };
+
+    auto r = to_quat(rotor);
+    auto result = Mul(r, base);
+
+    return result;
+}
+
+IntVec3 Rotorify(const Gaffer& base, const Gaffer& target)
+{
+    Quat2 base_quat{ConvertGaffer(base)};
+    Quat2 target_quat{ConvertGaffer(target)};
+
+    return Chris_Doran(base_quat, target_quat);
+}
+
+Gaffer Rotorify(const Gaffer& base, const IntVec3& encoded)
+{
+    Quat2 base_quat{ConvertGaffer(base)};
+    auto target_quat = Chris_Doran(base_quat, encoded);
+
+    return ConvertGaffer(target_quat.q);
+}
+
+// //////////////////////////////////////////////////////
 
 void Gaffer_tests()
 {
