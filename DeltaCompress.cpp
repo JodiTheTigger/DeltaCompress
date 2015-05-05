@@ -2128,7 +2128,7 @@ Gaffer ConvertGaffer(const Quat& quat)
 
 // RAM: Need to actuall figure out these values
 //static const float      MAX_ANGULAR_VELOCITY_PER_FRAME = 10.0f;
-static const unsigned   ROTOR_BITS = 4;
+static const unsigned   ROTOR_BITS = 11;
 static const unsigned   ROTOR_MULTIPLE = 1 << ROTOR_BITS;
 static const float      ROTOR_MULTIPLE_INV = 1.0 / ROTOR_MULTIPLE;
 
@@ -2218,13 +2218,34 @@ void Gaffer_tests()
                             k
                         };
 
-                        auto quat = ConvertGaffer(gaffer);
-                        auto result = ConvertGaffer(quat);
+                        {
 
-                        assert(result.largest_index == gaffer.largest_index);
-                        assert(result.a == gaffer.a);
-                        assert(result.b == gaffer.b);
-                        assert(result.c == gaffer.c);
+                            auto quat = ConvertGaffer(gaffer);
+                            auto result = ConvertGaffer(quat);
+
+                            assert(result.largest_index == gaffer.largest_index);
+                            assert(result.a == gaffer.a);
+                            assert(result.b == gaffer.b);
+                            assert(result.c == gaffer.c);
+                        }
+
+                        {
+                            auto base = Gaffer
+                            {
+                                l,
+                                256,
+                                256,
+                                256,
+                            };
+
+                            auto rotor = Rotorify(base, gaffer);
+                            auto result = Rotorify(base, rotor);
+
+                            assert(result.largest_index == gaffer.largest_index);
+                            assert(result.a == gaffer.a);
+                            assert(result.b == gaffer.b);
+                            assert(result.c == gaffer.c);
+                        }
                     }
                 }
             }
@@ -2273,10 +2294,11 @@ int Max_gaffer_value(int second_largest, int third_largest)
 
 void Max_gaffer_tests()
 {
-    {
-        auto should_be_zero = Max_gaffer_value(256);
-        assert(should_be_zero == 0);
-    }
+    // RAM: TODO: Some tests maybe?
+//    {
+//        auto should_be_zero = Max_gaffer_value(256);
+//        assert(should_be_zero == 0);
+//    }
 
 //    for (int i = 0; i < 256; ++i)
 //    {
@@ -6930,11 +6952,11 @@ Frame Decode(
 
 void Tests()
 {
+    Gaffer_tests();
     Quat_tests();
     TruncateTest();
     BitVector3Tests();
     Max_gaffer_tests();
-    Gaffer_tests();
     Model_tests();
     Range_tests();
     RunLengthTests();
