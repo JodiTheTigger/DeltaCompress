@@ -23,7 +23,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = true;
+bool doTests            = false;
 bool doStats            = true;
 bool doCompression      = true;
 bool doRangeCompression = false;
@@ -5303,6 +5303,33 @@ std::vector<uint8_t> EncodeStats(
                 stats.deltaZ.Update(dz);
 
                 stats.deltaTotal.Update(dx + dy + dz);
+            }
+
+            if (!quatSame)
+            {
+                auto b = Gaffer
+                {
+                    static_cast<unsigned>(base[i].orientation_largest),
+                    base[i].orientation_a,
+                    base[i].orientation_b,
+                    base[i].orientation_c,
+                };
+
+                auto t = Gaffer
+                {
+                    static_cast<unsigned>(target[i].orientation_largest),
+                    target[i].orientation_a,
+                    target[i].orientation_b,
+                    target[i].orientation_c,
+                };
+
+                auto rotor = Rotorify(b, t);
+                auto result = Rotorify(b, rotor);
+
+                assert(result.largest_index == static_cast<unsigned>(target[i].orientation_largest));
+                assert(result.a == target[i].orientation_a);
+                assert(result.b == target[i].orientation_b);
+                assert(result.c == target[i].orientation_c);
             }
 
             const auto vec3BitsUncompressed = (RotationMaxBits * 3);
