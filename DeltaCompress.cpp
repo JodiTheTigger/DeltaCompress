@@ -313,6 +313,11 @@ struct Quat2
     {
         return q[index];
     }
+
+    float& operator[](unsigned index)
+    {
+        return q[index];
+    }
 };
 
 struct Rotor
@@ -2037,8 +2042,59 @@ float g_to_q = 1.0 / (256.0 * 1.414213562373095048801688724209698078569671875);
 const float q_max_s = 256.49 * 256.49 * 2.0;
 const float q_max = std::truncf(sqrt(q_max_s)) + 0.49;
 
+// Again: did some research, -16, -16, -256 seems to be the worse.
+// try using that as max sum?
+const float gaffer_one_squared = 256 * 256 * 16 * 16;
+
+Quat2 ConvertGaffer2(const Gaffer& gaffer)
+{
+    Quat2 result
+    {
+        static_cast<float>(gaffer.a - 256),
+        static_cast<float>(gaffer.b - 256),
+        static_cast<float>(gaffer.c - 256),
+        0.0,
+    };
+
+    auto largest = sqrt(gaffer_one_squared - Magnitude_squared(result));
+
+    assert(largest >= 0);
+
+    if (gaffer.largest_index == 0)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+        result[1] = result[0];
+    }
+
+    if (gaffer.largest_index == 1)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+    }
+
+    if (gaffer.largest_index == 2)
+    {
+        result[3] = result[2];
+    }
+
+    result[gaffer.largest_index] = largest;
+
+    result = Mul(result, g_to_q);
+
+    {
+        auto mag = Magnitude_squared(result);
+        auto quantised = 256 * (mag - 1.0f);
+        assert(std::abs(quantised) < 0.5f);
+    }
+
+    return result;
+}
+
 Quat ConvertGaffer(const Gaffer& gaffer)
 {
+    // RAM: TODO: calculate missing item before
+    // converting to 0-1.
     Quat result
     {
         (gaffer.a - 256) * g_to_q,
@@ -2183,6 +2239,32 @@ Gaffer Rotorify(const Gaffer& base, const IntVec3& encoded)
 
 void Gaffer_tests()
 {
+    {
+        auto b = Gaffer
+        {
+            0,
+            54,
+            326,
+            214,
+        };
+
+        auto t = Gaffer
+        {
+            0,
+            101,
+            314,
+            28
+        };
+
+        auto rotor = Rotorify(b, t);
+        auto result = Rotorify(b, rotor);
+
+        assert(result.largest_index == t.largest_index);
+        assert(result.a == t.a);
+        assert(result.b == t.b);
+        assert(result.c == t.c);
+    }
+
     for (int i = 0; i < 512; ++i)
     {
         for (int j = 0; j < 512; j += 11)
@@ -5307,29 +5389,55 @@ std::vector<uint8_t> EncodeStats(
 
             if (!quatSame)
             {
-                auto b = Gaffer
-                {
-                    static_cast<unsigned>(base[i].orientation_largest),
-                    base[i].orientation_a,
-                    base[i].orientation_b,
-                    base[i].orientation_c,
-                };
+//                if (
+//                        (!base[i].orientation_a) ||
+//                        (!base[i].orientation_b) ||
+//                        (!base[i].orientation_c) ||
+//                        (!target[i].orientation_a) ||
+//                        (!target[i].orientation_b) ||
+//                        (!target[i].orientation_c) ||
+//                        (511 == base[i].orientation_a) ||
+//                        (511 == base[i].orientation_b) ||
+//                        (511 == base[i].orientation_c) ||
+//                        (511 == target[i].orientation_a) ||
+//                        (511 == target[i].orientation_b) ||
+//                        (511 == target[i].orientation_c)
+//                        )
+//                {
+//                    printf("%d,%d,%d,%d,%d,%d\n",
+//                           base[i].orientation_a - 256,
+//                           base[i].orientation_b - 256,
+//                           base[i].orientation_c - 256,
+//                           target[i].orientation_a - 256,
+//                           target[i].orientation_b - 256,
+//                           target[i].orientation_c - 256);
 
-                auto t = Gaffer
-                {
-                    static_cast<unsigned>(target[i].orientation_largest),
-                    target[i].orientation_a,
-                    target[i].orientation_b,
-                    target[i].orientation_c,
-                };
+                    // -16, -16, -256 is the max one.
 
-                auto rotor = Rotorify(b, t);
-                auto result = Rotorify(b, rotor);
+//                }
+//                auto b = Gaffer
+//                {
+//                    static_cast<unsigned>(base[i].orientation_largest),
+//                    base[i].orientation_a,
+//                    base[i].orientation_b,
+//                    base[i].orientation_c,
+//                };
 
-                assert(result.largest_index == static_cast<unsigned>(target[i].orientation_largest));
-                assert(result.a == target[i].orientation_a);
-                assert(result.b == target[i].orientation_b);
-                assert(result.c == target[i].orientation_c);
+//                auto t = Gaffer
+//                {
+//                    static_cast<unsigned>(target[i].orientation_largest),
+//                    target[i].orientation_a,
+//                    target[i].orientation_b,
+//                    target[i].orientation_c,
+//                };
+
+//                auto rotor = Rotorify(b, t);
+//                auto result = Rotorify(b, rotor);
+
+//                assert(result.largest_index == static_cast<unsigned>(target[i].orientation_largest));
+//                assert(result.a == target[i].orientation_a);
+//                assert(result.b == target[i].orientation_b);
+//                assert(result.c == target[i].orientation_c);
             }
 
             const auto vec3BitsUncompressed = (RotationMaxBits * 3);
