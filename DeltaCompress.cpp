@@ -320,6 +320,16 @@ struct Quat2
     }
 };
 
+float* begin(Quat2& q)
+{
+    return &(q.q[0]);
+}
+
+float* end(Quat2& q)
+{
+    return &(q.q[4]);
+}
+
 struct Rotor
 {
     std::array<float, 3> r;
@@ -2089,6 +2099,43 @@ Quat2 ConvertGaffer2(const Gaffer& gaffer)
     }
 
     return result;
+}
+
+Gaffer ConvertGaffer2(const Quat2& quat)
+{
+    const auto size = quat.q.size();
+    unsigned largest_index = 0;
+    float largest = 0;
+
+    auto squared = Mul(quat, quat);
+
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if (squared[i] > largest)
+        {
+            largest = squared[i];
+            largest_index = i;
+        }
+    }
+
+    auto write_index = 0;
+    Quat gaffer;
+
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if (i != largest_index)
+        {
+            gaffer[write_index++] = quat[i];
+        }
+    }
+
+    return
+    {
+        largest_index,
+        256 + static_cast<int>(round(gaffer[0] * q_to_g)),
+        256 + static_cast<int>(round(gaffer[1] * q_to_g)),
+        256 + static_cast<int>(round(gaffer[2] * q_to_g)),
+    };
 }
 
 Quat ConvertGaffer(const Gaffer& gaffer)
