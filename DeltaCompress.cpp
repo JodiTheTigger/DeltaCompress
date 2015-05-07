@@ -2065,6 +2065,10 @@ const float gaffer_one_squared =
 
 // Question is: When do we use 256, and when do we use 256.4995127?
 
+float g_256 = 256.4995127;
+float q_to_g2 = g_256 * 1.414213562373095048801688724209698078569671875;
+float g_to_q2 = 1.0 / (g_256 * 1.414213562373095048801688724209698078569671875);
+
 Quat2 ConvertGaffer2(const Gaffer& gaffer)
 {
     Quat2 result
@@ -2075,9 +2079,41 @@ Quat2 ConvertGaffer2(const Gaffer& gaffer)
         0.0,
     };
 
-    auto largest = sqrt(gaffer_one_squared - Magnitude_squared(result));
+    auto largest_squared = Quat2
+    {
+        result[0] * result[0],
+        result[1] * result[1],
+        result[2] * result[2],
+        0,
+    };
 
-    assert(largest >= 0);
+    auto magnitude_squared =
+            largest_squared[0] + largest_squared[1] + largest_squared[2];
+
+    auto largest_value_squared = gaffer_one_squared - magnitude_squared;
+
+    assert(largest_value_squared >= 0);
+
+    // Deal with quantising errors.
+    auto next_largest = largest_squared[0];
+    if (next_largest < largest_squared[1])
+    {
+        next_largest = largest_squared[1];
+    }
+    if (next_largest < largest_squared[2])
+    {
+        next_largest = largest_squared[2];
+    }
+
+    if (next_largest > largest_value_squared)
+    {
+        // Do I need to add an offset to make sure it is still
+        // the largest as opposed to equal?
+        // RAM: TODO: YES!
+        largest_value_squared = next_largest;
+    }
+
+    auto largest = sqrt(largest_value_squared);
 
     if (gaffer.largest_index == 0)
     {
@@ -2098,8 +2134,7 @@ Quat2 ConvertGaffer2(const Gaffer& gaffer)
     }
 
     result[gaffer.largest_index] = largest;
-
-    result = Mul(result, g_to_q);
+    result = Mul(result, g_to_q2);
 
     {
         auto mag = Magnitude_squared(result);
@@ -2107,6 +2142,7 @@ Quat2 ConvertGaffer2(const Gaffer& gaffer)
         assert(std::abs(quantised) < 0.5f);
     }
 
+    result = Normalise(result);
     return result;
 }
 
@@ -2116,7 +2152,13 @@ Gaffer ConvertGaffer2(const Quat2& quat)
     unsigned largest_index = 0;
     float largest = 0;
 
-    auto squared = Mul(quat, quat);
+    auto squared = Quat2
+    {
+        quat[0] * quat[0],
+        quat[1] * quat[1],
+        quat[2] * quat[2],
+        quat[3] * quat[3],
+    };
 
     for (unsigned i = 0; i < size; ++i)
     {
@@ -2141,9 +2183,9 @@ Gaffer ConvertGaffer2(const Quat2& quat)
     return
     {
         largest_index,
-        256 + static_cast<int>(round(gaffer[0] * q_to_g)),
-        256 + static_cast<int>(round(gaffer[1] * q_to_g)),
-        256 + static_cast<int>(round(gaffer[2] * q_to_g)),
+        256 + static_cast<int>(round(gaffer[0] * q_to_g2)),
+        256 + static_cast<int>(round(gaffer[1] * q_to_g2)),
+        256 + static_cast<int>(round(gaffer[2] * q_to_g2)),
     };
 }
 
