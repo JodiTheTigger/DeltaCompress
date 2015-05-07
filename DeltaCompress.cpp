@@ -2054,7 +2054,16 @@ const float q_max = std::truncf(sqrt(q_max_s)) + 0.49;
 
 // Again: did some research, -16, -16, -256 seems to be the worse.
 // try using that as max sum?
-const float gaffer_one_squared = 256 * 256 * 16 * 16;
+const float gaffer_one_squared =
+        (256 * 256) +
+        (256 * 256) +
+        (16 * 16) +
+        (16 * 16);
+
+// Ah thats because gaffer_one_squared == (sqrt(2) * 256.4995127)^2
+// gaffer_one = sqrt(2) * 256.4995127
+
+// Question is: When do we use 256, and when do we use 256.4995127?
 
 Quat2 ConvertGaffer2(const Gaffer& gaffer)
 {
@@ -5436,6 +5445,37 @@ std::vector<uint8_t> EncodeStats(
 
             if (!quatSame)
             {
+                auto bg = Gaffer
+                {
+                    static_cast<unsigned>(base[i].orientation_largest),
+                    base[i].orientation_a,
+                    base[i].orientation_b,
+                    base[i].orientation_c,
+                };
+                auto tg = Gaffer
+                {
+                    static_cast<unsigned>(target[i].orientation_largest),
+                    target[i].orientation_a,
+                    target[i].orientation_b,
+                    target[i].orientation_c,
+                };
+                auto gb1 = ConvertGaffer2(bg);
+                auto gt1 = ConvertGaffer2(tg);
+                auto rb = ConvertGaffer2(gb1);
+                auto rt = ConvertGaffer2(gt1);
+
+                assert(bg.a == rb.a);
+                assert(bg.b == rb.b);
+                assert(bg.c == rb.c);
+                assert(bg.largest_index == rb.largest_index);
+
+                assert(tg.a == rt.a);
+                assert(tg.b == rt.b);
+                assert(tg.c == rt.c);
+                assert(tg.largest_index == rt.largest_index);
+
+
+
 //                if (
 //                        (!base[i].orientation_a) ||
 //                        (!base[i].orientation_b) ||
