@@ -23,7 +23,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = false;
+bool doTests            = true;
 bool doStats            = true;
 bool doCompression      = true;
 bool doRangeCompression = false;
@@ -2395,18 +2395,18 @@ Quat2 Chris_Doran(const Quat2& base, const IntVec3& encoded)
 
 IntVec3 Rotorify(const Gaffer& base, const Gaffer& target)
 {
-    Quat2 base_quat{ConvertGaffer(base)};
-    Quat2 target_quat{ConvertGaffer(target)};
+    auto base_quat = ConvertGaffer2(base);
+    auto target_quat = ConvertGaffer2(target);
 
     return Chris_Doran(base_quat, target_quat);
 }
 
 Gaffer Rotorify(const Gaffer& base, const IntVec3& encoded)
 {
-    Quat2 base_quat{ConvertGaffer(base)};
+    auto base_quat = ConvertGaffer2(base);
     auto target_quat = Chris_Doran(base_quat, encoded);
 
-    return ConvertGaffer(target_quat.q);
+    return ConvertGaffer2(target_quat);
 }
 
 // //////////////////////////////////////////////////////
