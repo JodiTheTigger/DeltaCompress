@@ -2358,7 +2358,7 @@ Gaffer ConvertGaffer(const Quat& quat)
 
 // RAM: Need to actuall figure out these values
 //static const float      MAX_ANGULAR_VELOCITY_PER_FRAME = 10.0f;
-static const unsigned   ROTOR_BITS = 11;
+static const unsigned   ROTOR_BITS = 12;
 static const unsigned   ROTOR_MULTIPLE = 1 << ROTOR_BITS;
 static const float      ROTOR_MULTIPLE_INV = 1.0 / ROTOR_MULTIPLE;
 
