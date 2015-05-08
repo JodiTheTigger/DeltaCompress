@@ -2110,7 +2110,8 @@ Quat2 ConvertGaffer2(const Gaffer& gaffer)
         // Do I need to add an offset to make sure it is still
         // the largest as opposed to equal?
         // RAM: TODO: YES!
-        largest_value_squared = next_largest;
+        // RAM: TODO: figure out by what number ill use.
+        largest_value_squared = next_largest + 20;
     }
 
     auto largest = sqrt(largest_value_squared);
@@ -2162,8 +2163,16 @@ Gaffer ConvertGaffer2(const Quat2& quat)
 
     for (unsigned i = 0; i < size; ++i)
     {
-        if (squared[i] > largest)
+        if (squared[i] >= largest)
         {
+            if (squared[i] == largest)
+            {
+                if (quat[i] < 0)
+                {
+                    continue;
+                }
+            }
+
             largest = squared[i];
             largest_index = i;
         }
@@ -2180,13 +2189,80 @@ Gaffer ConvertGaffer2(const Quat2& quat)
         }
     }
 
-    return
+    // Screw it, if the quat would produce 256 or -257
+    // then re adjust
+    auto multiple = 1.0f;
+    const auto max_positive = (255.0f / 256.0f) / sqrt(2.0f);
+    const auto max_negative = -1.0f / sqrt(2.0f);
+
+    if (gaffer[0] > max_positive)
+    {
+        multiple = max_positive / gaffer[0];
+    }
+    if (gaffer[1] > max_positive)
+    {
+        multiple = max_positive / gaffer[1];
+    }
+    if (gaffer[2] > max_positive)
+    {
+        multiple = max_positive / gaffer[2];
+    }
+
+
+    if (gaffer[0] < max_negative)
+    {
+        multiple = max_negative / gaffer[0];
+    }
+    if (gaffer[1] < max_negative)
+    {
+        multiple = max_negative / gaffer[1];
+    }
+    if (gaffer[2] < max_negative)
+    {
+        multiple = max_negative / gaffer[2];
+    }
+
+    auto result = Gaffer
     {
         largest_index,
-        256 + static_cast<int>(round(gaffer[0] * q_to_g2)),
-        256 + static_cast<int>(round(gaffer[1] * q_to_g2)),
-        256 + static_cast<int>(round(gaffer[2] * q_to_g2)),
+        256 + static_cast<int>(round(gaffer[0] * q_to_g * multiple)),
+        256 + static_cast<int>(round(gaffer[1] * q_to_g * multiple)),
+        256 + static_cast<int>(round(gaffer[2] * q_to_g * multiple)),
     };
+
+//    auto result = Gaffer
+//    {
+//        largest_index,
+//        256 + static_cast<int>(gaffer[0] * q_to_g * multiple),
+//        256 + static_cast<int>(gaffer[1] * q_to_g * multiple),
+//        256 + static_cast<int>(gaffer[2] * q_to_g * multiple),
+//    };
+
+//    auto result = Gaffer
+//    {
+//        largest_index,
+//        256 + static_cast<int>(round(gaffer[0] * q_to_g2)),
+//        256 + static_cast<int>(round(gaffer[1] * q_to_g2)),
+//        256 + static_cast<int>(round(gaffer[2] * q_to_g2)),
+//    };
+
+//    auto result = Gaffer
+//    {
+//        largest_index,
+//        256 + static_cast<int>(gaffer[0] * q_to_g2),
+//        256 + static_cast<int>(gaffer[1] * q_to_g2),
+//        256 + static_cast<int>(gaffer[2] * q_to_g2),
+//    };
+
+    assert(result.a >= 0);
+    assert(result.b >= 0);
+    assert(result.c >= 0);
+
+    assert(result.a < 512);
+    assert(result.b < 512);
+    assert(result.c < 512);
+
+    return result;
 }
 
 Quat ConvertGaffer(const Gaffer& gaffer)
@@ -2337,6 +2413,40 @@ Gaffer Rotorify(const Gaffer& base, const IntVec3& encoded)
 
 void Gaffer_tests()
 {
+    {
+        auto gaffer = Gaffer
+        {
+            3,
+            256,
+            256,
+            255,
+        };
+
+        auto quat = ConvertGaffer2(gaffer);
+        auto result = ConvertGaffer2(quat);
+
+        assert(result.largest_index == gaffer.largest_index);
+        assert(result.a == gaffer.a);
+        assert(result.b == gaffer.b);
+        assert(result.c == gaffer.c);
+    }
+    {
+        auto gaffer = Gaffer
+        {
+            3,
+            240,
+            0,
+            240,
+        };
+
+        auto quat = ConvertGaffer2(gaffer);
+        auto result = ConvertGaffer2(quat);
+
+        assert(result.largest_index == gaffer.largest_index);
+        assert(result.a == gaffer.a);
+        assert(result.b == gaffer.b);
+        assert(result.c == gaffer.c);
+    }
     {
         auto b = Gaffer
         {
