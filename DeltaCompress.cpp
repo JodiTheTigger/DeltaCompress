@@ -23,7 +23,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = true;
+bool doTests            = false;
 bool doStats            = true;
 bool doCompression      = true;
 bool doRangeCompression = false;
@@ -5625,6 +5625,17 @@ std::vector<uint8_t> EncodeStats(
                 assert(tg.b == rt.b);
                 assert(tg.c == rt.c);
                 assert(tg.largest_index == rt.largest_index);
+
+                // RAM: now for the fun stuff.
+                {
+                    auto rotor = Rotorify(bg, tg);
+                    auto result = Rotorify(bg, rotor);
+
+                    assert(result.largest_index == tg.largest_index);
+                    assert(result.a == tg.a);
+                    assert(result.b == tg.b);
+                    assert(result.c == tg.c);
+                }
 
 
 
