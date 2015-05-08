@@ -2225,9 +2225,9 @@ Gaffer ConvertGaffer2(const Quat2& quat)
     auto result = Gaffer
     {
         largest_index,
-        256 + static_cast<int>(round(gaffer[0] * q_to_g * multiple)),
-        256 + static_cast<int>(round(gaffer[1] * q_to_g * multiple)),
-        256 + static_cast<int>(round(gaffer[2] * q_to_g * multiple)),
+        256 + static_cast<int>(round(gaffer[0] * q_to_g2 * multiple)),
+        256 + static_cast<int>(round(gaffer[1] * q_to_g2 * multiple)),
+        256 + static_cast<int>(round(gaffer[2] * q_to_g2 * multiple)),
     };
 
 //    auto result = Gaffer
