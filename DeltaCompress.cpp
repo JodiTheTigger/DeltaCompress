@@ -5847,8 +5847,10 @@ std::vector<uint8_t> EncodeStats(
                             }
                             else
                             {
+                                //ROTOR_MULTIPLY *= 1.6;
+                                ROTOR_MULTIPLY += 128.0f;
                                 //ROTOR_MULTIPLY += 64.0f;
-                                ROTOR_MULTIPLY *= 2;
+                                //ROTOR_MULTIPLY *= 2;
                             }
                         }
                     }
