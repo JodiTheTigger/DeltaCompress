@@ -272,6 +272,9 @@ struct Stats
     unsigned rotor_bits_10;
     unsigned rotor_bits_11;
     unsigned rotor_bits_12;
+    unsigned rotor_bits_13;
+    unsigned rotor_bits_14;
+    unsigned rotor_bits_15;
     unsigned rotor_bits_wtf;
 };
 
@@ -5703,7 +5706,7 @@ std::vector<uint8_t> EncodeStats(
                         static float MAX_MULTIPLY = 1.0f;
                         bool not_enough = true;
 
-                        float ROTOR_MULTIPLY = 256.0;
+                        float ROTOR_MULTIPLY = 128.0;
                         while (not_enough)
                         {
                             IntVec3 coded =
@@ -5732,25 +5735,37 @@ std::vector<uint8_t> EncodeStats(
                                 )
                             {
                                 // stats
-                                if (ROTOR_MULTIPLY <= 256)
+                                if (ROTOR_MULTIPLY <= 128)
                                 {
                                     ++stats.rotor_bits_8;
                                 }
-                                else if (ROTOR_MULTIPLY <= 512)
+                                else if (ROTOR_MULTIPLY <= 256)
                                 {
                                     ++stats.rotor_bits_9;
                                 }
-                                else if (ROTOR_MULTIPLY <= 1024)
+                                else if (ROTOR_MULTIPLY <= 512)
                                 {
                                     ++stats.rotor_bits_10;
                                 }
-                                else if (ROTOR_MULTIPLY <= 2048)
+                                else if (ROTOR_MULTIPLY <= 1024)
                                 {
                                     ++stats.rotor_bits_11;
                                 }
-                                else if (ROTOR_MULTIPLY <= 4096)
+                                else if (ROTOR_MULTIPLY <= 2048)
                                 {
                                     ++stats.rotor_bits_12;
+                                }
+                                else if (ROTOR_MULTIPLY <= 4096)
+                                {
+                                    ++stats.rotor_bits_13;
+                                }
+                                else if (ROTOR_MULTIPLY <= 8192)
+                                {
+                                    ++stats.rotor_bits_14;
+                                }
+                                else if (ROTOR_MULTIPLY <= 16384)
+                                {
+                                    ++stats.rotor_bits_15;
                                 }
                                 else
                                 {
@@ -7583,6 +7598,9 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         0,
         0,
         0,
+        0,
+        0,
+        0,
     };
 
     // Lets actually do the stuff.
@@ -7754,6 +7772,9 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.rotor_bits_10);
     PRINT_INT(stats.rotor_bits_11);
     PRINT_INT(stats.rotor_bits_12);
+    PRINT_INT(stats.rotor_bits_13);
+    PRINT_INT(stats.rotor_bits_14);
+    PRINT_INT(stats.rotor_bits_15);
     PRINT_INT(stats.rotor_bits_wtf);
 
     printf("\n");
