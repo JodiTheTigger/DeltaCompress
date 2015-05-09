@@ -265,6 +265,8 @@ struct Stats
     unsigned zero_zero;
     unsigned one_zero;
     unsigned zero_one;
+
+    MinMaxSum rotor;
 };
 
 enum class ChangedArrayEncoding
@@ -2178,6 +2180,14 @@ Gaffer ConvertGaffer2(const Quat2& quat)
         }
     }
 
+
+    // If the largest is -ve then we need to negate the quat so it's positive.
+    auto fixed_quat = quat;
+    if (quat[largest_index] < 0)
+    {
+        fixed_quat = Mul(quat, -1.0f);
+    }
+
     auto write_index = 0;
     Quat gaffer;
 
@@ -2185,7 +2195,7 @@ Gaffer ConvertGaffer2(const Quat2& quat)
     {
         if (i != largest_index)
         {
-            gaffer[write_index++] = quat[i];
+            gaffer[write_index++] = fixed_quat[i];
         }
     }
 
@@ -2370,12 +2380,19 @@ IntVec3 Chris_Doran(const Quat2& base, const Quat2& target)
     auto rotor = to_rotor(r);
 
     // RAM: Do i need to round or truncate?
-    return
+    auto result = IntVec3
     {
         static_cast<int>(rotor[0] * ROTOR_MULTIPLE),
         static_cast<int>(rotor[1] * ROTOR_MULTIPLE),
         static_cast<int>(rotor[2] * ROTOR_MULTIPLE),
     };
+
+    // RAM: TODO: find out max bits needed to encode the rotor!
+//    assert (result.x < (int) ROTOR_MULTIPLE);
+//    assert (result.y < (int) ROTOR_MULTIPLE);
+//    assert (result.z < (int) ROTOR_MULTIPLE);
+
+    return result;
 }
 
 Quat2 Chris_Doran(const Quat2& base, const IntVec3& encoded)
@@ -5628,8 +5645,71 @@ std::vector<uint8_t> EncodeStats(
 
                 // RAM: now for the fun stuff.
                 {
+                    {
+                        static float max = 0;
+                        static float min = 10000000;
+
+                        auto base_quat = ConvertGaffer2(bg);
+                        auto target_quat = ConvertGaffer2(rt);
+
+                        auto r = R(base_quat, target_quat);
+                        auto rotor = to_rotor(r);
+                        auto mag_squared = Magnitude_squared(rotor);
+                        auto mag = sqrt(mag_squared);
+
+                        // Hmm, seem we get the stupid mags due
+                        // to rotating between itself (from q to -q roughly).
+                        auto target_quat_neg = Mul(target_quat, -1.0f);
+                        auto r2 = R(base_quat, target_quat_neg);
+                        auto rotor2 = to_rotor(r2);
+                        auto mag_squared2 = Magnitude_squared(rotor2);
+                        auto mag2 = sqrt(mag_squared2);
+
+                        bool other = false;
+
+                        if (mag > mag2)
+                        {
+                            mag = mag2;
+                            other = true;
+                        }
+
+                        if (mag > max)
+                        {
+                            max = mag;
+                            if (other)
+                            {
+                                printf("Max: %f ***\n", mag);
+                            }
+                            else
+                            {
+                                printf("Max: %f\n", mag);
+                            }
+                        }
+                        if (mag < min)
+                        {
+                            min = mag;
+                            printf("Min: %f\n", mag);
+                        }
+
+                        // RAM: test negating
+                    }
+
+
                     auto rotor = Rotorify(bg, tg);
                     auto result = Rotorify(bg, rotor);
+
+                    float squared =
+                        (float(rotor.x) * float(rotor.x)) +
+                        (float(rotor.y) * float(rotor.y)) +
+                        (float(rotor.z) * float(rotor.z));
+
+                    assert(squared > 0);
+
+                    auto mag = sqrt(squared);
+
+                    assert(mag > 0);
+
+                    stats.rotor.Update(static_cast<unsigned>(round(mag)));
 
                     assert(result.largest_index == tg.largest_index);
                     assert(result.a == tg.a);
@@ -7409,6 +7489,8 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         0,
         0,
         0,
+
+        {1000000,0,0,0},
     };
 
     // Lets actually do the stuff.
@@ -7565,6 +7647,13 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.one_one);
     PRINT_INT(stats.zero_one);
     PRINT_INT(stats.one_zero);
+
+    printf("\n");
+
+    auto rotor_average = Average(stats.rotor);
+    PRINT_FLOAT(rotor_average);
+    PRINT_INT(stats.rotor.min);
+    PRINT_INT(stats.rotor.max);
 
     printf("\n");
 
