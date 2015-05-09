@@ -267,6 +267,12 @@ struct Stats
     unsigned zero_one;
 
     MinMaxSum rotor;
+    unsigned rotor_bits_8;
+    unsigned rotor_bits_9;
+    unsigned rotor_bits_10;
+    unsigned rotor_bits_11;
+    unsigned rotor_bits_12;
+    unsigned rotor_bits_wtf;
 };
 
 enum class ChangedArrayEncoding
@@ -5666,9 +5672,11 @@ std::vector<uint8_t> EncodeStats(
                         auto mag2 = sqrt(mag_squared2);
 
                         bool other = false;
+                        auto to_encode = rotor;
 
                         if (mag > mag2)
                         {
+                            to_encode = rotor2;
                             mag = mag2;
                             other = true;
                         }
@@ -5691,7 +5699,84 @@ std::vector<uint8_t> EncodeStats(
                             printf("Min: %f\n", mag);
                         }
 
-                        // RAM: test negating
+                        // ok, lets see how much bits we need.
+                        static float MAX_MULTIPLY = 1.0f;
+                        bool not_enough = true;
+
+                        float ROTOR_MULTIPLY = 256.0;
+                        while (not_enough)
+                        {
+                            IntVec3 coded =
+                            {
+                                static_cast<int>(round(to_encode[0] * ROTOR_MULTIPLY)),
+                                static_cast<int>(round(to_encode[1] * ROTOR_MULTIPLY)),
+                                static_cast<int>(round(to_encode[2] * ROTOR_MULTIPLY)),
+                            };
+
+                            Rotor decoded =
+                            {
+                                coded.x / ROTOR_MULTIPLY,
+                                coded.y / ROTOR_MULTIPLY,
+                                coded.z / ROTOR_MULTIPLY,
+                            };
+
+                            auto decoded_quat = to_quat(decoded);
+                            auto result_target_quat = Mul(decoded_quat, base_quat);
+                            auto result = ConvertGaffer2(result_target_quat);
+
+                            if  (
+                                    (result.largest_index == tg.largest_index) &&
+                                    (result.a == tg.a) &&
+                                    (result.b == tg.b) &&
+                                    (result.c == tg.c)
+                                )
+                            {
+                                // stats
+                                if (ROTOR_MULTIPLY <= 256)
+                                {
+                                    ++stats.rotor_bits_8;
+                                }
+                                else if (ROTOR_MULTIPLY <= 512)
+                                {
+                                    ++stats.rotor_bits_9;
+                                }
+                                else if (ROTOR_MULTIPLY <= 1024)
+                                {
+                                    ++stats.rotor_bits_10;
+                                }
+                                else if (ROTOR_MULTIPLY <= 2048)
+                                {
+                                    ++stats.rotor_bits_11;
+                                }
+                                else if (ROTOR_MULTIPLY <= 4096)
+                                {
+                                    ++stats.rotor_bits_12;
+                                }
+                                else
+                                {
+                                    ++stats.rotor_bits_wtf;
+                                }
+
+                                if (ROTOR_MULTIPLY > MAX_MULTIPLY)
+                                {
+                                    if (ROTOR_MULTIPLY < 2048)
+                                    {
+                                        //printf("Multiple: %f\n", ROTOR_MULTIPLY);
+                                        MAX_MULTIPLY = ROTOR_MULTIPLY;
+                                    }
+                                    else
+                                    {
+                                        //printf("Mult ***: %f\n", ROTOR_MULTIPLY);
+                                    }
+
+                                }
+                                not_enough = false;
+                            }
+                            else
+                            {
+                               ROTOR_MULTIPLY += 64.0f;
+                            }
+                        }
                     }
 
 
@@ -7491,6 +7576,13 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         0,
 
         {1000000,0,0,0},
+
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
     };
 
     // Lets actually do the stuff.
@@ -7656,6 +7748,16 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.rotor.max);
 
     printf("\n");
+
+    PRINT_INT(stats.rotor_bits_8);
+    PRINT_INT(stats.rotor_bits_9);
+    PRINT_INT(stats.rotor_bits_10);
+    PRINT_INT(stats.rotor_bits_11);
+    PRINT_INT(stats.rotor_bits_12);
+    PRINT_INT(stats.rotor_bits_wtf);
+
+    printf("\n");
+
 
     printf("\n==============================================\n");
 
