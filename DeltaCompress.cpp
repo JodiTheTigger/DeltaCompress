@@ -267,6 +267,7 @@ struct Stats
     unsigned zero_one;
 
     MinMaxSum rotor;
+    MinMaxSum rotor_bits;
     unsigned rotor_bits_8;
     unsigned rotor_bits_9;
     unsigned rotor_bits_10;
@@ -5702,6 +5703,59 @@ std::vector<uint8_t> EncodeStats(
                             printf("Min: %f\n", mag);
                         }
 
+                        // Ok, lets get stats assuming our multiple is
+                        // 2^14 == 8192.
+//                        {
+//                            static const float ROTOR_MULTIPLY = 10000.0;
+//                            IntVec3 coded =
+//                            {
+//                                static_cast<int>(round(to_encode[0] * ROTOR_MULTIPLY)),
+//                                static_cast<int>(round(to_encode[1] * ROTOR_MULTIPLY)),
+//                                static_cast<int>(round(to_encode[2] * ROTOR_MULTIPLY)),
+//                            };
+
+//                            Rotor decoded =
+//                            {
+//                                coded.x / ROTOR_MULTIPLY,
+//                                coded.y / ROTOR_MULTIPLY,
+//                                coded.z / ROTOR_MULTIPLY,
+//                            };
+
+//                            auto decoded_quat = to_quat(decoded);
+//                            auto result_target_quat = Mul(decoded_quat, base_quat);
+//                            auto result = ConvertGaffer2(result_target_quat);
+
+//                            assert(result.largest_index == tg.largest_index);
+//                            assert(result.a == tg.a);
+//                            assert(result.b == tg.b);
+//                            assert(result.c == tg.c);
+
+//                            bool wtf = false;
+//                            if (MinBits(ZigZag(coded.x)) > 12)
+//                            {
+//                                wtf = true;
+//                            }
+//                            if (MinBits(ZigZag(coded.y)) > 12)
+//                            {
+//                                wtf = true;
+//                            }
+//                            if (MinBits(ZigZag(coded.z)) > 12)
+//                            {
+//                                wtf = true;
+//                            }
+
+//                            // Hint, it doesn't do well for us, having to
+//                            // encode over 11 bits at times.
+//                            stats.rotor_bits.Update(MinBits(ZigZag(coded.x)));
+//                            stats.rotor_bits.Update(MinBits(ZigZag(coded.y)));
+//                            stats.rotor_bits.Update(MinBits(ZigZag(coded.z)));
+
+//                            if (wtf)
+//                            {
+//                                wtf = false;
+//                            }
+//                        }
+
                         // ok, lets see how much bits we need.
                         static float MAX_MULTIPLY = 1.0f;
                         bool not_enough = true;
@@ -5776,20 +5830,25 @@ std::vector<uint8_t> EncodeStats(
                                 {
                                     if (ROTOR_MULTIPLY < 2048)
                                     {
-                                        //printf("Multiple: %f\n", ROTOR_MULTIPLY);
+                                        printf("Multiple: %f\n", ROTOR_MULTIPLY);
                                         MAX_MULTIPLY = ROTOR_MULTIPLY;
                                     }
                                     else
                                     {
-                                        //printf("Mult ***: %f\n", ROTOR_MULTIPLY);
+                                        printf("Mult ***: %f\n", ROTOR_MULTIPLY);
                                     }
 
                                 }
                                 not_enough = false;
+
+                                stats.rotor_bits.Update(MinBits(ZigZag(coded.x)));
+                                stats.rotor_bits.Update(MinBits(ZigZag(coded.y)));
+                                stats.rotor_bits.Update(MinBits(ZigZag(coded.z)));
                             }
                             else
                             {
-                               ROTOR_MULTIPLY += 64.0f;
+                                //ROTOR_MULTIPLY += 64.0f;
+                                ROTOR_MULTIPLY *= 2;
                             }
                         }
                     }
@@ -7591,6 +7650,7 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         0,
 
         {1000000,0,0,0},
+        {1000000,0,0,0},
 
         0,
         0,
@@ -7776,6 +7836,13 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_INT(stats.rotor_bits_14);
     PRINT_INT(stats.rotor_bits_15);
     PRINT_INT(stats.rotor_bits_wtf);
+
+    printf("\n");
+
+    auto rotor_bits_average = Average(stats.rotor_bits);
+    PRINT_FLOAT(rotor_bits_average);
+    PRINT_INT(stats.rotor_bits.min);
+    PRINT_INT(stats.rotor_bits.max);
 
     printf("\n");
 
