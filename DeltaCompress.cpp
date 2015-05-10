@@ -352,6 +352,16 @@ struct Rotor
     }
 };
 
+float* begin(Rotor& r)
+{
+    return &(r.r[0]);
+}
+
+float* end(Rotor& r)
+{
+    return &(r.r[4]);
+}
+
 float constexpr Magnitude_squared(const Quat2& q)
 {
     return
@@ -5756,11 +5766,72 @@ std::vector<uint8_t> EncodeStats(
 //                            }
 //                        }
 
+                        // Lets try another approach.
+//                        auto mults =
+//                        {
+//                            128.0f,
+//                            256.0f,
+//                            384.0f,
+//                            512.0f,
+//                            640.0f,
+//                            768.0f,
+//                            1024.0f,
+//                            1152.0f,
+//                            1180.0f,
+//                            4352.0f,
+//                        };
+
+//                        auto mults =
+//                        {
+//                            256.0f,
+//                            384.0f,
+//                            512.0f,
+//                            640.0f,
+//                            768.0f,
+//                            1180.0f,
+//                            4352.0f,
+//                        };
+
+                        // RAM: Another suggestion. Get the min value
+                        // of the target quat to encode, maybe that dicates
+                        // bits?
+
                         // ok, lets see how much bits we need.
                         static float MAX_MULTIPLY = 1.0f;
                         bool not_enough = true;
 
-                        float ROTOR_MULTIPLY = 128.0;
+                        assert(
+                            (to_encode[0] != 0) ||
+                            (to_encode[1] != 0) ||
+                            (to_encode[2] != 0));
+
+                        // Well, that didn't work. Always guessed min of 10 bits
+                        // and even guessed 19 bits at one point.
+//                        // Maybe I only need to multiply so that the smallest
+//                        // value truncates to 1.
+//                        float min_e = 1000.0f;
+//                        for (auto e : to_encode)
+//                        {
+//                            if (std::abs(e) > 0.000001)
+//                            {
+//                                if (std::abs(e) < min_e)
+//                                {
+//                                    min_e = std::abs(e);
+//                                }
+//                            }
+//                        }
+
+//                        //float ROTOR_MULTIPLY = 1.0 / min_e;
+//                        float ROTOR_MULTIPLY = 1.49 / min_e;
+//                        //ROTOR_MULTIPLY = std::min(ROTOR_MULTIPLY, 512.0f);
+//                        while (ROTOR_MULTIPLY < 256.0f)
+//                        {
+//                            //ROTOR_MULTIPLY = 256.0f;
+//                            ROTOR_MULTIPLY *= 10.0f;
+//                        }
+//                        //ROTOR_MULTIPLY = std::min(ROTOR_MULTIPLY, 256.0f);
+
+                        float ROTOR_MULTIPLY = 256.0;
                         while (not_enough)
                         {
                             IntVec3 coded =
@@ -5847,6 +5918,10 @@ std::vector<uint8_t> EncodeStats(
                             }
                             else
                             {
+                                // RAM: rotoro multiply so that the smallest
+                                // non-zero value rounds to 1 (eg > 0.55).
+                                // treat anything less than 1 / 1 << 16 as zero
+                                // Then if that fails, just multiply by 10/8/2?
                                 //ROTOR_MULTIPLY *= 1.6;
                                 ROTOR_MULTIPLY += 128.0f;
                                 //ROTOR_MULTIPLY += 64.0f;
