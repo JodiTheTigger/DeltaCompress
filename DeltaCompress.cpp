@@ -457,7 +457,6 @@ Quat2 constexpr q_star(const Quat2& q)
 // http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
 Quat2 constexpr R(const Quat2& base, const Quat2& target)
 {
-    // RAM: TODO: verify multiplication order!
     return Mul(target, q_star(base));
 }
 
@@ -5766,6 +5765,22 @@ std::vector<uint8_t> EncodeStats(
 //                            }
 //                        }
 
+                        // ok, to figure out min bits needed find the smallest
+                        // value to be encoded by following the multiplication.
+                        // NUP, fails just like th pervious method.
+//                        auto min_r = 100000.0;
+//                        for (auto e : r)
+//                        {
+//                            if (std::abs(e) > 0.00000001)
+//                            {
+//                                if (std::abs(e) < min_r)
+//                                {
+//                                    min_r = std::abs(e);
+//                                }
+//                            }
+//                        }
+
+
                         // Lets try another approach.
 //                        auto mults =
 //                        {
@@ -5831,7 +5846,8 @@ std::vector<uint8_t> EncodeStats(
 //                        }
 //                        //ROTOR_MULTIPLY = std::min(ROTOR_MULTIPLY, 256.0f);
 
-                        float ROTOR_MULTIPLY = 256.0;
+                        //float ROTOR_MULTIPLY = 1.49f / min_r;
+                        float ROTOR_MULTIPLY = 128.0;
                         while (not_enough)
                         {
                             IntVec3 coded =
