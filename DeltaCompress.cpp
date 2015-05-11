@@ -23,9 +23,9 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = false;
-bool doStats            = true;
-bool doCompression      = true;
+bool doTests            = true;
+bool doStats            = false;
+bool doCompression      = false;
 bool doRangeCompression = false;
 bool doRangeSearch      = false;
 
@@ -2452,7 +2452,7 @@ auto Find_rotor_multiple(
     const Gaffer& tg) -> float
 {
     float rotor_multiply = start;
-    bool not_enough = false;
+    bool not_enough = true;
 
     while (not_enough)
     {
@@ -2490,13 +2490,136 @@ auto Find_rotor_multiple(
             // treat anything less than 1 / 1 << 16 as zero
             // Then if that fails, just multiply by 10/8/2?
             //ROTOR_MULTIPLY *= 1.6;
-            rotor_multiply += 128.0f;
+            //rotor_multiply += 128.0f;
+            rotor_multiply += 1.0f;
             //ROTOR_MULTIPLY += 64.0f;
             //ROTOR_MULTIPLY *= 2;
         }
     }
 
     return rotor_multiply;
+}
+
+auto Print_rotor_multiples()
+{
+    auto Get_rotor = [](
+        const Quat2& base_quat,
+        const Quat2& target_quat) -> Rotor
+    {
+        // ugh finding the rotor isn't that easy
+        auto r = R(base_quat, target_quat);
+        auto rotor = to_rotor(r);
+        auto mag_squared = Magnitude_squared(rotor);
+        auto mag = sqrt(mag_squared);
+
+        // Hmm, seem we get the stupid mags due
+        // to rotating between itself (from q to -q roughly).
+        auto target_quat_neg = Mul(target_quat, -1.0f);
+        auto r2 = R(base_quat, target_quat_neg);
+        auto rotor2 = to_rotor(r2);
+        auto mag_squared2 = Magnitude_squared(rotor2);
+        auto mag2 = sqrt(mag_squared2);
+
+        auto to_encode = rotor;
+
+        if (mag > mag2)
+        {
+            to_encode = rotor2;
+            printf(
+                "%f,%f,%f,%f,",
+                r2[0],
+                r2[1],
+                r2[2],
+                r2[3]);
+        }
+        else
+        {
+            printf(
+                "%f,%f,%f,%f,",
+                r[0],
+                r[1],
+                r[2],
+                r[3]);
+        }
+
+        return to_encode;
+    };
+
+//    auto base_quat = Quat2{0.000000,-0.672649,0.000000,0.739962};
+    auto base_quat = Quat2
+    {
+        0,
+        0,
+        0,
+        1,
+    };
+
+    // only do half since the result is symmetrical.
+    for (int i = 0; i < 257; ++i)
+    {
+        auto tg = Gaffer
+        {
+            3,
+            256,
+            i,
+            256,
+        };
+
+        auto target_quat = ConvertGaffer2(tg);
+
+        auto to_encode = Get_rotor(base_quat, target_quat);
+
+        auto rotor_multiple = Find_rotor_multiple(
+            1.0f,
+            to_encode,
+            base_quat,
+            tg);
+
+        printf(
+            "%d,%f,%f,%f,%f,%f\n",
+            i,
+            rotor_multiple,
+            target_quat[0],
+            target_quat[1],
+            target_quat[2],
+            target_quat[3]);
+    }
+
+    printf("==========\n");
+
+//    for (int i = 0; i < 129; ++i)
+//    {
+//        for (int j = 0; j < 129; ++j)
+//        {
+//            auto tg = Gaffer
+//            {
+//                3,
+//                128 + i,
+//                128 + j,
+//                256,
+//            };
+
+//            auto target_quat = ConvertGaffer2(tg);
+
+//            auto to_encode = Get_rotor(base_quat, target_quat);
+
+//            auto rotor_multiple = Find_rotor_multiple(
+//                1.0f,
+//                to_encode,
+//                base_quat,
+//                tg);
+
+//            printf(
+//                "%d,%d,%f,%f,%f,%f,%f\n",
+//                i,
+//                j,
+//                rotor_multiple,
+//                target_quat[0],
+//                target_quat[1],
+//                target_quat[2],
+//                target_quat[3]);
+//        }
+//    }
 }
 
 // //////////////////////////////////////////////////////
@@ -7695,17 +7818,18 @@ Frame Decode(
 
 void Tests()
 {
-    Gaffer_tests();
-    Quat_tests();
-    TruncateTest();
-    BitVector3Tests();
-    Max_gaffer_tests();
-    Model_tests();
-    Range_tests();
-    RunLengthTests();
-    ZigZagTest();
-    GaffersRangeTest();
-    BitStreamTest();
+    Print_rotor_multiples();
+//    Gaffer_tests();
+//    Quat_tests();
+//    TruncateTest();
+//    BitVector3Tests();
+//    Max_gaffer_tests();
+//    Model_tests();
+//    Range_tests();
+//    RunLengthTests();
+//    ZigZagTest();
+//    GaffersRangeTest();
+//    BitStreamTest();
 }
 
 // //////////////////////////////////////////////////////
