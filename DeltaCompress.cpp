@@ -5813,7 +5813,6 @@ std::vector<uint8_t> EncodeStats(
 
                         // ok, lets see how much bits we need.
                         static float MAX_MULTIPLY = 1.0f;
-                        bool not_enough = true;
 
                         assert(
                             (to_encode[0] != 0) ||
@@ -5847,103 +5846,131 @@ std::vector<uint8_t> EncodeStats(
 //                        //ROTOR_MULTIPLY = std::min(ROTOR_MULTIPLY, 256.0f);
 
                         //float ROTOR_MULTIPLY = 1.49f / min_r;
-                        float ROTOR_MULTIPLY = 128.0;
-                        while (not_enough)
+
+                        auto Discover = [](
+                            float start,
+                            const Rotor& to_encode,
+                            const Quat2& base_quat,
+                            const Gaffer& tg) -> float
                         {
-                            IntVec3 coded =
-                            {
-                                static_cast<int>(round(to_encode[0] * ROTOR_MULTIPLY)),
-                                static_cast<int>(round(to_encode[1] * ROTOR_MULTIPLY)),
-                                static_cast<int>(round(to_encode[2] * ROTOR_MULTIPLY)),
-                            };
+                            float rotor_multiply = start;
+                            bool not_enough = false;
 
-                            Rotor decoded =
+                            while (not_enough)
                             {
-                                coded.x / ROTOR_MULTIPLY,
-                                coded.y / ROTOR_MULTIPLY,
-                                coded.z / ROTOR_MULTIPLY,
-                            };
+                                IntVec3 coded =
+                                {
+                                    static_cast<int>(round(to_encode[0] * rotor_multiply)),
+                                    static_cast<int>(round(to_encode[1] * rotor_multiply)),
+                                    static_cast<int>(round(to_encode[2] * rotor_multiply)),
+                                };
 
-                            auto decoded_quat = to_quat(decoded);
-                            auto result_target_quat = Mul(decoded_quat, base_quat);
-                            auto result = ConvertGaffer2(result_target_quat);
+                                Rotor decoded =
+                                {
+                                    coded.x / rotor_multiply,
+                                    coded.y / rotor_multiply,
+                                    coded.z / rotor_multiply,
+                                };
 
-                            if  (
-                                    (result.largest_index == tg.largest_index) &&
-                                    (result.a == tg.a) &&
-                                    (result.b == tg.b) &&
-                                    (result.c == tg.c)
-                                )
-                            {
-                                // stats
-                                if (ROTOR_MULTIPLY <= 128)
+                                auto decoded_quat = to_quat(decoded);
+                                auto result_target_quat = Mul(decoded_quat, base_quat);
+                                auto result = ConvertGaffer2(result_target_quat);
+
+                                if  (
+                                        (result.largest_index == tg.largest_index) &&
+                                        (result.a == tg.a) &&
+                                        (result.b == tg.b) &&
+                                        (result.c == tg.c)
+                                    )
                                 {
-                                    ++stats.rotor_bits_8;
-                                }
-                                else if (ROTOR_MULTIPLY <= 256)
-                                {
-                                    ++stats.rotor_bits_9;
-                                }
-                                else if (ROTOR_MULTIPLY <= 512)
-                                {
-                                    ++stats.rotor_bits_10;
-                                }
-                                else if (ROTOR_MULTIPLY <= 1024)
-                                {
-                                    ++stats.rotor_bits_11;
-                                }
-                                else if (ROTOR_MULTIPLY <= 2048)
-                                {
-                                    ++stats.rotor_bits_12;
-                                }
-                                else if (ROTOR_MULTIPLY <= 4096)
-                                {
-                                    ++stats.rotor_bits_13;
-                                }
-                                else if (ROTOR_MULTIPLY <= 8192)
-                                {
-                                    ++stats.rotor_bits_14;
-                                }
-                                else if (ROTOR_MULTIPLY <= 16384)
-                                {
-                                    ++stats.rotor_bits_15;
+                                    not_enough = false;
                                 }
                                 else
                                 {
-                                    ++stats.rotor_bits_wtf;
+                                    // RAM: rotoro multiply so that the smallest
+                                    // non-zero value rounds to 1 (eg > 0.55).
+                                    // treat anything less than 1 / 1 << 16 as zero
+                                    // Then if that fails, just multiply by 10/8/2?
+                                    //ROTOR_MULTIPLY *= 1.6;
+                                    rotor_multiply += 128.0f;
+                                    //ROTOR_MULTIPLY += 64.0f;
+                                    //ROTOR_MULTIPLY *= 2;
                                 }
+                            }
 
-                                if (ROTOR_MULTIPLY > MAX_MULTIPLY)
-                                {
-                                    if (ROTOR_MULTIPLY < 2048)
-                                    {
-                                        printf("Multiple: %f\n", ROTOR_MULTIPLY);
-                                        MAX_MULTIPLY = ROTOR_MULTIPLY;
-                                    }
-                                    else
-                                    {
-                                        printf("Mult ***: %f\n", ROTOR_MULTIPLY);
-                                    }
+                            return rotor_multiply;
+                        };
 
-                                }
-                                not_enough = false;
+                        float ROTOR_MULTIPLY =
+                            Discover(
+                                1.0f,
+                                to_encode,
+                                base_quat,
+                                tg);
 
-                                stats.rotor_bits.Update(MinBits(ZigZag(coded.x)));
-                                stats.rotor_bits.Update(MinBits(ZigZag(coded.y)));
-                                stats.rotor_bits.Update(MinBits(ZigZag(coded.z)));
+                        IntVec3 coded =
+                        {
+                            static_cast<int>(round(to_encode[0] * ROTOR_MULTIPLY)),
+                            static_cast<int>(round(to_encode[1] * ROTOR_MULTIPLY)),
+                            static_cast<int>(round(to_encode[2] * ROTOR_MULTIPLY)),
+                        };
+
+
+                        // stats
+                        if (ROTOR_MULTIPLY <= 128)
+                        {
+                            ++stats.rotor_bits_8;
+                        }
+                        else if (ROTOR_MULTIPLY <= 256)
+                        {
+                            ++stats.rotor_bits_9;
+                        }
+                        else if (ROTOR_MULTIPLY <= 512)
+                        {
+                            ++stats.rotor_bits_10;
+                        }
+                        else if (ROTOR_MULTIPLY <= 1024)
+                        {
+                            ++stats.rotor_bits_11;
+                        }
+                        else if (ROTOR_MULTIPLY <= 2048)
+                        {
+                            ++stats.rotor_bits_12;
+                        }
+                        else if (ROTOR_MULTIPLY <= 4096)
+                        {
+                            ++stats.rotor_bits_13;
+                        }
+                        else if (ROTOR_MULTIPLY <= 8192)
+                        {
+                            ++stats.rotor_bits_14;
+                        }
+                        else if (ROTOR_MULTIPLY <= 16384)
+                        {
+                            ++stats.rotor_bits_15;
+                        }
+                        else
+                        {
+                            ++stats.rotor_bits_wtf;
+                        }
+
+                        if (ROTOR_MULTIPLY > MAX_MULTIPLY)
+                        {
+                            if (ROTOR_MULTIPLY < 2048)
+                            {
+                                printf("Multiple: %f\n", ROTOR_MULTIPLY);
+                                MAX_MULTIPLY = ROTOR_MULTIPLY;
                             }
                             else
                             {
-                                // RAM: rotoro multiply so that the smallest
-                                // non-zero value rounds to 1 (eg > 0.55).
-                                // treat anything less than 1 / 1 << 16 as zero
-                                // Then if that fails, just multiply by 10/8/2?
-                                //ROTOR_MULTIPLY *= 1.6;
-                                ROTOR_MULTIPLY += 128.0f;
-                                //ROTOR_MULTIPLY += 64.0f;
-                                //ROTOR_MULTIPLY *= 2;
+                                printf("Mult ***: %f\n", ROTOR_MULTIPLY);
                             }
+
                         }
+
+                        stats.rotor_bits.Update(MinBits(ZigZag(coded.x)));
+                        stats.rotor_bits.Update(MinBits(ZigZag(coded.y)));
+                        stats.rotor_bits.Update(MinBits(ZigZag(coded.z)));
                     }
 
 
