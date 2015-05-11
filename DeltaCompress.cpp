@@ -2445,6 +2445,60 @@ Gaffer Rotorify(const Gaffer& base, const IntVec3& encoded)
     return ConvertGaffer2(target_quat);
 }
 
+auto Find_rotor_multiple(
+    float start,
+    const Rotor& to_encode,
+    const Quat2& base_quat,
+    const Gaffer& tg) -> float
+{
+    float rotor_multiply = start;
+    bool not_enough = false;
+
+    while (not_enough)
+    {
+        IntVec3 coded =
+        {
+            static_cast<int>(round(to_encode[0] * rotor_multiply)),
+            static_cast<int>(round(to_encode[1] * rotor_multiply)),
+            static_cast<int>(round(to_encode[2] * rotor_multiply)),
+        };
+
+        Rotor decoded =
+        {
+            coded.x / rotor_multiply,
+            coded.y / rotor_multiply,
+            coded.z / rotor_multiply,
+        };
+
+        auto decoded_quat = to_quat(decoded);
+        auto result_target_quat = Mul(decoded_quat, base_quat);
+        auto result = ConvertGaffer2(result_target_quat);
+
+        if  (
+                (result.largest_index == tg.largest_index) &&
+                (result.a == tg.a) &&
+                (result.b == tg.b) &&
+                (result.c == tg.c)
+            )
+        {
+            not_enough = false;
+        }
+        else
+        {
+            // RAM: rotoro multiply so that the smallest
+            // non-zero value rounds to 1 (eg > 0.55).
+            // treat anything less than 1 / 1 << 16 as zero
+            // Then if that fails, just multiply by 10/8/2?
+            //ROTOR_MULTIPLY *= 1.6;
+            rotor_multiply += 128.0f;
+            //ROTOR_MULTIPLY += 64.0f;
+            //ROTOR_MULTIPLY *= 2;
+        }
+    }
+
+    return rotor_multiply;
+}
+
 // //////////////////////////////////////////////////////
 
 void Gaffer_tests()
@@ -5846,63 +5900,8 @@ std::vector<uint8_t> EncodeStats(
 //                        //ROTOR_MULTIPLY = std::min(ROTOR_MULTIPLY, 256.0f);
 
                         //float ROTOR_MULTIPLY = 1.49f / min_r;
-
-                        auto Discover = [](
-                            float start,
-                            const Rotor& to_encode,
-                            const Quat2& base_quat,
-                            const Gaffer& tg) -> float
-                        {
-                            float rotor_multiply = start;
-                            bool not_enough = false;
-
-                            while (not_enough)
-                            {
-                                IntVec3 coded =
-                                {
-                                    static_cast<int>(round(to_encode[0] * rotor_multiply)),
-                                    static_cast<int>(round(to_encode[1] * rotor_multiply)),
-                                    static_cast<int>(round(to_encode[2] * rotor_multiply)),
-                                };
-
-                                Rotor decoded =
-                                {
-                                    coded.x / rotor_multiply,
-                                    coded.y / rotor_multiply,
-                                    coded.z / rotor_multiply,
-                                };
-
-                                auto decoded_quat = to_quat(decoded);
-                                auto result_target_quat = Mul(decoded_quat, base_quat);
-                                auto result = ConvertGaffer2(result_target_quat);
-
-                                if  (
-                                        (result.largest_index == tg.largest_index) &&
-                                        (result.a == tg.a) &&
-                                        (result.b == tg.b) &&
-                                        (result.c == tg.c)
-                                    )
-                                {
-                                    not_enough = false;
-                                }
-                                else
-                                {
-                                    // RAM: rotoro multiply so that the smallest
-                                    // non-zero value rounds to 1 (eg > 0.55).
-                                    // treat anything less than 1 / 1 << 16 as zero
-                                    // Then if that fails, just multiply by 10/8/2?
-                                    //ROTOR_MULTIPLY *= 1.6;
-                                    rotor_multiply += 128.0f;
-                                    //ROTOR_MULTIPLY += 64.0f;
-                                    //ROTOR_MULTIPLY *= 2;
-                                }
-                            }
-
-                            return rotor_multiply;
-                        };
-
                         float ROTOR_MULTIPLY =
-                            Discover(
+                            Find_rotor_multiple(
                                 1.0f,
                                 to_encode,
                                 base_quat,
