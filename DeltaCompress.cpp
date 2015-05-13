@@ -2090,6 +2090,86 @@ float g_256 = 256.4995127;
 float q_to_g2 = g_256 * 1.414213562373095048801688724209698078569671875;
 float g_to_q2 = 1.0 / (g_256 * 1.414213562373095048801688724209698078569671875);
 
+Quat2 ConvertGaffer3(const Gaffer& gaffer)
+{
+    static const float OFFSET = 0.4987305042;
+    Quat2 result
+    {
+        OFFSET + static_cast<float>(gaffer.a - 256),
+        OFFSET + static_cast<float>(gaffer.b - 256),
+        OFFSET + static_cast<float>(gaffer.c - 256),
+        0.0,
+    };
+
+    auto largest_squared = Quat2
+    {
+        result[0] * result[0],
+        result[1] * result[1],
+        result[2] * result[2],
+        0,
+    };
+
+    auto magnitude_squared =
+            largest_squared[0] + largest_squared[1] + largest_squared[2];
+
+    auto largest_value_squared = gaffer_one_squared - magnitude_squared;
+
+    assert(largest_value_squared >= 0);
+
+    // Deal with quantising errors.
+    auto next_largest = largest_squared[0];
+    if (next_largest < largest_squared[1])
+    {
+        next_largest = largest_squared[1];
+    }
+    if (next_largest < largest_squared[2])
+    {
+        next_largest = largest_squared[2];
+    }
+
+    if (next_largest > largest_value_squared)
+    {
+        // Do I need to add an offset to make sure it is still
+        // the largest as opposed to equal?
+        // RAM: TODO: YES!
+        // RAM: TODO: figure out by what number ill use.
+        largest_value_squared = next_largest + 20;
+    }
+
+    auto largest = sqrt(largest_value_squared);
+
+    if (gaffer.largest_index == 0)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+        result[1] = result[0];
+    }
+
+    if (gaffer.largest_index == 1)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+    }
+
+    if (gaffer.largest_index == 2)
+    {
+        result[3] = result[2];
+    }
+
+    result[gaffer.largest_index] = largest;
+    result = Mul(result, g_to_q2);
+
+    {
+        auto mag = Magnitude_squared(result);
+        auto quantised = 256 * (mag - 1.0f);
+        assert(std::abs(quantised) < 0.5f);
+    }
+
+    result = Normalise(result);
+    return result;
+}
+
+
 Quat2 ConvertGaffer2(const Gaffer& gaffer)
 {
     Quat2 result
@@ -2554,6 +2634,120 @@ auto Print_rotor_multiples()
         1,
     };
 
+
+    // Ok, going to print out the values of al stages of the commit
+    // for one calculation, with the proper mutlipleir and 1-multiplier
+    // to see if I can understand why it's getting those values.
+    // Hmm, I think it has something to do with the difference
+    // of the smallest in_target_quad value, when converted to and from
+    // a gaffer (it has a range of +/- 0.5, ie *255.5,*254.5)
+    {
+        auto Calc = [&base_quat](float M, const Gaffer& target)
+        {
+            // RAM: Nup, doesn't work, only can adjust the smallest value.
+            auto adj_target_quat = ConvertGaffer3(target);
+            auto adj_r = R(base_quat, adj_target_quat);
+            //auto adj_rotor = to_rotor(adj_r);
+
+
+
+            auto in_target_quat = ConvertGaffer2(target);
+            auto in_r = R(base_quat, in_target_quat);
+            auto in_rotor = to_rotor(in_r);
+
+            IntVec3 in_coded =
+            {
+                static_cast<int>(round(in_rotor[0] * M)),
+                static_cast<int>(round(in_rotor[1] * M)),
+                static_cast<int>(round(in_rotor[2] * M)),
+            };
+
+            // aaaand back.
+            auto out_rotor = Rotor
+            {
+                in_coded.x / M,
+                in_coded.y / M,
+                in_coded.z / M,
+            };
+
+            auto out_r = to_quat(out_rotor);
+            auto out_target_quat = Mul(out_r, base_quat);
+            auto out_target = ConvertGaffer2(out_target_quat);
+
+            // Spew!
+            printf(
+                "%d,%d,%d,%d,%d,%d,%d,%d\n",
+                target.largest_index,
+                target.a,
+                target.b,
+                target.c,
+                out_target.largest_index,
+                out_target.a,
+                out_target.b,
+                out_target.c);
+
+            auto SpewFloat4 = [](const auto& a, const auto& b)
+            {
+                printf(
+                    "%f,%f,%f,%f,%f,%f,%f,%f\n",
+                    a[0],
+                    a[1],
+                    a[2],
+                    a[3],
+                    b[0],
+                    b[1],
+                    b[2],
+                    b[3]);
+            };
+
+            SpewFloat4(in_target_quat, out_target_quat);
+            SpewFloat4(in_r, out_r);
+
+            printf(
+                "%f,%f,%f,%f,%f,%f\n",
+                in_rotor[0],
+                in_rotor[1],
+                in_rotor[2],
+                out_rotor[0],
+                out_rotor[1],
+                out_rotor[2]);
+
+
+            printf(
+                "%d,%d,%d\n",
+                in_coded.x,
+                in_coded.y,
+                in_coded.z);
+
+            printf("======\n");
+            SpewFloat4(adj_target_quat, out_target_quat);
+            SpewFloat4(adj_r, out_r);
+            printf("------\n");
+        };
+
+        static const float M = 484;
+        auto target = Gaffer
+        {
+            3,
+            256,
+            255,
+            256,
+        };
+
+        auto target2 = Gaffer
+        {
+            3,
+            256,
+            254,
+            256,
+        };
+
+        Calc(M, target);
+        Calc(M-1, target);
+        Calc(M, target2);
+    }
+
+
     // only do half since the result is symmetrical.
     for (int i = 0; i < 257; ++i)
     {
@@ -2576,13 +2770,16 @@ auto Print_rotor_multiples()
             tg);
 
         printf(
-            "%d,%f,%f,%f,%f,%f\n",
+            "%d,%f,%f,%f,%f,%f,%f,%f,%f\n",
             i,
             rotor_multiple,
             target_quat[0],
             target_quat[1],
             target_quat[2],
-            target_quat[3]);
+            target_quat[3],
+            to_encode[0],
+            to_encode[1],
+            to_encode[2]);
     }
 
     printf("==========\n");
