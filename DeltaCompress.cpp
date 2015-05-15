@@ -2642,10 +2642,62 @@ auto Print_rotor_multiples()
     // of the smallest in_target_quad value, when converted to and from
     // a gaffer (it has a range of +/- 0.5, ie *255.5,*254.5)
     {
-        auto Calc = [&base_quat](float M, const Gaffer& target)
+        auto Re_adjust = [](const Quat2& adjust, float multiplier) -> Quat2
         {
-            // RAM: Nup, doesn't work, only can adjust the smallest value.
-            auto adj_target_quat = ConvertGaffer3(target);
+            // find the smallest value
+            unsigned smallest_index = 0;
+            unsigned largest_index = 0;
+            unsigned index = 0;
+            for (auto q : adjust.q)
+            {
+                auto c = std::abs(adjust[smallest_index]);
+                auto m = std::abs(adjust[largest_index]);
+                auto qa = std::abs(q);
+                if (((qa < c) && (qa != 0)) || c == 0)
+                {
+                    smallest_index = index;
+                }
+                if (qa > m)
+                {
+                    largest_index = index;
+                }
+
+                ++index;
+            }
+
+            auto old_mag_squared = Magnitude_squared(adjust);
+
+            bool neg = (adjust[smallest_index] < 0);
+            auto old = adjust[smallest_index] * multiplier;
+            auto new_min = old + (neg ? -0.4995127 : 0.49995127);
+            new_min /= multiplier;
+
+            auto result = adjust;
+            result[smallest_index] = new_min;
+
+            auto mag_sum = 0.0f;
+            for (unsigned i = 0; i < 4; ++i)
+            {
+                if (i != largest_index)
+                {
+                    mag_sum += result[i] * result[i];
+                }
+            }
+
+            auto new_largest = sqrt(std::abs(old_mag_squared - mag_sum));
+
+            result[largest_index] = new_largest;
+
+            auto new_mag_squared = Magnitude_squared(result);
+            assert_float_eq(new_mag_squared, old_mag_squared);
+
+            return result;
+        };
+
+        auto Calc = [&base_quat, &Re_adjust](float M, const Gaffer& target)
+        {
+            auto adj_target_quat = ConvertGaffer2(target);
+            adj_target_quat = Re_adjust(adj_target_quat, q_to_g2);
             auto adj_r = R(base_quat, adj_target_quat);
             //auto adj_rotor = to_rotor(adj_r);
 
