@@ -2699,7 +2699,7 @@ auto Print_rotor_multiples()
             auto adj_target_quat = ConvertGaffer2(target);
             adj_target_quat = Re_adjust(adj_target_quat, q_to_g2);
             auto adj_r = R(base_quat, adj_target_quat);
-            //auto adj_rotor = to_rotor(adj_r);
+            auto adj_rotor = to_rotor(adj_r);
 
 
 
@@ -2775,6 +2775,15 @@ auto Print_rotor_multiples()
             SpewFloat4(adj_target_quat, out_target_quat);
             SpewFloat4(adj_r, out_r);
             printf("------\n");
+
+            auto min_val = 100.0f;
+            for (auto a : adj_rotor)
+            {
+                min_val = std::min(a, min_val);
+            }
+
+            // Fucking jackpot! Thats the value!
+            printf("----> %f\n", 1.0f/min_val);
         };
 
         static const float M = 484;
