@@ -2090,86 +2090,6 @@ float g_256 = 256.4995127;
 float q_to_g2 = g_256 * 1.414213562373095048801688724209698078569671875;
 float g_to_q2 = 1.0 / (g_256 * 1.414213562373095048801688724209698078569671875);
 
-Quat2 ConvertGaffer3(const Gaffer& gaffer)
-{
-    static const float OFFSET = 0.4987305042;
-    Quat2 result
-    {
-        OFFSET + static_cast<float>(gaffer.a - 256),
-        OFFSET + static_cast<float>(gaffer.b - 256),
-        OFFSET + static_cast<float>(gaffer.c - 256),
-        0.0,
-    };
-
-    auto largest_squared = Quat2
-    {
-        result[0] * result[0],
-        result[1] * result[1],
-        result[2] * result[2],
-        0,
-    };
-
-    auto magnitude_squared =
-            largest_squared[0] + largest_squared[1] + largest_squared[2];
-
-    auto largest_value_squared = gaffer_one_squared - magnitude_squared;
-
-    assert(largest_value_squared >= 0);
-
-    // Deal with quantising errors.
-    auto next_largest = largest_squared[0];
-    if (next_largest < largest_squared[1])
-    {
-        next_largest = largest_squared[1];
-    }
-    if (next_largest < largest_squared[2])
-    {
-        next_largest = largest_squared[2];
-    }
-
-    if (next_largest > largest_value_squared)
-    {
-        // Do I need to add an offset to make sure it is still
-        // the largest as opposed to equal?
-        // RAM: TODO: YES!
-        // RAM: TODO: figure out by what number ill use.
-        largest_value_squared = next_largest + 20;
-    }
-
-    auto largest = sqrt(largest_value_squared);
-
-    if (gaffer.largest_index == 0)
-    {
-        result[3] = result[2];
-        result[2] = result[1];
-        result[1] = result[0];
-    }
-
-    if (gaffer.largest_index == 1)
-    {
-        result[3] = result[2];
-        result[2] = result[1];
-    }
-
-    if (gaffer.largest_index == 2)
-    {
-        result[3] = result[2];
-    }
-
-    result[gaffer.largest_index] = largest;
-    result = Mul(result, g_to_q2);
-
-    {
-        auto mag = Magnitude_squared(result);
-        auto quantised = 256 * (mag - 1.0f);
-        assert(std::abs(quantised) < 0.5f);
-    }
-
-    result = Normalise(result);
-    return result;
-}
-
-
 Quat2 ConvertGaffer2(const Gaffer& gaffer)
 {
     Quat2 result
@@ -2373,6 +2293,63 @@ Gaffer ConvertGaffer2(const Quat2& quat)
 
     return result;
 }
+
+Quat2 ConvertGaffer3(const Gaffer& gaffer)
+{
+    auto adjust = ConvertGaffer2(gaffer);
+
+    // Re adjust the quat with the smallest gaffer value +0.5.
+
+    // find the smallest value
+    unsigned smallest_index = 0;
+    unsigned largest_index = 0;
+    unsigned index = 0;
+    for (auto q : adjust.q)
+    {
+        auto c = std::abs(adjust[smallest_index]);
+        auto m = std::abs(adjust[largest_index]);
+        auto qa = std::abs(q);
+        if (((qa < c) && (qa != 0)) || c == 0)
+        {
+            smallest_index = index;
+        }
+        if (qa > m)
+        {
+            largest_index = index;
+        }
+
+        ++index;
+    }
+
+    auto old_mag_squared = Magnitude_squared(adjust);
+
+    bool neg = (adjust[smallest_index] < 0);
+    auto old = adjust[smallest_index] * q_to_g2;
+    auto new_min = old + (neg ? -0.4995127 : 0.49995127);
+    new_min /= q_to_g2;
+
+    auto result = adjust;
+    result[smallest_index] = new_min;
+
+    auto mag_sum = 0.0f;
+    for (unsigned i = 0; i < 4; ++i)
+    {
+        if (i != largest_index)
+        {
+            mag_sum += result[i] * result[i];
+        }
+    }
+
+    auto new_largest = sqrt(std::abs(old_mag_squared - mag_sum));
+
+    result[largest_index] = new_largest;
+
+    auto new_mag_squared = Magnitude_squared(result);
+    assert_float_eq(new_mag_squared, old_mag_squared);
+
+    return result;
+}
+
 
 Quat ConvertGaffer(const Gaffer& gaffer)
 {
@@ -6254,6 +6231,65 @@ std::vector<uint8_t> EncodeStats(
                             (to_encode[1] != 0) ||
                             (to_encode[2] != 0));
 
+                        // RAM: Ok, lets try my back caluclating approace
+                        // to see when it doesn't work.
+                        auto recalc_target = ConvertGaffer3(tg);
+
+                        float calculated_multiplier = 1.0f;
+
+                        {
+                            // secondly test if that value converts
+                            // back and forward again.
+                            if (other)
+                            {
+                                recalc_target = Mul(recalc_target, -1.0f);
+                            }
+
+                            auto c_r = R(base_quat, recalc_target);
+                            auto c_rotor = to_rotor(c_r);
+
+                            float min_c = 10000.0f;
+                            for (auto c : c_rotor)
+                            {
+                                if (c != 0)
+                                {
+                                    if (std::abs(c) < min_c)
+                                    {
+                                        min_c = std::abs(c);
+                                    }
+                                }
+                            }
+
+                            calculated_multiplier =
+                                std::trunc(1.0f / min_c) + 1.0f;
+
+                            IntVec3 coded =
+                            {
+                                static_cast<int>(round(c_rotor[0] * calculated_multiplier)),
+                                static_cast<int>(round(c_rotor[1] * calculated_multiplier)),
+                                static_cast<int>(round(c_rotor[2] * calculated_multiplier)),
+                            };
+
+                            auto back = Rotor
+                            {
+                                coded.x / calculated_multiplier,
+                                coded.y / calculated_multiplier,
+                                coded.z / calculated_multiplier,
+                            };
+
+                            auto b_rotor = to_quat(back);
+                            auto b_result = Mul(b_rotor, base_quat);
+                            auto b = ConvertGaffer2(b_result);
+
+                            // RAM: Doesn't work for 255,256,255.
+                            b.a *= 1;
+                            //assert(b.largest_index == tg.largest_index);
+                            //assert(b.a == tg.a);
+                            //assert(b.b == tg.b);
+                            //assert(b.c == tg.c);
+                        }
+
+
                         // Well, that didn't work. Always guessed min of 10 bits
                         // and even guessed 19 bits at one point.
 //                        // Maybe I only need to multiply so that the smallest
@@ -6287,6 +6323,8 @@ std::vector<uint8_t> EncodeStats(
                                 to_encode,
                                 base_quat,
                                 tg);
+
+                        //assert_float_eq(ROTOR_MULTIPLY, calculated_multiplier);
 
                         IntVec3 coded =
                         {
