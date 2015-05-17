@@ -2625,7 +2625,7 @@ auto Print_rotor_multiples()
             unsigned smallest_index = 0;
             unsigned largest_index = 0;
             unsigned index = 0;
-            float old_min = 10000.0f;
+            float old_min = std::abs(adjust[0]);
             for (auto q : adjust.q)
             {
                 auto c = std::abs(adjust[smallest_index]);
@@ -6142,7 +6142,7 @@ std::vector<uint8_t> EncodeStats(
                             printf("Min: %f\n", mag);
                         }
 
-                        // Ok, lets get stats assuming our multiple is
+                        // Ok, lets` get stats assuming our multiple is
                         // 2^14 == 8192.
 //                        {
 //                            static const float ROTOR_MULTIPLY = 10000.0;
