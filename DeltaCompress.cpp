@@ -24,7 +24,7 @@
 // //////////////////////////////////////////////////////
 
 bool doTests            = true;
-bool doStats            = false;
+bool doStats            = true;
 bool doCompression      = false;
 bool doRangeCompression = false;
 bool doRangeSearch      = false;
@@ -2304,6 +2304,7 @@ Quat2 ConvertGaffer3(const Gaffer& gaffer)
     unsigned smallest_index = 0;
     unsigned largest_index = 0;
     unsigned index = 0;
+    float old_min = std::abs(adjust[0]);
     for (auto q : adjust.q)
     {
         auto c = std::abs(adjust[smallest_index]);
@@ -2311,6 +2312,7 @@ Quat2 ConvertGaffer3(const Gaffer& gaffer)
         auto qa = std::abs(q);
         if (((qa < c) && (qa != 0)) || c == 0)
         {
+            old_min = qa;
             smallest_index = index;
         }
         if (qa > m)
@@ -2321,15 +2323,27 @@ Quat2 ConvertGaffer3(const Gaffer& gaffer)
         ++index;
     }
 
+    if (largest_index == smallest_index)
+    {
+        return adjust;
+    }
+
     auto old_mag_squared = Magnitude_squared(adjust);
-
-    bool neg = (adjust[smallest_index] < 0);
-    auto old = adjust[smallest_index] * q_to_g2;
-    auto new_min = old + (neg ? -0.4995127 : 0.49995127);
-    new_min /= q_to_g2;
-
     auto result = adjust;
-    result[smallest_index] = new_min;
+
+    for (unsigned i = 0; i < 4; ++i)
+    {
+        auto q = std::abs(adjust[i]);
+
+        if (q == old_min)
+        {
+            bool neg = (q < 0);
+            auto old = q * q_to_g2;
+            auto new_min = old + (neg ? -0.4995127 : 0.49995127);
+            new_min /= q_to_g2;
+            result[i] = new_min;
+        }
+    }
 
     auto mag_sum = 0.0f;
     for (unsigned i = 0; i < 4; ++i)
@@ -2665,12 +2679,6 @@ auto Print_rotor_multiples()
                     result[i] = new_min;
                 }
             }
-
-//            bool neg = (adjust[smallest_index] < 0);
-//            auto old = adjust[smallest_index] * multiplier;
-//            auto new_min = old + (neg ? -0.4995127 : 0.49995127);
-//            new_min /= multiplier;
-//            result[smallest_index] = new_min;
 
             auto mag_sum = 0.0f;
             for (unsigned i = 0; i < 4; ++i)
