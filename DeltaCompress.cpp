@@ -2625,6 +2625,7 @@ auto Print_rotor_multiples()
             unsigned smallest_index = 0;
             unsigned largest_index = 0;
             unsigned index = 0;
+            float old_min = 10000.0f;
             for (auto q : adjust.q)
             {
                 auto c = std::abs(adjust[smallest_index]);
@@ -2632,6 +2633,7 @@ auto Print_rotor_multiples()
                 auto qa = std::abs(q);
                 if (((qa < c) && (qa != 0)) || c == 0)
                 {
+                    old_min = qa;
                     smallest_index = index;
                 }
                 if (qa > m)
@@ -2642,15 +2644,33 @@ auto Print_rotor_multiples()
                 ++index;
             }
 
+            if (smallest_index == largest_index)
+            {
+                return adjust;
+            }
+
             auto old_mag_squared = Magnitude_squared(adjust);
-
-            bool neg = (adjust[smallest_index] < 0);
-            auto old = adjust[smallest_index] * multiplier;
-            auto new_min = old + (neg ? -0.4995127 : 0.49995127);
-            new_min /= multiplier;
-
             auto result = adjust;
-            result[smallest_index] = new_min;
+
+            for (unsigned i = 0; i < 4; ++i)
+            {
+                auto q = std::abs(adjust[i]);
+
+                if (q == old_min)
+                {
+                    bool neg = (q < 0);
+                    auto old = q * multiplier;
+                    auto new_min = old + (neg ? -0.4995127 : 0.49995127);
+                    new_min /= multiplier;
+                    result[i] = new_min;
+                }
+            }
+
+//            bool neg = (adjust[smallest_index] < 0);
+//            auto old = adjust[smallest_index] * multiplier;
+//            auto new_min = old + (neg ? -0.4995127 : 0.49995127);
+//            new_min /= multiplier;
+//            result[smallest_index] = new_min;
 
             auto mag_sum = 0.0f;
             for (unsigned i = 0; i < 4; ++i)
@@ -2668,7 +2688,7 @@ auto Print_rotor_multiples()
             auto new_mag_squared = Magnitude_squared(result);
             assert_float_eq(new_mag_squared, old_mag_squared);
 
-            return result;
+            return Normalise(result);
         };
 
         auto Calc = [&base_quat, &Re_adjust](float M, const Gaffer& target)
@@ -2775,16 +2795,14 @@ auto Print_rotor_multiples()
         auto target2 = Gaffer
         {
             3,
+            255,
             256,
-            254,
-            256,
+            255,
         };
 
         Calc(M, target);
-        Calc(M-1, target);
         Calc(M, target2);
     }
-
 
     // only do half since the result is symmetrical.
     for (int i = 0; i < 257; ++i)
