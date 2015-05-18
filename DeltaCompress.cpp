@@ -2337,8 +2337,8 @@ Quat2 ConvertGaffer3(const Gaffer& gaffer)
 
         if (q == old_min)
         {
-            bool neg = (q < 0);
-            auto old = q * q_to_g2;
+            bool neg = (adjust[i] < 0);
+            auto old = adjust[i] * q_to_g2;
             auto new_min = old + (neg ? -0.4995127 : 0.49995127);
             new_min /= q_to_g2;
             result[i] = new_min;
@@ -2361,7 +2361,7 @@ Quat2 ConvertGaffer3(const Gaffer& gaffer)
     auto new_mag_squared = Magnitude_squared(result);
     assert_float_eq(new_mag_squared, old_mag_squared);
 
-    return result;
+    return Normalise(result);
 }
 
 
@@ -2672,8 +2672,8 @@ auto Print_rotor_multiples()
 
                 if (q == old_min)
                 {
-                    bool neg = (q < 0);
-                    auto old = q * multiplier;
+                    bool neg = (adjust[i] < 0);
+                    auto old = adjust[i] * multiplier;
                     auto new_min = old + (neg ? -0.4995127 : 0.49995127);
                     new_min /= multiplier;
                     result[i] = new_min;
@@ -2730,6 +2730,11 @@ auto Print_rotor_multiples()
             auto out_r = to_quat(out_rotor);
             auto out_target_quat = Mul(out_r, base_quat);
             auto out_target = ConvertGaffer2(out_target_quat);
+
+//            assert(out_target.largest_index == target.largest_index);
+//            assert(out_target.a == target.a);
+//            assert(out_target.b == target.b);
+//            assert(out_target.c == target.c);
 
             // Spew!
             printf(
@@ -2808,8 +2813,26 @@ auto Print_rotor_multiples()
             255,
         };
 
-        Calc(M, target);
+        auto target3 = Gaffer
+        {
+            3,
+            256,
+            256,
+            255,
+        };
+
+        auto target4 = Gaffer
+        {
+            3,
+            267,
+            255,
+            256,
+        };
+
+        Calc(M, target4);
+        Calc(M, target3);
         Calc(M, target2);
+        Calc(M, target);
     }
 
     // only do half since the result is symmetrical.
@@ -6308,11 +6331,11 @@ std::vector<uint8_t> EncodeStats(
                             auto b = ConvertGaffer2(b_result);
 
                             // RAM: Doesn't work for 255,256,255.
-                            b.a *= 1;
-                            //assert(b.largest_index == tg.largest_index);
-                            //assert(b.a == tg.a);
-                            //assert(b.b == tg.b);
-                            //assert(b.c == tg.c);
+                            //b.a *= 1;
+                            assert(b.largest_index == tg.largest_index);
+                            assert(b.a == tg.a);
+                            assert(b.b == tg.b);
+                            assert(b.c == tg.c);
                         }
 
 
