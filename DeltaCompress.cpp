@@ -499,6 +499,46 @@ bool Equal(const Quat2& lhs, const Quat2& rhs, float epislon = EPISLON_U16)
     return true;
 }
 
+Rotor to_rotor(const Quat2& target, const Quat2& base, float offset)
+{
+    float a = target[0];
+    float b = target[1];
+    float c = target[2];
+    float d = target[3];
+
+    // q*
+    float x = base[0];
+    float y = -base[1];
+    float z = -base[2];
+    float w = -base[3];
+
+    float o = offset;
+
+    auto r = Quat2
+    {
+        (a*x-b*y-c*z-d*w) +
+        (a+x-b-y-c-z-d-w-(2*o))*o,
+
+        (a*y+b*x+c*w-d*z) +
+        (a+y+b+x+c+w-d-z+(2*o))*o,
+
+        (a*z-b*w+c*x+d*y) +
+        (a+z-b-w+c+x+d+y+(2*o))*o,
+
+        (a*w+b*z-c*y+d*x) +
+        (a+w+b+z-c-y+d+x+(2*o))*o
+    };
+
+    auto det = 1.0f + r[0];
+
+    return
+    {
+        r[1] / det,
+        r[2] / det,
+        r[3] / det,
+    };
+}
+
 void assert_float_eq(float a, float b, float epislon = EPISLON_U16)
 {
     assert((a - b) < epislon);
@@ -2611,6 +2651,35 @@ auto Print_rotor_multiples()
                 r[1],
                 r[2],
                 r[3]);
+
+            // RAM: I've given up testing properly.
+            auto new_rotor_method_low = to_rotor
+            (
+                target_quat,
+                base_quat,
+                -0.4995127f * g_to_q2
+            );
+
+            auto new_rotor_method_hi = to_rotor
+            (
+                target_quat,
+                base_quat,
+                0.4995127f * g_to_q2
+            );
+
+            printf("\n----\n");
+            printf(
+                "%f,%f,%f\n",
+                1.0f / new_rotor_method_low[0],
+                1.0f / new_rotor_method_low[1],
+                1.0f / new_rotor_method_low[2]);
+
+            printf(
+                "%f,%f,%f\n",
+                1.0f / new_rotor_method_hi[0],
+                1.0f / new_rotor_method_hi[1],
+                1.0f / new_rotor_method_hi[2]);
+            printf("----\n");
         }
 
         return to_encode;
