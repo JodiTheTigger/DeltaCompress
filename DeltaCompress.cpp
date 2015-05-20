@@ -6382,6 +6382,41 @@ std::vector<uint8_t> EncodeStats(
                             printf("Min: %f\n", mag);
                         }
 
+                        // Find the min and max angular v
+                        {
+                            static float max_angular_velocity = 0.0f;
+                            static float min_angular_velocity = 1000000.0f;
+
+                            float mag_b = sqrt(mag);
+                            auto angular_velocity = 2.0f * mag_b * frameDelta;
+
+                            if (angular_velocity > max_angular_velocity)
+                            {
+                                max_angular_velocity = angular_velocity;
+
+                                printf
+                                (
+                                    "Max angular velocity: %f\n",
+                                    max_angular_velocity
+                                );
+                            }
+
+                            if (angular_velocity < min_angular_velocity)
+                            {
+                                min_angular_velocity = angular_velocity;
+
+                                printf
+                                (
+                                    "Min angular velocity: %f\n",
+                                    min_angular_velocity
+                                );
+                            }
+
+                            // 1 : min: 0.051460 max: 0.932924
+                            // 6 : min: 0.308763 max: 9.811771
+                            // 10: min: 0.514605 max: 19.996567
+                        }
+
                         // Ok, lets` get stats assuming our multiple is
                         // 2^14 == 8192.
 //                        {
