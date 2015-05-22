@@ -25,14 +25,6 @@
 
 // //////////////////////////////////////////////////////
 
-#ifdef WIN32
-#define msvc_constexpr
-#else
-#define msvc_constexpr constexpr
-#endif
-
-// //////////////////////////////////////////////////////
-
 bool doTests            = false;
 bool doStats            = true;
 bool doCompression      = false;
@@ -41,6 +33,13 @@ bool doRangeSearch      = false;
 
 // //////////////////////////////////////////////////////
 
+#ifdef WIN32
+#define msvc_constexpr
+#else
+#define msvc_constexpr constexpr
+#endif
+
+// //////////////////////////////////////////////////////
 // http://the-witness.net/news/2012/11/scopeexit-in-c11/
 
 template <typename F>
@@ -324,6 +323,552 @@ enum class QuatPacker
     BitVector3Sorted,
     Sorted_no_bit_count,
 };
+
+// //////////////////////////////////////////////////////
+
+namespace Argh {
+
+// //////////////////////////////////////////////////////
+
+using Vec3i = std::array<int, 3>;
+using Vec4f = std::array<float, 4>;
+using Vec3f = std::array<float, 4>;
+
+struct Gaffer
+{
+    unsigned orientation_largest;
+    Vec3i vec;
+};
+
+struct Maxwell
+{
+    unsigned multiplier_index;
+    Vec3i vec;
+};
+
+struct Quat
+{
+    Vec4f vec;
+
+    float constexpr operator[](unsigned index) const
+    {
+        return vec[index];
+    }
+
+    float& operator[](unsigned index)
+    {
+        return vec[index];
+    }
+};
+
+float* begin(Quat& q)
+{
+    return &(q.vec[0]);
+}
+
+float* end(Quat& q)
+{
+    return &(q.vec[4]);
+}
+
+struct Rotor
+{
+    Vec3f vec;
+
+    float constexpr operator[](unsigned index) const
+    {
+        return vec[index];
+    }
+
+    float& operator[](unsigned index)
+    {
+        return vec[index];
+    }
+};
+
+// //////////////////////////////////////////////////////
+
+static_assert
+(
+    std::is_pod<Gaffer>::value,
+    "Not a POD."
+);
+
+static_assert
+(
+    std::is_pod<Maxwell>::value,
+    "Not a POD."
+);
+
+static_assert
+(
+    std::is_pod<Quat>::value,
+    "Not a POD."
+);
+
+static_assert
+(
+    std::is_pod<Rotor>::value,
+    "Not a POD."
+);
+
+// //////////////////////////////////////////////////////
+
+inline constexpr bool operator==(const Gaffer& lhs, const Gaffer& rhs)
+{
+    return
+    (
+        (lhs.orientation_largest == rhs.orientation_largest) &&
+        (lhs.vec == rhs.vec)
+    );
+}
+
+inline constexpr bool operator!=(const Gaffer& lhs, const Gaffer& rhs)
+{
+    return !operator==(lhs,rhs);
+}
+
+// //////////////////////////////////////////////////////
+
+auto constexpr mul(const Quat& lhs, float rhs) -> Quat
+{
+    return
+    {
+        lhs[0]*rhs,
+        lhs[1]*rhs,
+        lhs[2]*rhs,
+        lhs[3]*rhs
+    };
+}
+
+auto constexpr mul(const Quat& lhs, const Quat& rhs) -> Quat
+{
+    return
+    {
+        (lhs[0]*rhs[0] - lhs[1]*rhs[1] - lhs[2]*rhs[2] - lhs[3]*rhs[3]),
+        (lhs[0]*rhs[1] + lhs[1]*rhs[0] + lhs[2]*rhs[3] - lhs[3]*rhs[2]),
+        (lhs[0]*rhs[2] - lhs[1]*rhs[3] + lhs[2]*rhs[0] + lhs[3]*rhs[1]),
+        (lhs[0]*rhs[3] + lhs[1]*rhs[2] - lhs[2]*rhs[1] + lhs[3]*rhs[0])
+    };
+}
+
+
+auto constexpr magnitude_squared(const Quat& quat) -> float
+{
+    return
+        quat[0] * quat[0] +
+        quat[1] * quat[1] +
+        quat[2] * quat[2] +
+        quat[3] * quat[3];
+}
+
+auto msvc_constexpr normalise(const Quat& q) -> Quat
+{
+    return mul(q, 1.0f / std::sqrt(magnitude_squared(q)));
+}
+
+auto constexpr conjugate(const Quat& q) -> Quat
+{
+    return
+    {
+        q[0],
+        -q[1],
+        -q[2],
+        -q[3]
+    };
+}
+
+auto constexpr magnitude_squared(const Rotor& r) -> float
+{
+    return
+        r[0] * r[0] +
+        r[1] * r[1] +
+        r[2] * r[2];
+}
+
+auto constexpr mul(const Rotor& lhs, float rhs) -> Rotor
+{
+    return
+    {
+        lhs[0]*rhs,
+        lhs[1]*rhs,
+        lhs[2]*rhs,
+    };
+}
+
+// //////////////////////////////////////////////////////
+
+Rotor constexpr to_rotor(const Quat& q)
+{
+    return
+    {
+        q[1] / (1.0f + q[0]),
+        q[2] / (1.0f + q[0]),
+        q[3] / (1.0f + q[0]),
+    };
+}
+
+Quat constexpr to_quat(const Rotor& r)
+{
+    return
+    {
+        (1.0f - magnitude_squared(r)) / (1 + magnitude_squared(r)),
+        (r[0] * 2.0f) / (1 + magnitude_squared(r)),
+        (r[1] * 2.0f) / (1 + magnitude_squared(r)),
+        (r[2] * 2.0f) / (1 + magnitude_squared(r)),
+    };
+}
+
+// //////////////////////////////////////////////////////
+// Converting between quantised quats and back again is really pissy.
+// //////////////////////////////////////////////////////
+
+static const float G_256    = 256.4995127f * M_PI;
+static const float Q_TO_G   = G_256 * M_SQRT2;
+static const float G_TO_Q   = 1.0f / (G_256 * M_SQRT2);
+
+// Did some research, -16, -16, -256 seems to be the worse.
+// Use that as max sum.
+static const float GAFFER_ONE_SQUARED =
+        (256 * 256) +
+        (256 * 256) +
+        (16 * 16) +
+        (16 * 16);
+
+Quat to_quat(const Gaffer& gaffer)
+{
+    Quat result
+    {
+        static_cast<float>(gaffer.vec[0] - 256),
+        static_cast<float>(gaffer.vec[1] - 256),
+        static_cast<float>(gaffer.vec[2] - 256),
+        0.0,
+    };
+
+    auto largest_squared = Quat
+    {
+        result[0] * result[0],
+        result[1] * result[1],
+        result[2] * result[2],
+        0,
+    };
+
+    auto largest_value_squared =
+        GAFFER_ONE_SQUARED -
+        (
+            largest_squared[0] +
+            largest_squared[1] +
+            largest_squared[2]
+        );
+
+    assert(largest_value_squared >= 0);
+
+    // Deal with quantising errors.
+    auto next_largest = largest_squared[0];
+    if (next_largest < largest_squared[1])
+    {
+        next_largest = largest_squared[1];
+    }
+    if (next_largest < largest_squared[2])
+    {
+        next_largest = largest_squared[2];
+    }
+
+    if (next_largest > largest_value_squared)
+    {
+        // I need to add an offset to make sure it is still
+        // the largest as opposed to equal.
+        // CBFd to figure out what number to actually use.
+        largest_value_squared = next_largest + 20;
+    }
+
+    auto largest = sqrt(largest_value_squared);
+
+    if (gaffer.orientation_largest == 0)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+        result[1] = result[0];
+    }
+
+    if (gaffer.orientation_largest == 1)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+    }
+
+    if (gaffer.orientation_largest == 2)
+    {
+        result[3] = result[2];
+    }
+
+    result[gaffer.orientation_largest] = largest;
+    result = mul(result, G_TO_Q);
+
+    {
+        auto mag = magnitude_squared(result);
+        auto quantised = 256 * (mag - 1.0f);
+        assert(std::abs(quantised) < 0.5f);
+    }
+
+    result = normalise(result);
+    return result;
+}
+
+Gaffer to_gaffer(const Quat& quat)
+{
+    const auto size = quat.vec.size();
+    unsigned largest_index = 0;
+    float largest = 0;
+
+    auto squared = Quat
+    {
+        quat[0] * quat[0],
+        quat[1] * quat[1],
+        quat[2] * quat[2],
+        quat[3] * quat[3],
+    };
+
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if (squared[i] >= largest)
+        {
+            if (squared[i] == largest)
+            {
+                if (quat[i] < 0)
+                {
+                    continue;
+                }
+            }
+
+            largest = squared[i];
+            largest_index = i;
+        }
+    }
+
+    // If the largest is -ve then we need to negate the quat so it's positive.
+    auto fixed_quat = quat;
+    if (quat[largest_index] < 0)
+    {
+        fixed_quat = mul(quat, -1.0f);
+    }
+
+    auto write_index = 0;
+    Quat gaffer;
+
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if (i != largest_index)
+        {
+            gaffer[write_index++] = fixed_quat[i];
+        }
+    }
+
+    // Screw it, if the quat would produce 256 or -257
+    // then re-adjust
+    auto multiple = 1.0f;
+    static const auto MAX_POSITIVE = (255.0f / 256.0f) * M_SQRT1_2;
+    static const auto MAX_NEGATIVE = -1.0f * M_SQRT1_2;
+
+    if (gaffer[0] > MAX_POSITIVE)
+    {
+        multiple = MAX_POSITIVE / gaffer[0];
+    }
+    if (gaffer[1] > MAX_POSITIVE)
+    {
+        multiple = MAX_POSITIVE / gaffer[1];
+    }
+    if (gaffer[2] > MAX_POSITIVE)
+    {
+        multiple = MAX_POSITIVE / gaffer[2];
+    }
+
+
+    if (gaffer[0] < MAX_NEGATIVE)
+    {
+        multiple = MAX_NEGATIVE / gaffer[0];
+    }
+    if (gaffer[1] < MAX_NEGATIVE)
+    {
+        multiple = MAX_NEGATIVE / gaffer[1];
+    }
+    if (gaffer[2] < MAX_NEGATIVE)
+    {
+        multiple = MAX_NEGATIVE / gaffer[2];
+    }
+
+    auto result = Gaffer
+    {
+        largest_index,
+        {
+            256 + static_cast<int>(round(gaffer[0] * Q_TO_G * multiple)),
+            256 + static_cast<int>(round(gaffer[1] * Q_TO_G * multiple)),
+            256 + static_cast<int>(round(gaffer[2] * Q_TO_G * multiple)),
+        }
+    };
+
+    assert(result.vec[0] >= 0);
+    assert(result.vec[1] >= 0);
+    assert(result.vec[2] >= 0);
+
+    assert(result.vec[0] < 512);
+    assert(result.vec[1] < 512);
+    assert(result.vec[2] < 512);
+
+    return result;
+}
+
+Gaffer to_gaffer(const DeltaData& delta)
+{
+    return Gaffer
+    {
+        static_cast<unsigned>(delta.orientation_largest),
+        {
+            delta.orientation_a,
+            delta.orientation_b,
+            delta.orientation_c,
+        }
+    };
+}
+
+// //////////////////////////////////////////////////////
+
+using Multipliers = std::array<float, 8>;
+
+static const Multipliers DEFAULT_MUTLIPLES =
+{
+    130.0f,
+    222.0f,
+    329.0f,
+    471.0f,
+    512.0f,
+    969.0f,
+    4247.0f,
+    65535.0f,
+};
+
+// The for love of god I couldn't derive the formula for generating the
+// multiplier. So I have to just search for it instead.
+auto to_maxwell(
+    const Rotor& to_encode,
+    const Quat& base_quat,
+    const Gaffer& target_gaffer,
+    const Multipliers& multipliers) -> Maxwell
+{
+    unsigned index = 0;
+    Rotor coded;
+
+    for (auto rotor_multiply : multipliers)
+    {
+        coded = Rotor
+        {
+            std::round(to_encode[0] * rotor_multiply),
+            std::round(to_encode[1] * rotor_multiply),
+            std::round(to_encode[2] * rotor_multiply)
+        };
+
+        auto decoded            = mul(coded, 1.0f / rotor_multiply);
+        auto decoded_quat       = to_quat(decoded);
+        auto result_target_quat = mul(decoded_quat, base_quat);
+        auto result             = to_gaffer(result_target_quat);
+
+        if  (result == target_gaffer)
+        {
+            return
+            {
+                index,
+                {
+                    static_cast<int>(coded[0]),
+                    static_cast<int>(coded[1]),
+                    static_cast<int>(coded[2]),
+                }
+            };
+        }
+
+        ++index;
+    }
+
+    // :-(
+    assert(false);
+
+    return
+    {
+        index - 1,
+        {
+            static_cast<int>(coded[0]),
+            static_cast<int>(coded[1]),
+            static_cast<int>(coded[2]),
+        }
+    };
+}
+
+auto to_maxwell
+(
+    const Gaffer& base,
+    const Gaffer& target,
+    const Multipliers& multipliers = DEFAULT_MUTLIPLES
+)
+-> Maxwell
+{
+    auto base_quat      = to_quat(base);
+    auto target_quat    = to_quat(target);
+
+    // Hmm, seem we get stupid magnitudess due
+    // to rotating near itself (from q to -q roughly).
+    auto target_quat_neg = mul(target_quat, -1.0f);
+
+    // http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
+    auto r                  = mul(target_quat, conjugate(base_quat));
+    auto r_neg              = mul(target_quat_neg, conjugate(base_quat));
+    auto rotor              = to_rotor(r);
+    auto rotor_neg          = to_rotor(r_neg);
+    auto mag_squared        = magnitude_squared(rotor);
+    auto mag_squared_neg    = magnitude_squared(rotor_neg);
+    auto mag                = sqrt(mag_squared);
+    auto mag_neg            = sqrt(mag_squared_neg);
+
+    auto result_rotor =
+        (mag < mag_neg) ?
+            rotor :
+            rotor_neg;
+
+    return to_maxwell
+    (
+        result_rotor,
+        base_quat,
+        target,
+        multipliers
+    );
+}
+
+auto to_gaffer
+(
+    const Gaffer& base,
+    const Maxwell& coded,
+    const Multipliers& multipliers = DEFAULT_MUTLIPLES
+)
+-> Gaffer
+{
+    assert(coded.multiplier_index < multipliers.size());
+
+    auto base_quat = to_quat(base);
+    auto inv_multiplier = 1.0f / multipliers[coded.multiplier_index];
+    auto rotor = Rotor
+    {
+        coded.vec[0] * inv_multiplier,
+        coded.vec[1] * inv_multiplier,
+        coded.vec[2] * inv_multiplier,
+    };
+
+    auto r = to_quat(rotor);
+    auto target_quat = mul(r, base_quat);
+
+    return to_gaffer(target_quat);
+}
+
+// //////////////////////////////////////////////////////
+
+} // namespace
 
 // //////////////////////////////////////////////////////
 
@@ -2093,322 +2638,6 @@ IntVec3 BitVector3TruncatedDecode(
     result.z = ZigZag(zz);
 
     return result;
-}
-
-// //////////////////////////////////////////////////////
-
-namespace Argh
-{
-// //////////////////////////////////////////////////////
-
-using Vec3i = std::array<int, 3>;
-using Vec4f = std::array<float, 4>;
-using Vec3f = std::array<float, 4>;
-
-struct Gaffer
-{
-    unsigned orientation_largest;
-    Vec3i vec;
-};
-
-struct Rotor
-{
-    int multiplier_index;
-    Vec3i vec;
-};
-
-struct Quat
-{
-    Vec4f vec;
-
-    float constexpr operator[](unsigned index) const
-    {
-        return vec[index];
-    }
-
-    float& operator[](unsigned index)
-    {
-        return vec[index];
-    }
-};
-
-float* begin(Quat& q)
-{
-    return &(q.vec[0]);
-}
-
-float* end(Quat& q)
-{
-    return &(q.vec[4]);
-}
-
-// //////////////////////////////////////////////////////
-
-static_assert
-(
-    std::is_pod<Gaffer>::value,
-    "Not a POD."
-);
-
-static_assert
-(
-    std::is_pod<Rotor>::value,
-    "Not a POD."
-);
-
-static_assert
-(
-    std::is_pod<Quat>::value,
-    "Not a POD."
-);
-
-// //////////////////////////////////////////////////////
-
-Quat constexpr Mul(const Quat& lhs, float rhs)
-{
-    return
-    {
-        lhs[0]*rhs,
-        lhs[1]*rhs,
-        lhs[2]*rhs,
-        lhs[3]*rhs
-    };
-}
-
-float constexpr Magnitude_squared(const Quat& quat)
-{
-    return
-        quat[0] * quat[0] +
-        quat[1] * quat[1] +
-        quat[2] * quat[2] +
-        quat[3] * quat[3];
-}
-
-Quat msvc_constexpr Normalise(const Quat& q)
-{
-    return Mul(q, 1.0f / std::sqrt(Magnitude_squared(q)));
-}
-
-//Vec4f constexpr Square(const Vec4f& v)
-//{
-//    return
-//    {
-//        v[0]*v[0],
-//        v[1]*v[1],
-//        v[2]*v[2],
-//        v[3]*v[3],
-//    };
-//}
-
-// //////////////////////////////////////////////////////
-
-// Converting between quantised quats and back again is really pissy.
-
-static const float G_256    = 256.4995127f * M_PI;
-static const float Q_TO_G   = G_256 * M_SQRT2;
-static const float G_TO_Q   = 1.0f / (G_256 * M_SQRT2);
-
-// Again: did some research, -16, -16, -256 seems to be the worse.
-// try using that as max sum?
-static const float GAFFER_ONE_SQUARED =
-        (256 * 256) +
-        (256 * 256) +
-        (16 * 16) +
-        (16 * 16);
-
-Quat to_quat(const Gaffer& gaffer)
-{
-    Quat result
-    {
-        static_cast<float>(gaffer.vec[0] - 256),
-        static_cast<float>(gaffer.vec[1] - 256),
-        static_cast<float>(gaffer.vec[2] - 256),
-        0.0,
-    };
-
-    auto largest_squared = Quat
-    {
-        result[0] * result[0],
-        result[1] * result[1],
-        result[2] * result[2],
-        0,
-    };
-
-    auto magnitude_squared =
-            largest_squared[0] + largest_squared[1] + largest_squared[2];
-
-    auto largest_value_squared = GAFFER_ONE_SQUARED - magnitude_squared;
-
-    assert(largest_value_squared >= 0);
-
-    // Deal with quantising errors.
-    auto next_largest = largest_squared[0];
-    if (next_largest < largest_squared[1])
-    {
-        next_largest = largest_squared[1];
-    }
-    if (next_largest < largest_squared[2])
-    {
-        next_largest = largest_squared[2];
-    }
-
-    if (next_largest > largest_value_squared)
-    {
-        // I need to add an offset to make sure it is still
-        // the largest as opposed to equal.
-        // CBFd to figure out what number to actually use.
-        largest_value_squared = next_largest + 20;
-    }
-
-    auto largest = sqrt(largest_value_squared);
-
-    if (gaffer.orientation_largest == 0)
-    {
-        result[3] = result[2];
-        result[2] = result[1];
-        result[1] = result[0];
-    }
-
-    if (gaffer.orientation_largest == 1)
-    {
-        result[3] = result[2];
-        result[2] = result[1];
-    }
-
-    if (gaffer.orientation_largest == 2)
-    {
-        result[3] = result[2];
-    }
-
-    result[gaffer.orientation_largest] = largest;
-    result = Mul(result, G_TO_Q);
-
-    {
-        auto mag = Magnitude_squared(result);
-        auto quantised = 256 * (mag - 1.0f);
-        assert(std::abs(quantised) < 0.5f);
-    }
-
-    result = Normalise(result);
-    return result;
-}
-
-Gaffer to_gaffer(const Quat& quat)
-{
-    const auto size = quat.vec.size();
-    unsigned largest_index = 0;
-    float largest = 0;
-
-    auto squared = Quat2
-    {
-        quat[0] * quat[0],
-        quat[1] * quat[1],
-        quat[2] * quat[2],
-        quat[3] * quat[3],
-    };
-
-    for (unsigned i = 0; i < size; ++i)
-    {
-        if (squared[i] >= largest)
-        {
-            if (squared[i] == largest)
-            {
-                if (quat[i] < 0)
-                {
-                    continue;
-                }
-            }
-
-            largest = squared[i];
-            largest_index = i;
-        }
-    }
-
-    // If the largest is -ve then we need to negate the quat so it's positive.
-    auto fixed_quat = quat;
-    if (quat[largest_index] < 0)
-    {
-        fixed_quat = Mul(quat, -1.0f);
-    }
-
-    auto write_index = 0;
-    Quat gaffer;
-
-    for (unsigned i = 0; i < size; ++i)
-    {
-        if (i != largest_index)
-        {
-            gaffer[write_index++] = fixed_quat[i];
-        }
-    }
-
-    // Screw it, if the quat would produce 256 or -257
-    // then re-adjust
-    auto multiple = 1.0f;
-    static const auto MAX_POSITIVE = (255.0f / 256.0f) * M_SQRT1_2;
-    static const auto MAX_NEGATIVE = -1.0f * M_SQRT1_2;
-
-    if (gaffer[0] > MAX_POSITIVE)
-    {
-        multiple = MAX_POSITIVE / gaffer[0];
-    }
-    if (gaffer[1] > MAX_POSITIVE)
-    {
-        multiple = MAX_POSITIVE / gaffer[1];
-    }
-    if (gaffer[2] > MAX_POSITIVE)
-    {
-        multiple = MAX_POSITIVE / gaffer[2];
-    }
-
-
-    if (gaffer[0] < MAX_NEGATIVE)
-    {
-        multiple = MAX_NEGATIVE / gaffer[0];
-    }
-    if (gaffer[1] < MAX_NEGATIVE)
-    {
-        multiple = MAX_NEGATIVE / gaffer[1];
-    }
-    if (gaffer[2] < MAX_NEGATIVE)
-    {
-        multiple = MAX_NEGATIVE / gaffer[2];
-    }
-
-    auto result = Gaffer
-    {
-        largest_index,
-        {
-            256 + static_cast<int>(round(gaffer[0] * Q_TO_G * multiple)),
-            256 + static_cast<int>(round(gaffer[1] * Q_TO_G * multiple)),
-            256 + static_cast<int>(round(gaffer[2] * Q_TO_G * multiple)),
-        }
-    };
-
-    assert(result.vec[0] >= 0);
-    assert(result.vec[1] >= 0);
-    assert(result.vec[2] >= 0);
-
-    assert(result.vec[0] < 512);
-    assert(result.vec[1] < 512);
-    assert(result.vec[2] < 512);
-
-    return result;
-}
-
-Gaffer to_gaffer(const DeltaData& delta)
-{
-    return Gaffer
-    {
-        static_cast<unsigned>(delta.orientation_largest),
-        {
-            delta.orientation_a,
-            delta.orientation_b,
-            delta.orientation_c,
-        }
-    };
-}
-
 }
 
 // //////////////////////////////////////////////////////
