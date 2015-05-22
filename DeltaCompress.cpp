@@ -523,7 +523,7 @@ Quat constexpr to_quat(const Rotor& r)
 // Converting between quantised quats and back again is really pissy.
 // //////////////////////////////////////////////////////
 
-static const float G_256    = 256.4995127f * M_PI;
+static const float G_256    = 256.4995127f;
 static const float Q_TO_G   = G_256 * M_SQRT2;
 static const float G_TO_Q   = 1.0f / (G_256 * M_SQRT2);
 
@@ -735,6 +735,12 @@ Gaffer to_gaffer(const DeltaData& delta)
 
 using Multipliers = std::array<float, 8>;
 
+// For each rotor I bascially tried all multipliers starting from 1
+// until the coverted back value matched the original Gaffer value.
+// To convert the search space to just eight items I took the quartiles
+// and some other values and played around Until I got an max value encoded
+// being 12 bits, and the average below 5 bits.
+// Pretty sure this would only work well when the frame delta is 6.
 static const Multipliers DEFAULT_MUTLIPLES =
 {
     130.0f,
@@ -6858,6 +6864,30 @@ std::vector<uint8_t> EncodeStats(
 
             if (!quatSame)
             {
+                // Test the new stuff
+                {
+                    auto b = Argh::Gaffer
+                    {
+                        static_cast<unsigned>(base[i].orientation_largest),
+                        base[i].orientation_a,
+                        base[i].orientation_b,
+                        base[i].orientation_c,
+                    };
+                    auto t = Argh::Gaffer
+                    {
+                        static_cast<unsigned>(target[i].orientation_largest),
+                        target[i].orientation_a,
+                        target[i].orientation_b,
+                        target[i].orientation_c,
+                    };
+
+                    auto m = Argh::to_maxwell(b, t);
+
+                    auto result = Argh::to_gaffer(b, m);
+
+                    assert(result == t);
+                }
+
                 auto bg = Gaffer
                 {
                     static_cast<unsigned>(base[i].orientation_largest),
