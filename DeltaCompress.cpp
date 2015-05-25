@@ -772,16 +772,21 @@ unsigned MinBits(unsigned value)
 
 // //////////////////////////////////////////////////////
 
-namespace {
+struct Basic_model
+{
     using namespace Range_models;
 
     struct Rotor_model
     {
         // Quat changed:
         // Model adaption should be based on previous + 30 previous.
+        // bit 0 = any of previous 5 set to 1
+        // bit 1 = any of last 33 to 28 set to 1
+        std::array<Binary, 4> quat_changed;
 
         // Position changed:
         // Model on if quat changed or not.
+        std::array<Binary, 2> position_changed;
 
         // Rotor:
         // Encode signs seperatly (3 bit range).
@@ -789,6 +794,12 @@ namespace {
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
         // ?: Can we use max rotational velocity
+        Perodic_renomalisation<8,1> rotor_multiplier_lookup;
+        Perodic_renomalisation<8,1> rotor_signs;
+
+        // Um, this will be sloooow.
+        Perodic_renomalisation<256,16*3> rotor_magnitudes_low;
+        Perodic_renomalisation<32,16*3> rotor_magnitudes_high;
 
         // Position:
         // ?: Corrlation between max axis and our max axis?
@@ -797,13 +808,73 @@ namespace {
         // ?: different models based on previous signs
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
+        Perodic_renomalisation<8,1> position_signs;
+
+        // Um, this will be sloooow.
+        Perodic_renomalisation<256,16*3> position_magnitudes_low;
+        Perodic_renomalisation<256,16*3> position_magnitudes_high;
 
         // Interactive:
         // one bit
         // model on:
         // Previous was interactive
         // Anything has changed
+        std::array<Binary, 8> interactive;
     };
+
+    auto Encode_frames
+    (
+        const Frame& base,
+        const Frame& target,
+        unsigned frameDelta
+    )
+    -> Range_types::Bytes
+    {
+        auto size = base.size();
+        Rotor_model model;
+
+        auto previous_5_test =
+            [&base, &target](unsigned i, unsigned history)
+            -> bool
+        {
+            auto max = (i - history) + 5;
+            for (unsigned j = max - 5; j < max; ++j)
+            {
+                if (base[j] == target[j])
+                {
+                    return true;
+                    break;
+                }
+            }
+
+            return false;
+        };
+
+        for (unsigned i = 0; i < sizes; ++i)
+        {
+            unsigned quat_lookup = 0;
+
+            if (previous_5_test(i, 33))
+            {
+                quat_lookup = 1;
+            }
+
+            if (previous_5_test(i,5))
+            {
+                quat_lookup |= 2;
+            }
+        }
+
+        auto quat_changed = Quat_equal(base[i], target[i]);
+
+        model.quat_changed[quat_lookup].Encode(code, quat_changed);
+    }
+};
+
+// //////////////////////////////////////////////////////
+
+namespace {
+    using namespace Range_models;
 
     struct Everything_model
     {
