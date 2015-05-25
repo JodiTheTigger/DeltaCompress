@@ -71,7 +71,7 @@ struct DeltaData
     int interacting;
 };
 
-inline bool operator==(const DeltaData& lhs, const DeltaData& rhs)
+inline constexpr bool operator==(const DeltaData& lhs, const DeltaData& rhs)
 {
     return
     (
@@ -86,7 +86,33 @@ inline bool operator==(const DeltaData& lhs, const DeltaData& rhs)
     );
 }
 
-inline bool operator!=(const DeltaData& lhs, const DeltaData& rhs){return !operator==(lhs,rhs);}
+inline constexpr bool operator!=(const DeltaData& lhs, const DeltaData& rhs)
+{
+    return !operator==(lhs,rhs);
+}
+
+// //////////////////////////////////////////////////////
+
+inline constexpr bool quat_equal(const DeltaData& lhs, const DeltaData& rhs)
+{
+    return
+    (
+            (lhs.orientation_a          == rhs.orientation_a)
+        &&  (lhs.orientation_b          == rhs.orientation_b)
+        &&  (lhs.orientation_c          == rhs.orientation_c)
+        &&  (lhs.orientation_largest    == rhs.orientation_largest)
+    );
+}
+
+inline constexpr bool pos_equal(const DeltaData& lhs, const DeltaData& rhs)
+{
+    return
+    (
+            (lhs.position_x             == rhs.position_x)
+        &&  (lhs.position_y             == rhs.position_y)
+        &&  (lhs.position_z             == rhs.position_z)
+    );
+}
 
 // //////////////////////////////////////////////////////
 
@@ -830,8 +856,9 @@ struct Basic_model
     )
     -> Range_types::Bytes
     {
-        auto size = base.size();
-        Rotor_model model;
+        auto                size = base.size();
+        Rotor_model         model;
+        Range_types::Bytes  data;
 
         auto previous_5_test =
             [&base, &target](unsigned i, unsigned history)
@@ -840,7 +867,7 @@ struct Basic_model
             auto max = (i - history) + 5;
             for (unsigned j = max - 5; j < max; ++j)
             {
-                if (base[j] == target[j])
+                if (quat_equal(base[j], target[j]))
                 {
                     return true;
                     break;
@@ -850,24 +877,30 @@ struct Basic_model
             return false;
         };
 
-        for (unsigned i = 0; i < sizes; ++i)
         {
-            unsigned quat_lookup = 0;
+            Range_coders::Encoder           range(data);
+            Range_coders::Binary_encoder    binary(range);
 
-            if (previous_5_test(i, 33))
+            for (unsigned i = 0; i < size; ++i)
             {
-                quat_lookup = 1;
+                unsigned quat_lookup = 0;
+
+                if (previous_5_test(i, 33))
+                {
+                    quat_lookup = 1;
+                }
+
+                if (previous_5_test(i,5))
+                {
+                    quat_lookup |= 2;
+                }
             }
 
-            if (previous_5_test(i,5))
-            {
-                quat_lookup |= 2;
-            }
+            auto quat_changed = quat_equal(base[i], target[i]);
+
+            model.quat_changed[quat_lookup].Encode(code, quat_changed);
+
         }
-
-        auto quat_changed = Quat_equal(base[i], target[i]);
-
-        model.quat_changed[quat_lookup].Encode(code, quat_changed);
     }
 };
 
