@@ -798,10 +798,10 @@ unsigned MinBits(unsigned value)
 
 // //////////////////////////////////////////////////////
 
+using namespace Range_models;
+
 struct Basic_model
 {
-    using namespace Range_models;
-
     struct Rotor_model
     {
         // Quat changed:
@@ -852,7 +852,7 @@ struct Basic_model
     (
         const Frame& base,
         const Frame& target,
-        unsigned frameDelta
+        unsigned// frameDelta
     )
     -> Range_types::Bytes
     {
@@ -894,13 +894,14 @@ struct Basic_model
                 {
                     quat_lookup |= 2;
                 }
+
+                auto quat_changed = quat_equal(base[i], target[i]);
+
+                model.quat_changed[quat_lookup].Encode(binary, quat_changed);
             }
-
-            auto quat_changed = quat_equal(base[i], target[i]);
-
-            model.quat_changed[quat_lookup].Encode(code, quat_changed);
-
         }
+
+        return data;
     }
 };
 
