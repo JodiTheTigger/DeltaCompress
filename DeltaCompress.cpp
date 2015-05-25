@@ -774,6 +774,37 @@ unsigned MinBits(unsigned value)
 
 namespace {
     using namespace Range_models;
+
+    struct Rotor_model
+    {
+        // Quat changed:
+        // Model adaption should be based on previous + 30 previous.
+
+        // Position changed:
+        // Model on if quat changed or not.
+
+        // Rotor:
+        // Encode signs seperatly (3 bit range).
+        // ?: different models based on previous signs
+        // ?: code sorted or not
+        // ?: If bits > 256, only code top 8 bits
+        // ?: Can we use max rotational velocity
+
+        // Position:
+        // ?: Corrlation between max axis and our max axis?
+        // Encode signs seperatly
+        // Use max velocity
+        // ?: different models based on previous signs
+        // ?: code sorted or not
+        // ?: If bits > 256, only code top 8 bits
+
+        // Interactive:
+        // one bit
+        // model on:
+        // Previous was interactive
+        // Anything has changed
+    };
+
     struct Everything_model
     {
         // Note: I == investigate if dependency exists.
