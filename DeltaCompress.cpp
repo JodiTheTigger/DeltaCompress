@@ -870,7 +870,7 @@ namespace Basic_model
 
                 unsigned quat_lookup = 0;
 
-                auto previous_5_test =
+                auto any_5_changed =
                     [&base, &target](unsigned i, unsigned history)
                     -> bool
                 {
@@ -882,7 +882,7 @@ namespace Basic_model
                     auto max = (i - history) + 5;
                     for (unsigned j = max - 5; j < max; ++j)
                     {
-                        if (quat_equal(base[j], target[j]))
+                        if (!quat_equal(base[j], target[j]))
                         {
                             return true;
                             break;
@@ -892,17 +892,17 @@ namespace Basic_model
                     return false;
                 };
 
-                if (previous_5_test(i, 33))
+                if (any_5_changed(i, 33))
                 {
                     quat_lookup = 1;
                 }
 
-                if (previous_5_test(i, 5))
+                if (any_5_changed(i, 5))
                 {
                     quat_lookup |= 2;
                 }
 
-                auto quat_changed = quat_equal(base[i], target[i]);
+                auto quat_changed = !quat_equal(base[i], target[i]);
 
                 model.quat_changed[quat_lookup].Encode(binary, quat_changed);
 
@@ -967,7 +967,7 @@ namespace Basic_model
 
                 // //////////////////////////////////////////////////////
 
-                auto pos_changed = pos_equal(base[i], target[i]);
+                auto pos_changed = !pos_equal(base[i], target[i]);
 
                 unsigned pos_lookup = quat_changed ? 1 : 0;
 
@@ -1036,7 +1036,7 @@ namespace Basic_model
 
                 unsigned quat_lookup = 0;
 
-                auto previous_5_test =
+                auto any_5_changed =
                     [&base, &target](unsigned i, unsigned history)
                     -> bool
                 {
@@ -1048,7 +1048,7 @@ namespace Basic_model
                     auto max = (i - history) + 5;
                     for (unsigned j = max - 5; j < max; ++j)
                     {
-                        if (quat_equal(base[j], target[j]))
+                        if (!quat_equal(base[j], target[j]))
                         {
                             return true;
                             break;
@@ -1068,12 +1068,12 @@ namespace Basic_model
                     };
                 };
 
-                if (previous_5_test(i, 33))
+                if (any_5_changed(i, 33))
                 {
                     quat_lookup = 1;
                 }
 
-                if (previous_5_test(i, 5))
+                if (any_5_changed(i, 5))
                 {
                     quat_lookup |= 2;
                 }
@@ -1133,7 +1133,7 @@ namespace Basic_model
 
                 if (pos_changed)
                 {
-                    auto signs = model.rotor_signs.Decode(range);
+                    auto signs = model.position_signs.Decode(range);
                     auto v = Vec3i
                     {
                         static_cast<int>
