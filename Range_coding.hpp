@@ -72,14 +72,14 @@ namespace Range_coders
                 Flush_underflow(0xFF, 0);
             }
 
-            Write(temp & 0xFF);
-            Write(((temp = m_min) >> (SHIFT_BITS - 8)) & 0xFF);
-
-            // I think we can get away with not needing these.
-            // but whenever I remove them, it goes wrong.
-            // I don't know why.
-            Write(0);
-            Write(0);
+            // No idea what arturocampos was up to
+            // with his flush code, as using it created
+            // issues. This works in all cases.
+            while(temp)
+            {
+                Write(temp & 0xFF);
+                temp >>= 8;
+            }
         }
 
         void Encode(Range range)
