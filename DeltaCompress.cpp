@@ -890,7 +890,7 @@ struct Basic_model
                     quat_lookup = 1;
                 }
 
-                if (previous_5_test(i,5))
+                if (previous_5_test(i, 5))
                 {
                     quat_lookup |= 2;
                 }
@@ -898,6 +898,52 @@ struct Basic_model
                 auto quat_changed = quat_equal(base[i], target[i]);
 
                 model.quat_changed[quat_lookup].Encode(binary, quat_changed);
+
+                unsigned pos_lookup = quat_changed ? 1 : 0;
+
+                model.position_changed[pos_lookup].Encode(binary, pos_changed);
+
+                auto get_signs = [](const vec3i& v) -> unsigned
+                {
+                    unsigned result;
+
+                    if (v[0] >= 0)
+                    {
+                        result |= 1;
+                    }
+
+                    if (v[1] >= 0)
+                    {
+                        result |= 2;
+                    }
+
+                    if (v[2] >= 0)
+                    {
+                        result |= 4;
+                    }
+
+                    return result;
+                };
+
+                auto strip_signs = [](const vec3i& v) -> vec3i
+                {
+                    return
+                    {
+                        std::abs(v[0]),
+                        std::abs(v[1]),
+                        std::abs(v[2]),
+                    };
+                };
+
+                // //////////////////////////////////////////////////////
+
+                if (quat_changed)
+                {
+                    auto b = to_gaffer(base[i]);
+                    auto t = to_gaffer(target[i]);
+                    auto m = to_maxwell(b, t);
+                }
+
             }
         }
 
