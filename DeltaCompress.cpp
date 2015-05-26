@@ -820,8 +820,8 @@ struct Basic_model
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
         // ?: Can we use max rotational velocity
-        Perodic_renomalisation<8,1> rotor_multiplier_lookup;
-        Perodic_renomalisation<8,1> rotor_signs;
+        Perodic_renomalisation<8,16> rotor_multiplier_lookup;
+        Perodic_renomalisation<8,16> rotor_signs;
 
         // Um, this will be sloooow.
         Perodic_renomalisation<256,16*3> rotor_magnitudes_low;
@@ -834,7 +834,7 @@ struct Basic_model
         // ?: different models based on previous signs
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
-        Perodic_renomalisation<8,1> position_signs;
+        Perodic_renomalisation<8,16> position_signs;
 
         // Um, this will be sloooow.
         Perodic_renomalisation<256,16*3> position_magnitudes_low;
@@ -882,7 +882,9 @@ struct Basic_model
             Range_coders::Binary_encoder    binary(range);
 
             for (unsigned i = 0; i < size; ++i)
-            {
+            {                
+                // //////////////////////////////////////////////////////
+
                 unsigned quat_lookup = 0;
 
                 if (previous_5_test(i, 33))
@@ -898,10 +900,6 @@ struct Basic_model
                 auto quat_changed = quat_equal(base[i], target[i]);
 
                 model.quat_changed[quat_lookup].Encode(binary, quat_changed);
-
-                unsigned pos_lookup = quat_changed ? 1 : 0;
-
-                model.position_changed[pos_lookup].Encode(binary, pos_changed);
 
                 auto get_signs = [](const vec3i& v) -> unsigned
                 {
@@ -925,7 +923,7 @@ struct Basic_model
                     return result;
                 };
 
-                auto strip_signs = [](const vec3i& v) -> vec3i
+                auto strip_signs = [](const Vec3i& v) -> Vec3i
                 {
                     return
                     {
@@ -935,14 +933,33 @@ struct Basic_model
                     };
                 };
 
-                // //////////////////////////////////////////////////////
-
                 if (quat_changed)
                 {
                     auto b = to_gaffer(base[i]);
                     auto t = to_gaffer(target[i]);
                     auto m = to_maxwell(b, t);
+                    auto signs = get_signs(m.vec);
+                    auto v = strip_signs(m.vec);
+
+                    model.rotor_multiplier_lookup.Encode
+                    (
+                        range,
+                        m.multiplier_index
+                    );
+
+                    model.rotor_signs.Encode
+                    (
+                        range,
+                        signs
+                    );
                 }
+
+                // //////////////////////////////////////////////////////
+
+
+                unsigned pos_lookup = quat_changed ? 1 : 0;
+
+                model.position_changed[pos_lookup].Encode(binary, pos_changed);
 
             }
         }
