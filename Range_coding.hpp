@@ -506,6 +506,8 @@ namespace Range_models
             assert(value < m_size);
             assert(max_value < m_size);
 
+            // Multiply the ranges instead of the value
+            // so the frequencies still get updated correctly.
             auto old_range  = m_r[value];
             auto last_range = m_r[max_value];
             float max_cf = last_range.min + last_range.count;
