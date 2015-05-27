@@ -12,6 +12,7 @@
 #include <array>
 #include <cstdint>
 #include <cassert>
+#include <cmath>
 
 // //////////////////////////////////////////////
 // Types
@@ -459,12 +460,12 @@ namespace Range_models
         typedef std::vector<Range>     Ranges;
 
         Perodic_renomalisation(unsigned size, unsigned slowest_update_rate)
-            : m_f()
+            : m_f()            
+            , m_r(size)
             , m_size(size)
             , m_slowest_update_rate(slowest_update_rate)
         {
             m_f.reserve(size);
-            m_r.reserve(size);
 
             for (unsigned i = 0; i < size; ++i)
             {
@@ -477,6 +478,7 @@ namespace Range_models
 
         Perodic_renomalisation(Freqencies frequencies, unsigned slowest_update_rate)
             : m_f(frequencies)
+            , m_r(frequencies.size())
             , m_size(frequencies.size())
             , m_slowest_update_rate(slowest_update_rate)
         {
@@ -495,6 +497,26 @@ namespace Range_models
             assert(value < m_size);
 
             coder.Encode(m_r[value]);
+
+            Adapt(value);
+        }
+
+        void Encode(Encoder& coder, unsigned value, unsigned max_value)
+        {
+            assert(value < m_size);
+            assert(max_value < m_size);
+
+            auto old_range  = m_r[value];
+            auto last_range = m_r[max_value];
+            float max_cf = last_range.min + last_range.count;
+            float multiplier = TOTAL_RANGE / max_cf;
+            auto new_range = Range
+            {
+                static_cast<uint32_t>(std::round(old_range.min * multiplier)),
+                static_cast<uint32_t>(std::round(old_range.count * multiplier)),
+            };
+
+            coder.Encode(new_range);
 
             Adapt(value);
         }
@@ -518,9 +540,36 @@ namespace Range_models
             return result;
         }
 
+        unsigned Decode(Decoder& coder, unsigned max_value)
+        {
+            assert(max_value < m_size);
+
+            auto range = coder.Decode();
+            unsigned result = 0;
+
+            auto last_range = m_r[max_value];
+            float max_cf = last_range.min + last_range.count;
+            float multiplier = TOTAL_RANGE / max_cf;
+            uint32_t new_range
+                = static_cast<uint32_t>(std::round(range / multiplier));
+
+            const auto size = m_size;
+            while ((m_r[result].min <= new_range) && (result < size))
+            {
+                ++result;
+            }
+
+            --result;
+
+            coder.Update(m_r[result]);
+            Adapt(result);
+
+            return result;
+        }
+
     private:
-        Ranges      m_r;
         Freqencies  m_f;
+        Ranges      m_r;
 
         unsigned m_updates          = 0;
         unsigned m_update_trigger   = 1;
@@ -726,10 +775,18 @@ void range_tests()
             Bytes{0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2},
         };
 
-        auto Range_test = [](auto mod, auto tests, auto model_in, auto model_out)
+        auto Range_test = []
+        (
+            auto mod,
+            auto tests,
+            auto model_in,
+            auto model_out,
+            uint32_t max_value = 0
+        )
         {
             Bytes data;
 
+            if (!max_value)
             {
                 Encoder test_encoder(data);
 
@@ -738,6 +795,17 @@ void range_tests()
                     model_in.Encode(test_encoder, t % mod);
                 }
             }
+            else
+            {
+                Encoder test_encoder(data);
+
+                for (auto t : tests)
+                {
+                    model_in.Encode(test_encoder, t % max_value, max_value);
+                }
+            }
+
+            if (!max_value)
             {
                 Decoder test_decoder(data);
 
@@ -745,6 +813,19 @@ void range_tests()
                 {
                     auto value = model_out.Decode(test_decoder);
                     assert(value == (t % mod));
+                }
+
+                auto read = test_decoder.FlushAndGetBytesRead();
+                assert(read == data.size());
+            }
+            else
+            {
+                Decoder test_decoder(data);
+
+                for (unsigned t : tests)
+                {
+                    auto value = model_out.Decode(test_decoder, max_value);
+                    assert(value == (t % max_value));
                 }
 
                 auto read = test_decoder.FlushAndGetBytesRead();
@@ -770,6 +851,13 @@ void range_tests()
                 range_set,
                 Perodic_renomalisation(overflow, 8),
                 Perodic_renomalisation(overflow, 8));
+
+            Range_test(
+                8,
+                range_set,
+                Perodic_renomalisation(8,8),
+                Perodic_renomalisation(8,8),
+                3);
         }
     }
 }
