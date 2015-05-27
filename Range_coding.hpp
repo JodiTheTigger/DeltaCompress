@@ -578,7 +578,7 @@ namespace Range_models
     };
 } // Namespace models
 
-void Range_tests()
+void range_tests()
 {
     using namespace Range_types;
     using namespace Range_coders;

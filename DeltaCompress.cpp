@@ -772,7 +772,7 @@ inline constexpr int32_t Zig_zag(uint32_t n)
     return (n >> 1) ^ (-(static_cast<int>(n) & 1));
 }
 
-void Zig_zag_test()
+void zig_zag_test()
 {
     assert(42 == Zig_zag(Zig_zag(42)));
     assert(-42 == Zig_zag(Zig_zag(-42)));
@@ -800,9 +800,9 @@ unsigned MinBits(unsigned value)
 
 using namespace Range_models;
 
-namespace Basic_model
+namespace Naieve_rotor
 {
-    struct Rotor_model
+    struct Model
     {
         // Quat changed:
         // Model adaption should be based on previous + 30 previous.
@@ -848,7 +848,7 @@ namespace Basic_model
         std::array<Binary, 2> interactive;
     };
 
-    auto encode_frames
+    auto encode
     (
         const Frame& base,
         const Frame& target,
@@ -857,7 +857,7 @@ namespace Basic_model
     -> Range_types::Bytes
     {
         auto                size = base.size();
-        Rotor_model         model;
+        Model         model;
         Range_types::Bytes  data;
 
         {
@@ -1014,7 +1014,7 @@ namespace Basic_model
         return data;
     }    
 
-    auto decode_frames
+    auto decode
     (
         const Frame& base,
         const Range_types::Bytes& data,
@@ -1023,7 +1023,7 @@ namespace Basic_model
     -> Frame
     {
         auto                size = base.size();
-        Rotor_model         model;
+        Model         model;
         Frame               target;
 
         {
@@ -1183,7 +1183,8 @@ namespace Basic_model
 
 // //////////////////////////////////////////////////////
 
-namespace {
+namespace Naieve_gaffer
+{
     using namespace Range_models;
 
     struct Everything_model
@@ -1254,261 +1255,389 @@ namespace {
         // 1 bit == position changed
         std::array<Simple, 8> interactive;
     };
-}
 
-// //////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////
 
-auto Largest_next_magnitude(
-        unsigned magnitude,
-        unsigned zig_zag_axis) -> unsigned
-{
-    // max magnitude for Zig_zag before we overflow
-    // == sqrt(1 << 32) / 2. == 32768.
-    assert(magnitude < 32768);
-
-    // positive zig zag numbers are just number * 2.
-    unsigned next = magnitude * 2;
-    next *= next;
-
-    unsigned axis = zig_zag_axis;
-    axis *= axis;
-
-    assert(next >= axis);
-
-    next -= axis;
-
-    // C++11 casts the int into a double for sqrt, would it be faster
-    // if I manually cast to a float instead?
-    auto root = sqrt(next);
-
-    // +1 for rounding.
-    return 1 + static_cast<unsigned>(root) / 2;
-}
-
-void Vector3Encode(
-        Vec3i vec,
-        unsigned max_magnitude,
-        Everything_model::Vector_model& model,
-        Encoder& range,
-        Binary_encoder& binary)
-{
-    // +1 for the sign bit.
-    unsigned max_bits_required = 1 + MinBits(max_magnitude);
-
-    // //////////////////////////////////////////
-
-    assert(abs(vec[0]) <= static_cast<int>(max_magnitude));
-    assert(abs(vec[1]) <= static_cast<int>(max_magnitude));
-    assert(abs(vec[2]) <= static_cast<int>(max_magnitude));
-
-    // Sort from largest to smallest
-    auto zx = Zig_zag(vec[0]);
-    auto zy = Zig_zag(vec[1]);
-    auto zz = Zig_zag(vec[2]);
-
-    // default order, x,y,z.
+    auto Largest_next_magnitude(
+            unsigned magnitude,
+            unsigned zig_zag_axis) -> unsigned
     {
-        using std::swap;
+        // max magnitude for Zig_zag before we overflow
+        // == sqrt(1 << 32) / 2. == 32768.
+        assert(magnitude < 32768);
 
-        auto top = 0;
-        auto next = 0;
+        // positive zig zag numbers are just number * 2.
+        unsigned next = magnitude * 2;
+        next *= next;
 
-        if  (
-                (zy > zx) &&
-                (zy >= zz)
-            )
+        unsigned axis = zig_zag_axis;
+        axis *= axis;
+
+        assert(next >= axis);
+
+        next -= axis;
+
+        // C++11 casts the int into a double for sqrt, would it be faster
+        // if I manually cast to a float instead?
+        auto root = sqrt(next);
+
+        // +1 for rounding.
+        return 1 + static_cast<unsigned>(root) / 2;
+    }
+
+    void Vector3Encode(
+            Vec3i vec,
+            unsigned max_magnitude,
+            Everything_model::Vector_model& model,
+            Encoder& range,
+            Binary_encoder& binary)
+    {
+        // +1 for the sign bit.
+        unsigned max_bits_required = 1 + MinBits(max_magnitude);
+
+        // //////////////////////////////////////////
+
+        assert(abs(vec[0]) <= static_cast<int>(max_magnitude));
+        assert(abs(vec[1]) <= static_cast<int>(max_magnitude));
+        assert(abs(vec[2]) <= static_cast<int>(max_magnitude));
+
+        // Sort from largest to smallest
+        auto zx = Zig_zag(vec[0]);
+        auto zy = Zig_zag(vec[1]);
+        auto zz = Zig_zag(vec[2]);
+
+        // default order, x,y,z.
         {
-            swap(zx, zy);
-            top = 1;
-        }
-        else
-        {
+            using std::swap;
+
+            auto top = 0;
+            auto next = 0;
+
             if  (
-                    (zz > zx) &&
-                    (zz >= zy)
+                    (zy > zx) &&
+                    (zy >= zz)
                 )
             {
-                swap(zx, zz);
-                swap(zy, zz);
-                top = 2;
-            }
-        }
-
-        assert(zx >= zy);
-        assert(zx >= zz);
-
-        if (zz > zy)
-        {
-            swap(zy, zz);
-            next = 1;
-        }
-
-        assert(zy >= zz);
-
-        model.largest_index.Encode(range, top);
-        model.next_largest_index[top].Encode(binary, next);
-    }
-
-    // //////////////////////////////////////////
-
-    auto Code = [&](unsigned zig_zag, unsigned model_index) -> bool
-    {
-        unsigned bits = MinBits(zig_zag);
-
-        model.bits_for_value[model_index].Encode(range, bits);
-
-        assert(max_bits_required >= bits);
-
-        if (!bits)
-        {
-            // everything after is zero, we're done.
-            return false;
-        }
-
-        // Don't need to send the top bit, as we know it's set since
-        // otherwise bits would be smaller.
-        if (bits > 1)
-        {
-            auto t = zig_zag & ((1 << (bits - 1)) - 1);
-
-            model.value[model_index].Encode(binary, t, bits - 1);
-        }
-
-        if (model.Reduce_vector_using_magnitude)
-        {
-            max_magnitude = Largest_next_magnitude(max_magnitude, zig_zag);
-        }
-
-        max_bits_required = 1 + MinBits(max_magnitude);
-        max_bits_required = std::min(max_bits_required, bits);
-
-        return true;
-    };
-
-    // //////////////////////////////////////////
-
-    if (!Code(zx, 0))
-    {
-        return;
-    }
-
-    if (!Code(zy, 1))
-    {
-        return;
-    }
-
-    // //////////////////////////////////////////
-
-    assert(max_bits_required >= MinBits(zz));
-
-    model.value[2].Encode(binary, zz, max_bits_required);
-}
-
-Vec3i Vector3Decode(
-        unsigned max_magnitude,
-        Everything_model::Vector_model& model,
-        Decoder& range,
-        Binary_decoder& binary)
-{
-    Vec3i result = {0,0,0};
-
-    // +1 for the sign bit.
-    unsigned max_bits_required = 1 + MinBits(max_magnitude);
-
-    // //////////////////////////////////////////
-
-    // Read the Order
-    auto top = model.largest_index.Decode(range);
-    auto next = model.next_largest_index[top].Decode(binary);
-
-    auto ReturnSorted = [&top, &next](Vec3i vec) -> Vec3i
-    {
-        using std::swap;
-
-        if (next)
-        {
-            swap(vec[1], vec[2]);
-        }
-
-        if (top)
-        {
-            if (top == 1)
-            {
-                swap(vec[0], vec[1]);
+                swap(zx, zy);
+                top = 1;
             }
             else
             {
-                swap(vec[0], vec[1]);
+                if  (
+                        (zz > zx) &&
+                        (zz >= zy)
+                    )
+                {
+                    swap(zx, zz);
+                    swap(zy, zz);
+                    top = 2;
+                }
+            }
+
+            assert(zx >= zy);
+            assert(zx >= zz);
+
+            if (zz > zy)
+            {
+                swap(zy, zz);
+                next = 1;
+            }
+
+            assert(zy >= zz);
+
+            model.largest_index.Encode(range, top);
+            model.next_largest_index[top].Encode(binary, next);
+        }
+
+        // //////////////////////////////////////////
+
+        auto Code = [&](unsigned zig_zag, unsigned model_index) -> bool
+        {
+            unsigned bits = MinBits(zig_zag);
+
+            model.bits_for_value[model_index].Encode(range, bits);
+
+            assert(max_bits_required >= bits);
+
+            if (!bits)
+            {
+                // everything after is zero, we're done.
+                return false;
+            }
+
+            // Don't need to send the top bit, as we know it's set since
+            // otherwise bits would be smaller.
+            if (bits > 1)
+            {
+                auto t = zig_zag & ((1 << (bits - 1)) - 1);
+
+                model.value[model_index].Encode(binary, t, bits - 1);
+            }
+
+            if (model.Reduce_vector_using_magnitude)
+            {
+                max_magnitude = Largest_next_magnitude(max_magnitude, zig_zag);
+            }
+
+            max_bits_required = 1 + MinBits(max_magnitude);
+            max_bits_required = std::min(max_bits_required, bits);
+
+            return true;
+        };
+
+        // //////////////////////////////////////////
+
+        if (!Code(zx, 0))
+        {
+            return;
+        }
+
+        if (!Code(zy, 1))
+        {
+            return;
+        }
+
+        // //////////////////////////////////////////
+
+        assert(max_bits_required >= MinBits(zz));
+
+        model.value[2].Encode(binary, zz, max_bits_required);
+    }
+
+    Vec3i Vector3Decode(
+            unsigned max_magnitude,
+            Everything_model::Vector_model& model,
+            Decoder& range,
+            Binary_decoder& binary)
+    {
+        Vec3i result = {0,0,0};
+
+        // +1 for the sign bit.
+        unsigned max_bits_required = 1 + MinBits(max_magnitude);
+
+        // //////////////////////////////////////////
+
+        // Read the Order
+        auto top = model.largest_index.Decode(range);
+        auto next = model.next_largest_index[top].Decode(binary);
+
+        auto ReturnSorted = [&top, &next](Vec3i vec) -> Vec3i
+        {
+            using std::swap;
+
+            if (next)
+            {
                 swap(vec[1], vec[2]);
+            }
+
+            if (top)
+            {
+                if (top == 1)
+                {
+                    swap(vec[0], vec[1]);
+                }
+                else
+                {
+                    swap(vec[0], vec[1]);
+                    swap(vec[1], vec[2]);
+                }
+            }
+
+            return vec;
+        };
+
+        // //////////////////////////////////////////
+
+        auto Code = [&](int& target, unsigned model_index) -> bool
+        {
+            auto bits = model.bits_for_value[model_index].Decode(range);
+
+            if (!bits)
+            {
+                return false;
+            }
+
+            auto zig_zag = bits > 1 ?
+                model.value[model_index].Decode(binary, bits - 1) :
+                0;
+
+            // Don't need to send the top bit, as we know it's set since
+            // otherwise bitsForzx would be smaller.
+            zig_zag |= 1 << (bits - 1);
+            target = Zig_zag(zig_zag);
+
+            if (model.Reduce_vector_using_magnitude)
+            {
+                max_magnitude = Largest_next_magnitude(max_magnitude, zig_zag);
+            }
+
+            max_bits_required = 1 + MinBits(max_magnitude);
+            max_bits_required = std::min(max_bits_required, bits);
+
+            return true;
+        };
+
+        // //////////////////////////////////////////
+
+        if (!Code(result[0], 0))
+        {
+            return ReturnSorted(result);
+        }
+
+        if (!Code(result[1], 1))
+        {
+            return ReturnSorted(result);
+        }
+
+        // //////////////////////////////////////////
+
+        auto zz = model.value[2].Decode(binary, max_bits_required);
+        result[2] = Zig_zag(zz);
+
+        return ReturnSorted(result);
+    }
+
+    auto Encode_frames(
+        const Frame& base,
+        const Frame& target,
+        unsigned frameDelta) -> Range_types::Bytes
+    {
+        // for now use defaults for everything.
+        Range_types::Bytes              data;
+
+        {
+            Everything_model                model;
+            Range_coders::Encoder           range(data);
+            Range_coders::Binary_encoder    binary(range);
+
+            model.quant.    Reduce_vector_using_magnitude = false;
+            model.position. Reduce_vector_using_magnitude = true;
+
+            unsigned max_position_delta =
+                1 + static_cast<unsigned>(
+                    frameDelta * MaxPositionChangePerSnapshot);
+
+            auto size = base.size();
+            for (unsigned i = 0; i < size; ++i)
+            {
+                auto quant_index_changed =
+                    base[i].orientation_largest != target[i].orientation_largest;
+
+                auto quant_changed =
+                    (quant_index_changed) ||
+                    (base[i].orientation_a != target[i].orientation_a) ||
+                    (base[i].orientation_b != target[i].orientation_b) ||
+                    (base[i].orientation_c != target[i].orientation_c);
+
+                auto last_quat_changed =
+                    (i != 0) ?
+                        (base[i - 1].orientation_largest != target[i - 1].orientation_largest) ||
+                        (base[i - 1].orientation_a != target[i - 1].orientation_a) ||
+                        (base[i - 1].orientation_b != target[i - 1].orientation_b) ||
+                        (base[i - 1].orientation_c != target[i - 1].orientation_c) ?
+                            1 :
+                            0
+                        :
+                        0;
+
+                model.quat_changed[last_quat_changed].Encode
+                (
+                    binary,
+                    quant_changed
+                );
+
+                if (quant_changed)
+                {
+                    model.largest_index_quant_changed.Encode(
+                        binary,
+                        quant_index_changed);
+
+                    if (quant_index_changed)
+                    {
+                        // RAM: TODO: correlation between previous and current?
+                        // RAM: TODO: Binary tree instead?
+                        model.largest_index_quant.Encode(
+                            range, target[i].orientation_largest);
+
+                        Vec3i not_delta
+                        {
+                            target[i].orientation_a,
+                            target[i].orientation_b,
+                            target[i].orientation_c
+                        };
+
+                        Vector3Encode(
+                            not_delta,
+                            (1u << RotationMaxBits) - 1,
+                            model.quant,
+                            range,
+                            binary);
+                    }
+
+                    if (!quant_index_changed)
+                    {
+                        Vec3i delta
+                        {
+                            target[i].orientation_a - base[i].orientation_a,
+                            target[i].orientation_b - base[i].orientation_b,
+                            target[i].orientation_c - base[i].orientation_c
+                        };
+
+                        Vector3Encode(
+                            delta,
+                            (1u << RotationMaxBits) - 1,
+                            model.quant_delta,
+                            range,
+                            binary);
+                    }
+                }
+
+                auto pos_changed =
+                    (base[i].position_x != target[i].position_x) ||
+                    (base[i].position_y != target[i].position_y) ||
+                    (base[i].position_z != target[i].position_z);
+
+                model.position_changed[quant_changed].Encode(binary, pos_changed);
+
+                if (pos_changed)
+                {
+                    Vec3i delta
+                    {
+                        target[i].position_x - base[i].position_x,
+                        target[i].position_y - base[i].position_y,
+                        target[i].position_z - base[i].position_z
+                    };
+
+                    Vector3Encode(
+                        delta,
+                        max_position_delta,
+                        model.position,
+                        range,
+                        binary);
+                }
+
+                unsigned interactive_index = (base[i].interacting == 1) << 2;
+                interactive_index |= quant_changed << 1;
+                interactive_index |= pos_changed;
+
+                model.interactive[interactive_index].Encode(
+                    binary,
+                    target[i].interacting);
             }
         }
 
-        return vec;
-    };
-
-    // //////////////////////////////////////////
-
-    auto Code = [&](int& target, unsigned model_index) -> bool
-    {
-        auto bits = model.bits_for_value[model_index].Decode(range);
-
-        if (!bits)
-        {
-            return false;
-        }
-
-        auto zig_zag = bits > 1 ?
-            model.value[model_index].Decode(binary, bits - 1) :
-            0;
-
-        // Don't need to send the top bit, as we know it's set since
-        // otherwise bitsForzx would be smaller.
-        zig_zag |= 1 << (bits - 1);
-        target = Zig_zag(zig_zag);
-
-        if (model.Reduce_vector_using_magnitude)
-        {
-            max_magnitude = Largest_next_magnitude(max_magnitude, zig_zag);
-        }
-
-        max_bits_required = 1 + MinBits(max_magnitude);
-        max_bits_required = std::min(max_bits_required, bits);
-
-        return true;
-    };
-
-    // //////////////////////////////////////////
-
-    if (!Code(result[0], 0))
-    {
-        return ReturnSorted(result);
+        return data;
     }
 
-    if (!Code(result[1], 1))
+    auto Decode_frames(
+        const Frame& base,
+        const Range_types::Bytes& data,
+        unsigned frameDelta) -> Frame
     {
-        return ReturnSorted(result);
-    }
-
-    // //////////////////////////////////////////
-
-    auto zz = model.value[2].Decode(binary, max_bits_required);
-    result[2] = Zig_zag(zz);
-
-    return ReturnSorted(result);
-}
-
-auto Encode_frames(
-    const Frame& base,
-    const Frame& target,
-    unsigned frameDelta) -> Range_types::Bytes
-{
-    // for now use defaults for everything.
-    Range_types::Bytes              data;
-
-    {
+        Frame target;
         Everything_model                model;
-        Range_coders::Encoder           range(data);
-        Range_coders::Binary_encoder    binary(range);
+        Range_coders::Decoder           range(data);
+        Range_coders::Binary_decoder    binary(range);
 
         model.quant.    Reduce_vector_using_magnitude = false;
         model.position. Reduce_vector_using_magnitude = true;
@@ -1520,15 +1649,6 @@ auto Encode_frames(
         auto size = base.size();
         for (unsigned i = 0; i < size; ++i)
         {
-            auto quant_index_changed =
-                base[i].orientation_largest != target[i].orientation_largest;
-
-            auto quant_changed =
-                (quant_index_changed) ||
-                (base[i].orientation_a != target[i].orientation_a) ||
-                (base[i].orientation_b != target[i].orientation_b) ||
-                (base[i].orientation_c != target[i].orientation_c);
-
             auto last_quat_changed =
                 (i != 0) ?
                     (base[i - 1].orientation_largest != target[i - 1].orientation_largest) ||
@@ -1540,260 +1660,87 @@ auto Encode_frames(
                     :
                     0;
 
-            model.quat_changed[last_quat_changed].Encode
-            (
-                binary,
-                quant_changed
-            );
+            auto quant_changed =
+                model.quat_changed[last_quat_changed].Decode(binary);
 
             if (quant_changed)
             {
-                model.largest_index_quant_changed.Encode(
-                    binary,
-                    quant_index_changed);
+                auto quant_index_changed =
+                    model.largest_index_quant_changed.Decode(binary);
 
                 if (quant_index_changed)
                 {
-                    // RAM: TODO: correlation between previous and current?
-                    // RAM: TODO: Binary tree instead?
-                    model.largest_index_quant.Encode(
-                        range, target[i].orientation_largest);
+                    target[i].orientation_largest =
+                        model.largest_index_quant.Decode(range);
 
-                    Vec3i not_delta
-                    {
-                        target[i].orientation_a,
-                        target[i].orientation_b,
-                        target[i].orientation_c
-                    };
-
-                    Vector3Encode(
-                        not_delta,
+                    auto not_delta = Vector3Decode(
                         (1u << RotationMaxBits) - 1,
                         model.quant,
                         range,
                         binary);
+
+                    target[i].orientation_a = not_delta[0];
+                    target[i].orientation_b = not_delta[1];
+                    target[i].orientation_c = not_delta[2];
                 }
 
                 if (!quant_index_changed)
                 {
-                    Vec3i delta
-                    {
-                        target[i].orientation_a - base[i].orientation_a,
-                        target[i].orientation_b - base[i].orientation_b,
-                        target[i].orientation_c - base[i].orientation_c
-                    };
-
-                    Vector3Encode(
-                        delta,
+                    Vec3i delta = Vector3Decode(
                         (1u << RotationMaxBits) - 1,
                         model.quant_delta,
                         range,
                         binary);
+
+                    target[i].orientation_largest =
+                            base[i].orientation_largest;
+                    target[i].orientation_a = base[i].orientation_a + delta[0];
+                    target[i].orientation_b = base[i].orientation_b + delta[1];
+                    target[i].orientation_c = base[i].orientation_c + delta[2];
                 }
             }
 
-            auto pos_changed =
-                (base[i].position_x != target[i].position_x) ||
-                (base[i].position_y != target[i].position_y) ||
-                (base[i].position_z != target[i].position_z);
+            if (!quant_changed)
+            {
+                target[i].orientation_largest =
+                        base[i].orientation_largest;
+                target[i].orientation_a = base[i].orientation_a;
+                target[i].orientation_b = base[i].orientation_b;
+                target[i].orientation_c = base[i].orientation_c;
+            }
 
-            model.position_changed[quant_changed].Encode(binary, pos_changed);
+            auto pos_changed =
+                model.position_changed[quant_changed].Decode(binary);
 
             if (pos_changed)
             {
-                Vec3i delta
-                {
-                    target[i].position_x - base[i].position_x,
-                    target[i].position_y - base[i].position_y,
-                    target[i].position_z - base[i].position_z
-                };
-
-                Vector3Encode(
-                    delta,
+                auto delta = Vector3Decode(
                     max_position_delta,
                     model.position,
                     range,
                     binary);
+
+                target[i].position_x = base[i].position_x + delta[0];
+                target[i].position_y = base[i].position_y + delta[1];
+                target[i].position_z = base[i].position_z + delta[2];
+            }
+
+            if (!pos_changed)
+            {
+                target[i].position_x = base[i].position_x;
+                target[i].position_y = base[i].position_y;
+                target[i].position_z = base[i].position_z;
             }
 
             unsigned interactive_index = (base[i].interacting == 1) << 2;
             interactive_index |= quant_changed << 1;
             interactive_index |= pos_changed;
 
-            model.interactive[interactive_index].Encode(
-                binary,
-                target[i].interacting);
-        }
-    }
-
-    return data;
-}
-
-auto Decode_frames(
-    const Frame& base,
-    const Range_types::Bytes& data,
-    unsigned frameDelta) -> Frame
-{
-    Frame target;
-    Everything_model                model;
-    Range_coders::Decoder           range(data);
-    Range_coders::Binary_decoder    binary(range);
-
-    model.quant.    Reduce_vector_using_magnitude = false;
-    model.position. Reduce_vector_using_magnitude = true;
-
-    unsigned max_position_delta =
-        1 + static_cast<unsigned>(
-            frameDelta * MaxPositionChangePerSnapshot);
-
-    auto size = base.size();
-    for (unsigned i = 0; i < size; ++i)
-    {
-        auto last_quat_changed =
-            (i != 0) ?
-                (base[i - 1].orientation_largest != target[i - 1].orientation_largest) ||
-                (base[i - 1].orientation_a != target[i - 1].orientation_a) ||
-                (base[i - 1].orientation_b != target[i - 1].orientation_b) ||
-                (base[i - 1].orientation_c != target[i - 1].orientation_c) ?
-                    1 :
-                    0
-                :
-                0;
-
-        auto quant_changed =
-            model.quat_changed[last_quat_changed].Decode(binary);
-
-        if (quant_changed)
-        {
-            auto quant_index_changed =
-                model.largest_index_quant_changed.Decode(binary);
-
-            if (quant_index_changed)
-            {
-                target[i].orientation_largest =
-                    model.largest_index_quant.Decode(range);
-
-                auto not_delta = Vector3Decode(
-                    (1u << RotationMaxBits) - 1,
-                    model.quant,
-                    range,
-                    binary);
-
-                target[i].orientation_a = not_delta[0];
-                target[i].orientation_b = not_delta[1];
-                target[i].orientation_c = not_delta[2];
-            }
-
-            if (!quant_index_changed)
-            {
-                Vec3i delta = Vector3Decode(
-                    (1u << RotationMaxBits) - 1,
-                    model.quant_delta,
-                    range,
-                    binary);
-
-                target[i].orientation_largest =
-                        base[i].orientation_largest;
-                target[i].orientation_a = base[i].orientation_a + delta[0];
-                target[i].orientation_b = base[i].orientation_b + delta[1];
-                target[i].orientation_c = base[i].orientation_c + delta[2];
-            }
+            target[i].interacting =
+                model.interactive[interactive_index].Decode(binary);
         }
 
-        if (!quant_changed)
-        {
-            target[i].orientation_largest =
-                    base[i].orientation_largest;
-            target[i].orientation_a = base[i].orientation_a;
-            target[i].orientation_b = base[i].orientation_b;
-            target[i].orientation_c = base[i].orientation_c;
-        }
-
-        auto pos_changed =
-            model.position_changed[quant_changed].Decode(binary);
-
-        if (pos_changed)
-        {
-            auto delta = Vector3Decode(
-                max_position_delta,
-                model.position,
-                range,
-                binary);
-
-            target[i].position_x = base[i].position_x + delta[0];
-            target[i].position_y = base[i].position_y + delta[1];
-            target[i].position_z = base[i].position_z + delta[2];
-        }
-
-        if (!pos_changed)
-        {
-            target[i].position_x = base[i].position_x;
-            target[i].position_y = base[i].position_y;
-            target[i].position_z = base[i].position_z;
-        }
-
-        unsigned interactive_index = (base[i].interacting == 1) << 2;
-        interactive_index |= quant_changed << 1;
-        interactive_index |= pos_changed;
-
-        target[i].interacting =
-            model.interactive[interactive_index].Decode(binary);
-    }
-
-    return target;
-}
-
-auto Model_tests()
-{
-    {
-        int const max = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
-
-        Vec3i data =
-        {
-            -434,
-            -90,
-            0,
-        };
-
-        Range_coders::Bytes bytes;
-
-
-        {
-            Everything_model::Vector_model  model;
-            Range_coders::Encoder           e_range(bytes);
-            Range_coders::Binary_encoder    e_binary(e_range);
-
-            model.Reduce_vector_using_magnitude = true;
-
-            for (auto l = 0; l < 2; ++l)
-            {
-                Vector3Encode(
-                    data,
-                    max,
-                    model,
-                    e_range,
-                    e_binary);
-            }
-        }
-
-        {
-            Everything_model::Vector_model  model;
-            Range_coders::Decoder           d_range(bytes);
-            Range_coders::Binary_decoder    d_binary(d_range);
-
-            model.Reduce_vector_using_magnitude = true;
-
-            for (auto l = 0; l < 2; ++l)
-            {
-                auto decoded = Vector3Decode(
-                    max,
-                    model,
-                    d_range,
-                    d_binary);
-
-                assert(data == decoded);
-            }
-        }
+        return target;
     }
 }
 
@@ -1802,7 +1749,7 @@ auto Model_tests()
 #define PRINT_INT(x) printf("%-32s\t%d\n", #x, x);
 #define PRINT_FLOAT(x) printf("%-32s\t%f\n", #x, x);
 
-void Range_compress(std::vector<Frame>& frames)
+void range_compress(std::vector<Frame>& frames)
 {    
     auto packets = frames.size();
 
@@ -1846,8 +1793,17 @@ void Range_compress(std::vector<Frame>& frames)
         printf("\n==============================================\n");
     };
 
-    test(Encode_frames, Decode_frames);
-    test(Basic_model::encode_frames, Basic_model::decode_frames);
+    test
+    (
+        Naieve_gaffer::Encode_frames,
+        Naieve_gaffer::Decode_frames
+    );
+
+    test
+    (
+        Naieve_rotor::encode,
+        Naieve_rotor::decode
+    );
 }
 
 int main(int, char**)
@@ -1887,14 +1843,13 @@ int main(int, char**)
 
     if (do_tests)
     {
-        Range_tests();
-        Model_tests();
-        Zig_zag_test();
+        range_tests();
+        zig_zag_test();
     }
 
     if (do_compression)
     {
-        Range_compress(frames);
+        range_compress(frames);
     }
 
     return 0;
