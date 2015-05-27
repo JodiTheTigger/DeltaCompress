@@ -588,8 +588,8 @@ namespace Range_models
 
         void Adapt(unsigned value)
         {
-            ++m_f[value];
-            ++m_updates;
+            m_f[value] += 2;
+            m_updates += 2;
 
             if (m_updates >= m_update_trigger)
             {
@@ -606,7 +606,7 @@ namespace Range_models
 
         void Recalculate_ranges()
         {
-            unsigned total      = m_last_total + m_updates;
+            unsigned total = m_last_total + m_updates;
 
             if (total > TOTAL_RANGE)
             {
@@ -614,17 +614,18 @@ namespace Range_models
                 total = 0;
                 for (auto& f : m_f)
                 {
-                    f >>= 8;
+                    f >>= 1;
                     ++f;
 
                     total += f;
                 }
             }
 
+            const auto size     = m_size;
             auto multiple       = TOTAL_RANGE / total;
             auto reminder       = TOTAL_RANGE % total;
-            auto global_adjust  = reminder / m_size;
-            auto reminder_count = reminder % m_size;
+            auto global_adjust  = reminder / size;
+            auto reminder_count = reminder % size;
             unsigned last_min   = 0;
 
             for (unsigned i = 0; i < reminder_count; ++i)
@@ -635,7 +636,6 @@ namespace Range_models
                 last_min += m_r[i].count;
             }
 
-            const auto size = m_size;
             for (unsigned i = reminder_count; i < size; ++i)
             {
                 m_r[i].min      = last_min;
