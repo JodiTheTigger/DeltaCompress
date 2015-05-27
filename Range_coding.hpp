@@ -4,6 +4,8 @@
 // NOTE: don't encode more than 2 << 24 values or you will
 // have a bad time.
 
+// RAM: TODO: Check out http://ezcodesample.com/reanatomy.html
+
 #pragma once
 
 #include <vector>
