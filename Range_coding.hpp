@@ -450,27 +450,33 @@ namespace Range_models
         std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
     };
 
-    template<unsigned SIZE, unsigned SLOWEST_UPDATE_RATE>
     class Perodic_renomalisation
     {
     public:
-        typedef std::array<unsigned, SIZE>  Freqencies;
-        typedef std::array<Range, SIZE>     Ranges;
+        typedef std::vector<unsigned>  Freqencies;
+        typedef std::vector<Range>     Ranges;
 
-        Perodic_renomalisation()
+        Perodic_renomalisation(unsigned size, unsigned slowest_update_rate)
             : m_f()
+            , m_size(size)
+            , m_slowest_update_rate(slowest_update_rate)
         {
-            for (auto& f : m_f)
+            m_f.reserve(size);
+            m_r.reserve(size);
+
+            for (unsigned i = 0; i < size; ++i)
             {
-                f = 1;
-                m_last_total += f;
+                m_f.push_back(1);
+                ++m_last_total;
             }
 
             Recalculate_ranges();
         }
 
-        Perodic_renomalisation(Freqencies frequencies)
+        Perodic_renomalisation(Freqencies frequencies, unsigned slowest_update_rate)
             : m_f(frequencies)
+            , m_size(frequencies.size())
+            , m_slowest_update_rate(slowest_update_rate)
         {
             for (const auto f : m_f)
             {
@@ -484,7 +490,7 @@ namespace Range_models
 
         void Encode(Encoder& coder, unsigned value)
         {
-            assert(value < SIZE);
+            assert(value < m_size);
 
             coder.Encode(m_r[value]);
 
@@ -496,7 +502,8 @@ namespace Range_models
             auto range = coder.Decode();
             unsigned result = 0;
 
-            while ((m_r[result].min <= range) && (result < SIZE))
+            const auto size = m_size;
+            while ((m_r[result].min <= range) && (result < size))
             {
                 ++result;
             }
@@ -512,9 +519,13 @@ namespace Range_models
     private:
         Ranges      m_r;
         Freqencies  m_f;
+
         unsigned m_updates          = 0;
         unsigned m_update_trigger   = 1;
         unsigned m_last_total       = 0;
+
+        const unsigned m_size                   = 0;
+        const unsigned m_slowest_update_rate    = 0;
 
         void Adapt(unsigned value)
         {
@@ -524,9 +535,9 @@ namespace Range_models
             if (m_updates >= m_update_trigger)
             {
                 m_update_trigger += m_update_trigger;
-                if (m_update_trigger > SLOWEST_UPDATE_RATE)
+                if (m_update_trigger > m_slowest_update_rate)
                 {
-                    m_update_trigger = SLOWEST_UPDATE_RATE;
+                    m_update_trigger = m_slowest_update_rate;
                 }
 
                 Recalculate_ranges();
@@ -553,11 +564,12 @@ namespace Range_models
 
             auto multiple       = TOTAL_RANGE / total;
             auto reminder       = TOTAL_RANGE % total;
-            auto global_adjust  = reminder / SIZE;
-            auto reminder_count = reminder % SIZE;
+            auto global_adjust  = reminder / m_size;
+            auto reminder_count = reminder % m_size;
             unsigned last_min   = 0;
 
-            for (unsigned i = 0; i < SIZE; ++i)
+            const auto size = m_size;
+            for (unsigned i = 0; i < size; ++i)
             {
                 m_r[i].min      = last_min;
                 m_r[i].count    = global_adjust + m_f[i] * multiple;
@@ -740,22 +752,22 @@ void range_tests()
 
         for (const auto& range_set : range_data)
         {
-            Perodic_renomalisation<4,8>::Freqencies
+            Perodic_renomalisation::Freqencies
                     frequencies{1,1,1,1};
-            Perodic_renomalisation<4,8>::Freqencies
+            Perodic_renomalisation::Freqencies
                     overflow{65536,44,100000,34567};
 
             Range_test(
                 4,
                 range_set,
-                Perodic_renomalisation<4,8>(frequencies),
-                Perodic_renomalisation<4,8>(frequencies));
+                Perodic_renomalisation(frequencies, 8),
+                Perodic_renomalisation(frequencies, 8));
 
             Range_test(
                 4,
                 range_set,
-                Perodic_renomalisation<4,8>(overflow),
-                Perodic_renomalisation<4,8>(overflow));
+                Perodic_renomalisation(overflow, 8),
+                Perodic_renomalisation(overflow, 8));
         }
     }
 }

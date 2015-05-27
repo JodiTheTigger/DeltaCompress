@@ -820,12 +820,12 @@ namespace Naieve_rotor
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
         // ?: Can we use max rotational velocity
-        Perodic_renomalisation<8,16> rotor_multiplier_lookup;
-        Perodic_renomalisation<8,16> rotor_signs;
+        Perodic_renomalisation rotor_multiplier_lookup  = {8, 16};
+        Perodic_renomalisation rotor_signs              = {8, 16};
 
         // Um, this will be sloooow.
-        Perodic_renomalisation<256,16*3> rotor_magnitudes_low;
-        Perodic_renomalisation<32,16*3> rotor_magnitudes_high;
+        Perodic_renomalisation rotor_magnitudes_low     = {256, 16*3};
+        Perodic_renomalisation rotor_magnitudes_high    = {32, 16*3};
 
         // Position:
         // ?: Corrlation between max axis and our max axis?
@@ -834,11 +834,11 @@ namespace Naieve_rotor
         // ?: different models based on previous signs
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
-        Perodic_renomalisation<8,16> position_signs;
+        Perodic_renomalisation position_signs = {8, 16};
 
         // Um, this will be sloooow.
-        Perodic_renomalisation<256,16*3> position_magnitudes_low;
-        Perodic_renomalisation<256,16*3> position_magnitudes_high;
+        Perodic_renomalisation position_magnitudes_low  = {256, 16*3};
+        Perodic_renomalisation position_magnitudes_high = {256, 16*3};
 
         // Interactive:
         // one bit
@@ -1223,11 +1223,11 @@ namespace Naieve_gaffer
         // Test range vs tree
         // test if needed multiple models depending on previous model.
         Simple largest_index_quant_changed;
-        Perodic_renomalisation<4, 8> largest_index_quant;
+        Perodic_renomalisation largest_index_quant = {4, 8};
 
         struct Vector_model
         {
-            Perodic_renomalisation<3, 8> largest_index;
+            Perodic_renomalisation largest_index = {3, 8};
             std::array<Simple, 3> next_largest_index;
 
             // Note: even though I hard code 12, it shouldn't be hard coded.
@@ -1235,7 +1235,12 @@ namespace Naieve_gaffer
             // bits2 = MinBits(MaxPositionChangePerSnapshot * MaxFrameDelta)
             // bits = max(bits1, bits2)
 
-            std::array<Perodic_renomalisation<12, 16>, 2> bits_for_value;
+            std::array<Perodic_renomalisation, 2> bits_for_value =
+            {{
+                Perodic_renomalisation{12, 16},
+                Perodic_renomalisation{12, 16},
+            }};
+
             std::array<Binary_tree<Simple, 12>, 3> value;
 
             bool Reduce_vector_using_magnitude;
