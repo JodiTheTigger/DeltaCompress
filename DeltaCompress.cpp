@@ -800,7 +800,7 @@ unsigned MinBits(unsigned value)
 
 using namespace Range_models;
 
-namespace Naieve_rotor
+namespace Sorted_position
 {
     struct Model
     {
@@ -865,7 +865,7 @@ namespace Naieve_rotor
             Range_coders::Binary_encoder    binary(range);
 
             for (unsigned i = 0; i < size; ++i)
-            {                
+            {
                 // //////////////////////////////////////////////////////
 
                 unsigned quat_lookup = 0;
@@ -1012,7 +1012,390 @@ namespace Naieve_rotor
         }
 
         return data;
-    }    
+    }
+
+    auto decode
+    (
+        const Frame& base,
+        const Range_types::Bytes& data,
+        unsigned// frameDelta
+    )
+    -> Frame
+    {
+        auto                size = base.size();
+        Model         model;
+        Frame               target;
+
+        {
+            Range_coders::Decoder           range(data);
+            Range_coders::Binary_decoder    binary(range);
+
+            for (unsigned i = 0; i < size; ++i)
+            {
+                // //////////////////////////////////////////////////////
+
+                unsigned quat_lookup = 0;
+
+                auto any_5_changed =
+                    [&base, &target](unsigned i, unsigned history)
+                    -> bool
+                {
+                    if (i < history)
+                    {
+                        return false;
+                    }
+
+                    auto max = (i - history) + 5;
+                    for (unsigned j = max - 5; j < max; ++j)
+                    {
+                        if (!quat_equal(base[j], target[j]))
+                        {
+                            return true;
+                            break;
+                        }
+                    }
+
+                    return false;
+                };
+
+                auto add_signs = [](unsigned signs, const Vec3i& v) -> Vec3i
+                {
+                    return
+                    {
+                        (signs & 1) ? -v[0] : v[0],
+                        (signs & 2) ? -v[1] : v[1],
+                        (signs & 4) ? -v[2] : v[2],
+                    };
+                };
+
+                if (any_5_changed(i, 33))
+                {
+                    quat_lookup = 1;
+                }
+
+                if (any_5_changed(i, 5))
+                {
+                    quat_lookup |= 2;
+                }
+
+                auto quat_changed =
+                    model.quat_changed[quat_lookup].Decode(binary);
+
+                if (quat_changed)
+                {
+                    auto index = model.rotor_multiplier_lookup.Decode(range);
+                    auto signs = model.rotor_signs.Decode(range);
+                    auto v = Vec3i
+                    {
+                        static_cast<int>
+                        (
+                            model.rotor_magnitudes_high.Decode(range) << 8 |
+                            model.rotor_magnitudes_low.Decode(range)
+                        ),
+                        static_cast<int>
+                        (
+                            model.rotor_magnitudes_high.Decode(range) << 8 |
+                            model.rotor_magnitudes_low.Decode(range)
+                        ),
+                        static_cast<int>
+                        (
+                            model.rotor_magnitudes_high.Decode(range) << 8 |
+                            model.rotor_magnitudes_low.Decode(range)
+                        ),
+                    };
+
+                    auto m = Maxwell
+                    {
+                        index,
+                        add_signs(signs, v)
+                    };
+
+                    auto b = to_gaffer(base[i]);
+                    auto t = to_gaffer(b, m);
+
+                    target[i].orientation_largest = t.orientation_largest;
+                    target[i].orientation_a       = t.vec[0];
+                    target[i].orientation_b       = t.vec[1];
+                    target[i].orientation_c       = t.vec[2];
+                }
+                else
+                {
+                    target[i].orientation_largest = base[i].orientation_largest;
+                    target[i].orientation_a       = base[i].orientation_a;
+                    target[i].orientation_b       = base[i].orientation_b;
+                    target[i].orientation_c       = base[i].orientation_c;
+                }
+
+                // //////////////////////////////////////////////////////
+
+                auto pos_changed =
+                    model.position_changed[quat_changed].Decode(binary);
+
+                if (pos_changed)
+                {
+                    auto signs = model.position_signs.Decode(range);
+                    auto v = Vec3i
+                    {
+                        static_cast<int>
+                        (
+                            model.position_magnitudes_high.Decode(range) << 8 |
+                            model.position_magnitudes_low.Decode(range)
+                        ),
+                        static_cast<int>
+                        (
+                            model.position_magnitudes_high.Decode(range) << 8 |
+                            model.position_magnitudes_low.Decode(range)
+                        ),
+                        static_cast<int>
+                        (
+                            model.position_magnitudes_high.Decode(range) << 8 |
+                            model.position_magnitudes_low.Decode(range)
+                        ),
+                    };
+
+                    auto vec = add_signs(signs, v);
+
+                    target[i].position_x = vec[0] + base[i].position_x;
+                    target[i].position_y = vec[1] + base[i].position_y;
+                    target[i].position_z = vec[2] + base[i].position_z;
+
+                }
+                else
+                {
+                    target[i].position_x = base[i].position_x;
+                    target[i].position_y = base[i].position_y;
+                    target[i].position_z = base[i].position_z;
+                }
+
+                // //////////////////////////////////////////////////////
+
+                target[i].interacting =
+                    model.interactive[(quat_changed | pos_changed)].Decode
+                    (
+                        binary
+                    );
+            }
+        }
+
+        return target;
+    }
+};
+
+// //////////////////////////////////////////////////////
+
+namespace Naieve_rotor
+{
+    struct Model
+    {
+        // Quat changed:
+        // Model adaption should be based on previous + 30 previous.
+        // bit 0 = any of previous 5 set to 1
+        // bit 1 = any of last 33 to 28 set to 1
+        std::array<Binary, 4> quat_changed;
+
+        // Position changed:
+        // Model on if quat changed or not.
+        std::array<Binary, 2> position_changed;
+
+        // Rotor:
+        // Encode signs seperatly (3 bit range).
+        // ?: different models based on previous signs
+        // ?: code sorted or not
+        // ?: If bits > 256, only code top 8 bits
+        // ?: Can we use max rotational velocity
+        Perodic_renomalisation rotor_multiplier_lookup  = {8, 16};
+        Perodic_renomalisation rotor_signs              = {8, 16};
+
+        // Um, this will be sloooow.
+        Perodic_renomalisation rotor_magnitudes_low     = {256, 16*3};
+        Perodic_renomalisation rotor_magnitudes_high    = {32, 16*3};
+
+        // Position:
+        // ?: Corrlation between max axis and our max axis?
+        // Encode signs seperatly
+        // Use max velocity
+        // ?: different models based on previous signs
+        // ?: code sorted or not
+        // ?: If bits > 256, only code top 8 bits
+        Perodic_renomalisation position_signs = {8, 16};
+
+        // Um, this will be sloooow.
+        Perodic_renomalisation position_magnitudes_low  = {256, 16*3};
+        Perodic_renomalisation position_magnitudes_high = {256, 16*3};
+
+        // Interactive:
+        // one bit
+        // model on:
+        // Previous was interactive
+        // Anything has changed
+        std::array<Binary, 2> interactive;
+    };
+
+    auto encode
+    (
+        const Frame& base,
+        const Frame& target,
+        unsigned// frameDelta
+    )
+    -> Range_types::Bytes
+    {
+        auto                size = base.size();
+        Model         model;
+        Range_types::Bytes  data;
+
+        {
+            Range_coders::Encoder           range(data);
+            Range_coders::Binary_encoder    binary(range);
+
+            for (unsigned i = 0; i < size; ++i)
+            {
+                // //////////////////////////////////////////////////////
+
+                unsigned quat_lookup = 0;
+
+                auto any_5_changed =
+                    [&base, &target](unsigned i, unsigned history)
+                    -> bool
+                {
+                    if (i < history)
+                    {
+                        return false;
+                    }
+
+                    auto max = (i - history) + 5;
+                    for (unsigned j = max - 5; j < max; ++j)
+                    {
+                        if (!quat_equal(base[j], target[j]))
+                        {
+                            return true;
+                            break;
+                        }
+                    }
+
+                    return false;
+                };
+
+                if (any_5_changed(i, 33))
+                {
+                    quat_lookup = 1;
+                }
+
+                if (any_5_changed(i, 5))
+                {
+                    quat_lookup |= 2;
+                }
+
+                auto quat_changed = !quat_equal(base[i], target[i]);
+
+                model.quat_changed[quat_lookup].Encode(binary, quat_changed);
+
+                auto get_signs = [](const Vec3i& v) -> unsigned
+                {
+                    unsigned result = 0;
+
+                    if (v[0] < 0)
+                    {
+                        result |= 1;
+                    }
+
+                    if (v[1] < 0)
+                    {
+                        result |= 2;
+                    }
+
+                    if (v[2] < 0)
+                    {
+                        result |= 4;
+                    }
+
+                    return result;
+                };
+
+                auto strip_signs = [](const Vec3i& v) -> Vec3i
+                {
+                    return
+                    {
+                        std::abs(v[0]),
+                        std::abs(v[1]),
+                        std::abs(v[2]),
+                    };
+                };
+
+                if (quat_changed)
+                {
+                    auto b = to_gaffer(base[i]);
+                    auto t = to_gaffer(target[i]);
+                    auto m = to_maxwell(b, t);
+                    auto signs = get_signs(m.vec);
+                    auto vec = strip_signs(m.vec);
+
+                    model.rotor_multiplier_lookup.Encode
+                    (
+                        range,
+                        m.multiplier_index
+                    );
+
+                    model.rotor_signs.Encode
+                    (
+                        range,
+                        signs
+                    );
+
+                    for (auto v: vec)
+                    {
+                        model.rotor_magnitudes_high.Encode(range, v >> 8);
+                        model.rotor_magnitudes_low.Encode(range, v & 0xFF);
+                    }
+                }
+
+                // //////////////////////////////////////////////////////
+
+                auto pos_changed = !pos_equal(base[i], target[i]);
+
+                unsigned pos_lookup = quat_changed ? 1 : 0;
+
+                model.position_changed[pos_lookup].Encode(binary, pos_changed);
+
+                if (pos_changed)
+                {
+                    Vec3i delta
+                    {
+                        target[i].position_x - base[i].position_x,
+                        target[i].position_y - base[i].position_y,
+                        target[i].position_z - base[i].position_z
+                    };
+
+                    auto signs = get_signs(delta);
+                    auto vec = strip_signs(delta);
+
+                    model.position_signs.Encode(range, signs);
+
+                    for (auto v: vec)
+                    {
+                        model.position_magnitudes_high.Encode(range, v >> 8);
+                        model.position_magnitudes_low.Encode(range, v & 0xFF);
+                    }
+                }
+
+                // //////////////////////////////////////////////////////
+
+                unsigned interactive_lookup = 0;
+
+                if ((pos_changed) || (quat_changed))
+                {
+                    interactive_lookup = 1;
+                }
+
+                model.interactive[interactive_lookup].Encode
+                (
+                    binary,
+                    target[i].interacting
+                );
+            }
+        }
+
+        return data;
+    }
 
     auto decode
     (
@@ -1502,7 +1885,7 @@ namespace Naieve_gaffer
         return ReturnSorted(result);
     }
 
-    auto Encode_frames(
+    auto encode(
         const Frame& base,
         const Frame& target,
         unsigned frameDelta) -> Range_types::Bytes
@@ -1634,7 +2017,7 @@ namespace Naieve_gaffer
         return data;
     }
 
-    auto Decode_frames(
+    auto decode(
         const Frame& base,
         const Range_types::Bytes& data,
         unsigned frameDelta) -> Frame
@@ -1755,7 +2138,7 @@ namespace Naieve_gaffer
 #define PRINT_FLOAT(x) printf("%-32s\t%f\n", #x, x);
 
 void range_compress(std::vector<Frame>& frames)
-{    
+{
     auto packets = frames.size();
 
     auto test = [&](auto encoder, auto decoder)
@@ -1798,16 +2181,25 @@ void range_compress(std::vector<Frame>& frames)
         printf("\n==============================================\n");
     };
 
+    printf("Sorted_position");
     test
     (
-        Naieve_gaffer::Encode_frames,
-        Naieve_gaffer::Decode_frames
+        Sorted_position::encode,
+        Sorted_position::decode
     );
 
+    printf("Naieve_rotor");
     test
     (
         Naieve_rotor::encode,
         Naieve_rotor::decode
+    );
+
+    printf("Naieve_gaffer");
+    test
+    (
+        Naieve_gaffer::encode,
+        Naieve_gaffer::decode
     );
 }
 
