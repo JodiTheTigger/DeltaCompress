@@ -552,18 +552,24 @@ namespace Range_models
             auto last_range = m_r[max_value];
             float max_cf = last_range.min + last_range.count;
             float multiplier = TOTAL_RANGE / max_cf;
-            uint32_t new_range
+            uint32_t new_value
                 = static_cast<uint32_t>(std::round(range / multiplier));
 
             const auto size = m_size;
-            while ((m_r[result].min <= new_range) && (result < size))
+            while ((m_r[result].min <= new_value) && (result < size))
             {
                 ++result;
             }
 
             --result;
 
-            coder.Update(m_r[result]);
+            auto new_range = Range
+            {
+                static_cast<uint32_t>(std::round(m_r[result].min * multiplier)),
+                static_cast<uint32_t>(std::round(m_r[result].count * multiplier)),
+            };
+
+            coder.Update(new_range);
             Adapt(result);
 
             return result;
