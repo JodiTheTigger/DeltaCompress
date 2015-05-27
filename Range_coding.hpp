@@ -450,51 +450,6 @@ namespace Range_models
         std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
     };
 
-    template<class BINARY_MODEL_ZERO, class BINARY_MODEL_ONE>
-    class Binary_history
-    {
-    public:
-        Binary_history(
-                unsigned last_value = 0,
-                BINARY_MODEL_ZERO zero = BINARY_MODEL_ZERO(),
-                BINARY_MODEL_ONE one = BINARY_MODEL_ONE())
-            : m_last_value(last_value)
-            , m_model_zero(zero)
-            , m_model_one(one)
-        {}
-
-        void Encode(Binary_encoder& coder, unsigned value)
-        {
-            if (!m_last_value)
-            {
-                m_model_zero.Encode(coder, value);
-            }
-            else
-            {
-                m_model_one.Encode(coder, value);
-            }
-
-            m_last_value = value;
-        }
-
-        unsigned Decode(Binary_decoder& coder)
-        {
-            auto value =
-                (!m_last_value) ?
-                    m_model_zero.Decode(coder) :
-                    m_model_one.Decode(coder);
-
-            m_last_value = value;
-
-            return value;
-        }
-
-    private:
-        unsigned            m_last_value;
-        BINARY_MODEL_ZERO   m_model_zero;
-        BINARY_MODEL_ONE    m_model_one;
-    };
-
     template<unsigned SIZE, unsigned SLOWEST_UPDATE_RATE>
     class Perodic_renomalisation
     {
@@ -746,11 +701,6 @@ void Range_tests()
             tests,
             Binary_two_speed(3,4),
             Binary_two_speed(3,4));
-
-        Binary_test(
-            tests,
-            Binary_history<Binary, Binary>(0, Binary(3), Binary(3)),
-            Binary_history<Binary, Binary>(0, Binary(3), Binary(3)));
     }
 
     // Range Model Tests

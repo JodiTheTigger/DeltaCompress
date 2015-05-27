@@ -1213,20 +1213,11 @@ namespace {
         // interacting based on current interacting + quat/position changed.
         using Simple = Binary;
 
-        Binary_history<Simple, Simple> quant_changed =
-        {
-            1,
-            {4, 31}
-        };
-
-//        Binary_history<
-//            Binary_history<Simple, Simple>,
-//            Binary_history<Simple, Simple>> quant_changed =
-//        {
-//            0,
-//            {0,6,7},
-//            {1,7,7}
-//        };
+        std::array<Simple, 2> quat_changed =
+        {{
+            {4, 31},
+            {},
+        }};
 
         // Test range vs tree
         // test if needed multiple models depending on previous model.
@@ -1538,7 +1529,22 @@ auto Encode_frames(
                 (base[i].orientation_b != target[i].orientation_b) ||
                 (base[i].orientation_c != target[i].orientation_c);
 
-            model.quant_changed.Encode(binary, quant_changed);
+            auto last_quat_changed =
+                (i != 0) ?
+                    (base[i - 1].orientation_largest != target[i - 1].orientation_largest) ||
+                    (base[i - 1].orientation_a != target[i - 1].orientation_a) ||
+                    (base[i - 1].orientation_b != target[i - 1].orientation_b) ||
+                    (base[i - 1].orientation_c != target[i - 1].orientation_c) ?
+                        1 :
+                        0
+                    :
+                    0;
+
+            model.quat_changed[last_quat_changed].Encode
+            (
+                binary,
+                quant_changed
+            );
 
             if (quant_changed)
             {
@@ -1643,8 +1649,19 @@ auto Decode_frames(
     auto size = base.size();
     for (unsigned i = 0; i < size; ++i)
     {
+        auto last_quat_changed =
+            (i != 0) ?
+                (base[i - 1].orientation_largest != target[i - 1].orientation_largest) ||
+                (base[i - 1].orientation_a != target[i - 1].orientation_a) ||
+                (base[i - 1].orientation_b != target[i - 1].orientation_b) ||
+                (base[i - 1].orientation_c != target[i - 1].orientation_c) ?
+                    1 :
+                    0
+                :
+                0;
+
         auto quant_changed =
-            model.quant_changed.Decode(binary);
+            model.quat_changed[last_quat_changed].Decode(binary);
 
         if (quant_changed)
         {
