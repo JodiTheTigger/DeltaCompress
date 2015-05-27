@@ -627,17 +627,19 @@ namespace Range_models
             auto reminder_count = reminder % m_size;
             unsigned last_min   = 0;
 
-            const auto size = m_size;
-            for (unsigned i = 0; i < size; ++i)
+            for (unsigned i = 0; i < reminder_count; ++i)
             {
                 m_r[i].min      = last_min;
-                m_r[i].count    = global_adjust + m_f[i] * multiple;
+                m_r[i].count    = 1 + (global_adjust + m_f[i] * multiple);
 
-                if (reminder_count)
-                {
-                    reminder_count--;
-                    ++m_r[i].count;
-                }
+                last_min += m_r[i].count;
+            }
+
+            const auto size = m_size;
+            for (unsigned i = reminder_count; i < size; ++i)
+            {
+                m_r[i].min      = last_min;
+                m_r[i].count    = 0 + (global_adjust + m_f[i] * multiple);
 
                 last_min += m_r[i].count;
             }
