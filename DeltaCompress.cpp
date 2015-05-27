@@ -26,7 +26,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests       = false;
+bool do_tests       = true;
 bool do_compression = true;
 
 // //////////////////////////////////////////////////////
@@ -204,7 +204,10 @@ inline bool operator==(const Frame& lhs, const Frame& rhs)
     return true;
 }
 
-inline bool operator!=(const Frame& lhs, const Frame& rhs){return !operator==(lhs,rhs);}
+inline bool operator!=(const Frame& lhs, const Frame& rhs)
+{
+    return !operator==(lhs,rhs);
+}
 
 // //////////////////////////////////////////////////////
 
@@ -820,12 +823,12 @@ namespace Sorted_position
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
         // ?: Can we use max rotational velocity
-        Perodic_renomalisation rotor_multiplier_lookup  = {8, 16};
-        Perodic_renomalisation rotor_signs              = {8, 16};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_multiplier_lookup  = {8, 16};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_signs              = {8, 16};
 
         // Um, this will be sloooow.
-        Perodic_renomalisation rotor_magnitudes_low     = {256, 16*3};
-        Perodic_renomalisation rotor_magnitudes_high    = {32, 16*3};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_low     = {256, 16*3};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_high    = {32, 16*3};
 
         // Position:
         // ?: Corrlation between max axis and our max axis?
@@ -834,11 +837,11 @@ namespace Sorted_position
         // ?: different models based on previous signs
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
-        Perodic_renomalisation position_signs = {8, 16};
+        Krichevsky_Trofimov_Campos_Maxwell position_signs = {8, 16};
 
         // Um, this will be sloooow.
-        Perodic_renomalisation position_magnitudes_low  = {256, 16*3};
-        Perodic_renomalisation position_magnitudes_high = {256, 16*3};
+        Krichevsky_Trofimov_Campos_Maxwell position_magnitudes_low  = {256, 16*3};
+        Krichevsky_Trofimov_Campos_Maxwell position_magnitudes_high = {256, 16*3};
 
         // Interactive:
         // one bit
@@ -1203,12 +1206,12 @@ namespace Naieve_rotor
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
         // ?: Can we use max rotational velocity
-        Perodic_renomalisation rotor_multiplier_lookup  = {8, 16};
-        Perodic_renomalisation rotor_signs              = {8, 16};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_multiplier_lookup  = {8, 16};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_signs              = {8, 16};
 
         // Um, this will be sloooow.
-        Perodic_renomalisation rotor_magnitudes_low     = {256, 16*3};
-        Perodic_renomalisation rotor_magnitudes_high    = {32, 16*3};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_low     = {256, 16*3};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_high    = {32, 16*3};
 
         // Position:
         // ?: Corrlation between max axis and our max axis?
@@ -1217,11 +1220,11 @@ namespace Naieve_rotor
         // ?: different models based on previous signs
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
-        Perodic_renomalisation position_signs = {8, 16};
+        Krichevsky_Trofimov_Campos_Maxwell position_signs = {8, 16};
 
         // Um, this will be sloooow.
-        Perodic_renomalisation position_magnitudes_low  = {256, 16*3};
-        Perodic_renomalisation position_magnitudes_high = {256, 16*3};
+        Krichevsky_Trofimov_Campos_Maxwell position_magnitudes_low  = {256, 16*3};
+        Krichevsky_Trofimov_Campos_Maxwell position_magnitudes_high = {256, 16*3};
 
         // Interactive:
         // one bit
@@ -1578,13 +1581,13 @@ namespace Naieve_gaffer
         //   assume no history on largest quat changed, simple binary adaptive
         //   3 models dependent on largest changed (I)
         //   {
-        //     dependent model on largest changed to find largest vector index (I)
-        //     dependent model on largest, to get next largest. (I)
+        //     dependent on largest changed to find largest vector index (I)
+        //     dependent on largest, to get next largest. (I)
         //     3 models per index
         //     {
-        //       model on number of bits for first item (per max magnitude value)
-        //       tree model on bits left, but with force 0 so we dictate how many
-        //       bits are actually used. To avoid coding them in the first place.
+        //       model on bit count for first item (per max magnitude value)
+        //       tree model on bits left, but with force 0 to dictate how many
+        //       bits are actually used. To avoid coding them at all.
         //       don't need to code last bits needed as we know already.
         //     }
         //   }
@@ -1592,7 +1595,7 @@ namespace Naieve_gaffer
         // code position changed dependent on quat changed. Hmm, rygorous does
         // 8 models, 2x dependent on quat changed, then 2x per quat different
         // component. weird. (I)
-        // Code position just like quat, but with max magnitude specifying the bits
+        // Code position just like quat, but with max magnitude specifying bits
         // as well! yay! force zero.
         // interacting based on current interacting + quat/position changed.
         using Simple = Binary;
@@ -1606,11 +1609,11 @@ namespace Naieve_gaffer
         // Test range vs tree
         // test if needed multiple models depending on previous model.
         Simple largest_index_quant_changed;
-        Perodic_renomalisation largest_index_quant = {4, 8};
+        Krichevsky_Trofimov_Campos_Maxwell largest_index_quant = {4, 8};
 
         struct Vector_model
         {
-            Perodic_renomalisation largest_index = {3, 8};
+            Krichevsky_Trofimov_Campos_Maxwell largest_index = {3, 8};
             std::array<Simple, 3> next_largest_index;
 
             // Note: even though I hard code 12, it shouldn't be hard coded.
@@ -1618,10 +1621,10 @@ namespace Naieve_gaffer
             // bits2 = MinBits(MaxPositionChangePerSnapshot * MaxFrameDelta)
             // bits = max(bits1, bits2)
 
-            std::array<Perodic_renomalisation, 2> bits_for_value =
+            std::array<Krichevsky_Trofimov_Campos_Maxwell, 2> bits_for_value =
             {{
-                Perodic_renomalisation{12, 16},
-                Perodic_renomalisation{12, 16},
+                Krichevsky_Trofimov_Campos_Maxwell{12, 16},
+                Krichevsky_Trofimov_Campos_Maxwell{12, 16},
             }};
 
             std::array<Binary_tree<Simple, 12>, 3> value;
@@ -2221,7 +2224,8 @@ int main(int, char**)
 
         const auto frameCount = size / sizeof(Frame);
 
-        // I really hate how I cannot make an array without initilising it first.
+        // I really hate how I cannot make an array
+        // without initilising it first.
         std::vector<Frame> frames(frameCount);
 
         fread(

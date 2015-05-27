@@ -453,13 +453,17 @@ namespace Range_models
         std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
     };
 
-    class Perodic_renomalisation
+    class Krichevsky_Trofimov_Campos_Maxwell
     {
     public:
         typedef std::vector<unsigned>  Freqencies;
         typedef std::vector<Range>     Ranges;
 
-        Perodic_renomalisation(unsigned size, unsigned slowest_update_rate)
+        Krichevsky_Trofimov_Campos_Maxwell
+        (
+            unsigned size,
+            unsigned slowest_update_rate
+        )
             : m_f()            
             , m_r(size)
             , m_size(size)
@@ -476,7 +480,11 @@ namespace Range_models
             Recalculate_ranges();
         }
 
-        Perodic_renomalisation(Freqencies frequencies, unsigned slowest_update_rate)
+        Krichevsky_Trofimov_Campos_Maxwell
+        (
+            Freqencies frequencies,
+            unsigned slowest_update_rate
+        )
             : m_f(frequencies)
             , m_r(frequencies.size())
             , m_size(frequencies.size())
@@ -565,8 +573,14 @@ namespace Range_models
 
             auto new_range = Range
             {
-                static_cast<uint32_t>(std::round(m_r[result].min * multiplier)),
-                static_cast<uint32_t>(std::round(m_r[result].count * multiplier)),
+                static_cast<uint32_t>
+                (
+                    std::round(m_r[result].min * multiplier)
+                ),
+                static_cast<uint32_t>
+                (
+                    std::round(m_r[result].count * multiplier)
+                ),
             };
 
             coder.Update(new_range);
@@ -845,28 +859,28 @@ void range_tests()
 
         for (const auto& range_set : range_data)
         {
-            Perodic_renomalisation::Freqencies
+            Krichevsky_Trofimov_Campos_Maxwell::Freqencies
                     frequencies{1,1,1,1};
-            Perodic_renomalisation::Freqencies
+            Krichevsky_Trofimov_Campos_Maxwell::Freqencies
                     overflow{65536,44,100000,34567};
 
             Range_test(
                 4,
                 range_set,
-                Perodic_renomalisation(frequencies, 8),
-                Perodic_renomalisation(frequencies, 8));
+                Krichevsky_Trofimov_Campos_Maxwell(frequencies, 8),
+                Krichevsky_Trofimov_Campos_Maxwell(frequencies, 8));
 
             Range_test(
                 4,
                 range_set,
-                Perodic_renomalisation(overflow, 8),
-                Perodic_renomalisation(overflow, 8));
+                Krichevsky_Trofimov_Campos_Maxwell(overflow, 8),
+                Krichevsky_Trofimov_Campos_Maxwell(overflow, 8));
 
             Range_test(
                 8,
                 range_set,
-                Perodic_renomalisation(8,8),
-                Perodic_renomalisation(8,8),
+                Krichevsky_Trofimov_Campos_Maxwell(8,8),
+                Krichevsky_Trofimov_Campos_Maxwell(8,8),
                 3);
         }
     }
