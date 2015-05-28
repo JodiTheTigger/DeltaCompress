@@ -807,6 +807,9 @@ namespace Sorted_position
 {
     struct Model
     {
+        static const unsigned position_0_update = 16;
+        static const unsigned position_1_update = 8;
+        static const unsigned position_2_update = 5;
         // Quat changed:
         // Model adaption should be based on previous + 30 previous.
         // bit 0 = any of previous 5 set to 1
@@ -823,12 +826,12 @@ namespace Sorted_position
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
         // ?: Can we use max rotational velocity
-        Krichevsky_Trofimov_Campos_Maxwell rotor_multiplier_lookup  = {8, 16};
-        Krichevsky_Trofimov_Campos_Maxwell rotor_signs              = {8, 16};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_multiplier_lookup;;
+        Krichevsky_Trofimov_Campos_Maxwell rotor_signs;
 
         // Um, this will be sloooow.
-        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_low     = {256, 16*3};
-        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_high    = {32, 16*3};
+        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_low;
+        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_high;
 
         // Position:
         // ?: Corrlation between max axis and our max axis?
@@ -837,11 +840,21 @@ namespace Sorted_position
         // ?: different models based on previous signs
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
-        Krichevsky_Trofimov_Campos_Maxwell position_signs = {8, 16};
+        Krichevsky_Trofimov_Campos_Maxwell position_signs;
 
-        // Um, this will be sloooow.
-        Krichevsky_Trofimov_Campos_Maxwell position_magnitudes_low  = {256, 16*3};
-        Krichevsky_Trofimov_Campos_Maxwell position_magnitudes_high = {256, 16*3};
+        // Since this is sorted, the max values are basically
+        // [0]: 1 + MaxPositionChangePerSnapshot * PacketDelta
+        // [1]: 1 + [0] / 2
+        // [2]: 1 + [0] / 3
+        Krichevsky_Trofimov_Campos_Maxwell position_0;
+        Krichevsky_Trofimov_Campos_Maxwell position_1;
+        Krichevsky_Trofimov_Campos_Maxwell position_2;
+
+        // If all three items are differnt use largest_index and next_largest
+        // index. Otherwise two items match so use different_index only (rare).
+        Krichevsky_Trofimov_Campos_Maxwell  largest_index;
+        Krichevsky_Trofimov_Campos_Maxwell  different_index;
+        std::array<Binary, 3>               next_largest_index;
 
         // Interactive:
         // one bit
@@ -855,13 +868,44 @@ namespace Sorted_position
     (
         const Frame& base,
         const Frame& target,
-        unsigned// frameDelta
+        unsigned frameDelta
     )
     -> Range_types::Bytes
     {
         auto                size = base.size();
-        Model         model;
         Range_types::Bytes  data;
+
+        const unsigned max_position_0 =
+            1 +
+            static_cast<unsigned>
+            (
+                MaxPositionChangePerSnapshot *
+                frameDelta
+            );
+
+        const unsigned max_position_1 = 1 + (max_position_0 >> 1);
+        const unsigned max_position_2 = 1 + (max_position_0 / 3);
+
+        Model model =
+        {
+            {},
+            {},
+            {8, 16},
+            {8, 16},
+            {256, 16*3},
+            {32, 16*3},
+
+
+            {8, 16},
+            {max_position_0, Model::position_0_update},
+            {max_position_1, Model::position_1_update},
+            {max_position_2, Model::position_2_update},
+            {3, 8},
+            {3, 1},
+
+            {},
+            {},
+        };
 
         {
             Range_coders::Encoder           range(data);
@@ -990,10 +1034,84 @@ namespace Sorted_position
 
                     model.position_signs.Encode(range, signs);
 
-                    for (auto v: vec)
+                    // Sort
+                    int odd = -1;
                     {
-                        model.position_magnitudes_high.Encode(range, v >> 8);
-                        model.position_magnitudes_low.Encode(range, v & 0xFF);
+                        if ((vec[0] != vec[1]) && (vec[1] == vec[2]))
+                        {
+                            odd = 0u;
+                        }
+                        if ((vec[0] != vec[1]) && (vec[0] == vec[2]))
+                        {
+                            odd = 1u;
+                        }
+                        if ((vec[0] == vec[1]) && (vec[1] != vec[2]))
+                        {
+                            odd = 2u;
+                        }
+                    }
+
+                    unsigned top = 0;
+                    unsigned next = 0;
+                    {
+                        using std::swap;
+
+                        if  (
+                                (vec[1] > vec[0]) &&
+                                (vec[1] >= vec[2])
+                            )
+                        {
+                            swap(vec[0], vec[1]);
+                            top = 1;
+                        }
+                        else
+                        {
+                            if  (
+                                    (vec[2] > vec[0]) &&
+                                    (vec[2] >= vec[1])
+                                )
+                            {
+                                swap(vec[0], vec[2]);
+                                swap(vec[1], vec[2]);
+                                top = 2;
+                            }
+                        }
+
+                        assert(vec[0] >= vec[1]);
+                        assert(vec[0] >= vec[2]);
+
+                        if (vec[2] > vec[1])
+                        {
+                            swap(vec[1], vec[2]);
+                            next = 1;
+                        }
+
+                        assert(vec[1] >= vec[2]);
+                    }
+
+                    // RAM: TODO: Use max magnitude to determine
+                    // truncation values. Also, truncate
+                    assert(vec[0] <= static_cast<int>(max_position_0));
+                    assert(vec[1] <= static_cast<int>(max_position_1));
+                    assert(vec[2] <= static_cast<int>(max_position_2));
+
+                    model.position_0.Encode(range, vec[0]);
+                    model.position_1.Encode(range, vec[1]);
+                    model.position_2.Encode(range, vec[2]);
+
+                    bool all_same = (vec[0] == vec[1]) && (vec[1] == vec[2]);
+
+                    if (!all_same)
+                    {
+                        if (odd < 0)
+                        {
+                            model.largest_index.Encode(range, top);
+                            model.next_largest_index[top].Encode(binary, next);
+                        }
+                        else
+                        {
+                            model.different_index.Encode(range, odd);
+                        }
                     }
                 }
 
@@ -1021,13 +1139,44 @@ namespace Sorted_position
     (
         const Frame& base,
         const Range_types::Bytes& data,
-        unsigned// frameDelta
+        unsigned frameDelta
     )
     -> Frame
     {
-        auto                size = base.size();
-        Model         model;
-        Frame               target;
+        auto    size = base.size();
+        Frame   target;
+
+        const unsigned max_position_0 =
+            1 +
+            static_cast<unsigned>
+            (
+                MaxPositionChangePerSnapshot *
+                frameDelta
+            );
+
+        const unsigned max_position_1 = 1 + (max_position_0 >> 1);
+        const unsigned max_position_2 = 1 + (max_position_0 / 3);
+
+        Model model =
+        {
+            {},
+            {},
+            {8, 16},
+            {8, 16},
+            {256, 16*3},
+            {32, 16*3},
+
+
+            {8, 16},
+            {max_position_0, Model::position_0_update},
+            {max_position_1, Model::position_1_update},
+            {max_position_2, Model::position_2_update},
+            {3, 8},
+            {3, 1},
+
+            {},
+            {},
+        };
 
         {
             Range_coders::Decoder           range(data);
@@ -1141,19 +1290,95 @@ namespace Sorted_position
                     {
                         static_cast<int>
                         (
-                            model.position_magnitudes_high.Decode(range) << 8 |
-                            model.position_magnitudes_low.Decode(range)
+                            model.position_0.Decode(range)
                         ),
                         static_cast<int>
                         (
-                            model.position_magnitudes_high.Decode(range) << 8 |
-                            model.position_magnitudes_low.Decode(range)
+                            model.position_1.Decode(range)
                         ),
                         static_cast<int>
                         (
-                            model.position_magnitudes_high.Decode(range) << 8 |
-                            model.position_magnitudes_low.Decode(range)
+                            model.position_2.Decode(range)
                         ),
+                    };
+
+                    // Read the Order
+                    auto largest = 0;
+                    auto nextLargest = 0;
+
+                    if ((v[0] != v[1]) || (v[1] != v[2]))
+                    {
+                        if ((v[0] != v[1]) && (v[1] != v[2]))
+                        {
+                            largest =
+                                model.largest_index.Decode(range);
+
+                            nextLargest =
+                                model.next_largest_index[largest].Decode
+                                (
+                                    binary
+                                );
+                        }
+                        else
+                        {
+                            bool all_same = (v[0] == v[1]) && (v[1] == v[2]);
+
+                            if (!all_same)
+                            {
+                                auto odd_one =
+                                    model.different_index.Decode(range);
+
+                                if (v[0] != v[1])
+                                {
+                                    largest = odd_one;
+                                }
+                                else
+                                {
+                                    switch (odd_one)
+                                    {
+                                        default:
+                                        case 0:
+                                        {
+                                            largest = 1;
+                                            nextLargest = 1;
+                                            break;
+                                        }
+                                        case 1:
+                                        {
+                                            largest = 0;
+                                            nextLargest = 1;
+                                            break;
+                                        }
+                                        case 2:
+                                        {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    {
+                        using std::swap;
+
+                        if (nextLargest)
+                        {
+                            swap(v[1], v[2]);
+                        }
+
+                        if (largest)
+                        {
+                            if (largest == 1)
+                            {
+                                swap(v[0], v[1]);
+                            }
+                            else
+                            {
+                                swap(v[0], v[1]);
+                                swap(v[1], v[2]);
+                            }
+                        }
                     };
 
                     auto vec = add_signs(signs, v);
