@@ -616,50 +616,6 @@ namespace Range_models
                 Recalculate_ranges();
                 m_updates = 0;
             }
-        }        
-
-        void Adapt_with_kernal(unsigned value)
-        {
-            // RAM: experiment
-            static const auto kernal = std::array<unsigned, 7>
-            {
-                1, 1, 2, 8, 2, 1, 1
-            };
-
-            static const auto kernal_offset = kernal.size() >> 1;
-
-            // ugh, corner cases.
-            const auto size = m_f.size();
-            auto start =
-                (value >= kernal_offset) ?
-                    0 :
-                    kernal_offset - value;
-
-            auto tail_offset = (size - value) - 1;
-            auto end =
-                (tail_offset >= kernal_offset) ?
-                    7 :
-                    7 - (kernal_offset - tail_offset);
-
-            for (auto i = start; i < end; ++i)
-            {
-                m_f[(value - kernal_offset) + i] += kernal[i];
-                m_updates += kernal[i];
-            }
-
-            // RAM: TODO: Update trigger gets confused now!
-            // Need a seperate tracker for that.
-            if (m_updates >= m_update_trigger)
-            {
-                m_update_trigger += m_update_trigger;
-                if (m_update_trigger > m_slowest_update_rate)
-                {
-                    m_update_trigger = m_slowest_update_rate;
-                }
-
-                Recalculate_ranges();
-                m_updates = 0;
-            }
         }
 
         void Recalculate_ranges()
@@ -705,6 +661,251 @@ namespace Range_models
             assert(last_min == TOTAL_RANGE);
 
             m_last_total = total;
+        }
+    };
+
+    class Periodic_update_with_kernel
+    {
+    public:
+        typedef std::vector<unsigned>  Freqencies;
+        typedef std::vector<Range>     Ranges;
+        typedef std::vector<unsigned>  Kernel;
+
+        Periodic_update_with_kernel
+        (
+            unsigned size,
+            unsigned slowest_update_rate,
+            Kernel kernel = {1, 1, 2, 8, 2, 1, 1}
+        )
+            : m_f()
+            , m_r(size)
+            , m_k(kernel)
+            , m_size(size)
+            , m_slowest_update_rate(slowest_update_rate)
+            , m_kernal_offset(kernel.size() >> 1)
+        {
+            m_f.reserve(size);
+
+            for (unsigned i = 0; i < size; ++i)
+            {
+                m_f.push_back(1);
+                ++m_last_total;
+            }
+
+            Recalculate_ranges();
+        }
+
+        Periodic_update_with_kernel
+        (
+            Freqencies frequencies,
+            unsigned slowest_update_rate,
+            Kernel kernel = {1, 1, 2, 8, 2, 1, 1}
+        )
+            : m_f(frequencies)
+            , m_r(frequencies.size())
+            , m_k(kernel)
+            , m_size(frequencies.size())
+            , m_slowest_update_rate(slowest_update_rate)
+            , m_kernal_offset(kernel.size() >> 1)
+        {
+            for (const auto f : m_f)
+            {
+                assert(f);
+
+                m_last_total += f;
+            }
+
+            Recalculate_ranges();
+        }
+
+        void Encode(Encoder& coder, unsigned value)
+        {
+            assert(value < m_size);
+
+            coder.Encode(m_r[value]);
+
+            Adapt(value);
+        }
+
+        void Encode(Encoder& coder, unsigned value, unsigned max_value)
+        {
+            assert(value < m_size);
+            assert(max_value < m_size);
+
+            // Multiply the ranges instead of the value
+            // so the frequencies still get updated correctly.
+            auto old_range  = m_r[value];
+            auto last_range = m_r[max_value];
+            float max_cf = last_range.min + last_range.count;
+            float multiplier = TOTAL_RANGE / max_cf;
+            auto new_range = Range
+            {
+                static_cast<uint32_t>(std::round(old_range.min * multiplier)),
+                static_cast<uint32_t>(std::round(old_range.count * multiplier)),
+            };
+
+            coder.Encode(new_range);
+
+            Adapt(value);
+        }
+
+        unsigned Decode(Decoder& coder)
+        {
+            auto range = coder.Decode();
+            unsigned result = 0;
+
+            const auto size = m_size;
+            while ((m_r[result].min <= range) && (result < size))
+            {
+                ++result;
+            }
+
+            --result;
+
+            coder.Update(m_r[result]);
+            Adapt(result);
+
+            return result;
+        }
+
+        unsigned Decode(Decoder& coder, unsigned max_value)
+        {
+            assert(max_value < m_size);
+
+            auto range = coder.Decode();
+            unsigned result = 0;
+
+            auto last_range = m_r[max_value];
+            float max_cf = last_range.min + last_range.count;
+            float multiplier = TOTAL_RANGE / max_cf;
+            uint32_t new_value
+                = static_cast<uint32_t>(std::round(range / multiplier));
+
+            const auto size = m_size;
+            while ((m_r[result].min <= new_value) && (result < size))
+            {
+                ++result;
+            }
+
+            --result;
+
+            auto new_range = Range
+            {
+                static_cast<uint32_t>
+                (
+                    std::round(m_r[result].min * multiplier)
+                ),
+                static_cast<uint32_t>
+                (
+                    std::round(m_r[result].count * multiplier)
+                ),
+            };
+
+            coder.Update(new_range);
+            Adapt(result);
+
+            return result;
+        }
+
+    private:
+        Freqencies  m_f;
+        Ranges      m_r;
+        Kernel      m_k;
+
+        unsigned m_updates          = 0;
+        unsigned m_update_total     = 0;
+        unsigned m_update_trigger   = 1;
+        unsigned m_last_total       = 0;
+
+        const unsigned m_size                   = 0;
+        const unsigned m_slowest_update_rate    = 0;
+        const unsigned m_kernal_offset          = 0;
+
+        void Adapt(unsigned value)
+        {
+            const auto kernal_offset = m_kernal_offset;
+            const auto kernal_size = m_k.size();
+
+            // Maybe add kernal_offset padding to both
+            // sides of m_f to remove the ifs.
+            const auto size = m_f.size();
+            auto start =
+                (value >= kernal_offset) ?
+                    0 :
+                    kernal_offset - value;
+
+            auto tail_offset = (size - value) - 1;
+            auto end =
+                (tail_offset >= kernal_offset) ?
+                    kernal_size :
+                    kernal_size - (kernal_offset - tail_offset);
+
+            const auto& k = m_k;
+            for (auto i = start; i < end; ++i)
+            {
+                m_f[(value - kernal_offset) + i] += k[i];
+                m_updates += k[i];
+            }
+
+            auto updates = m_update_total + 1;
+            if (updates >= m_update_trigger)
+            {
+                m_update_trigger += m_update_trigger;
+                if (m_update_trigger > m_slowest_update_rate)
+                {
+                    m_update_trigger = m_slowest_update_rate;
+                }
+
+                Recalculate_ranges();
+                updates = 0;
+            }
+            m_update_total = updates;
+        }
+
+        void Recalculate_ranges()
+        {
+            unsigned total = m_last_total + m_updates;
+
+            if (total > TOTAL_RANGE)
+            {
+                // Dunno how to do this nice for now. Brute it.
+                total = 0;
+                for (auto& f : m_f)
+                {
+                    f >>= 1;
+                    ++f;
+
+                    total += f;
+                }
+            }
+
+            const auto size     = m_size;
+            auto multiple       = TOTAL_RANGE / total;
+            auto reminder       = TOTAL_RANGE % total;
+            auto global_adjust  = reminder / size;
+            auto reminder_count = reminder % size;
+            unsigned last_min   = 0;
+
+            for (unsigned i = 0; i < reminder_count; ++i)
+            {
+                m_r[i].min      = last_min;
+                m_r[i].count    = 1 + (global_adjust + m_f[i] * multiple);
+
+                last_min += m_r[i].count;
+            }
+
+            for (unsigned i = reminder_count; i < size; ++i)
+            {
+                m_r[i].min      = last_min;
+                m_r[i].count    = 0 + (global_adjust + m_f[i] * multiple);
+
+                last_min += m_r[i].count;
+            }
+
+            assert(last_min == TOTAL_RANGE);
+
+            m_last_total = total;
+            m_updates = 0;
         }
     };
 } // Namespace models
@@ -900,6 +1101,33 @@ void range_tests()
                 assert(read == data.size());
             }
         };
+
+        for (const auto& range_set : range_data)
+        {
+            Periodic_update_with_kernel::Freqencies
+                    frequencies{1,1,1,1};
+            Periodic_update_with_kernel::Freqencies
+                    overflow{65536,44,100000,34567};
+
+            Range_test(
+                4,
+                range_set,
+                Periodic_update_with_kernel(frequencies, 8),
+                Periodic_update_with_kernel(frequencies, 8));
+
+            Range_test(
+                4,
+                range_set,
+                Periodic_update_with_kernel(overflow, 8),
+                Periodic_update_with_kernel(overflow, 8));
+
+            Range_test(
+                8,
+                range_set,
+                Periodic_update_with_kernel(8,8),
+                Periodic_update_with_kernel(8,8),
+                3);
+        }
 
         for (const auto& range_set : range_data)
         {
