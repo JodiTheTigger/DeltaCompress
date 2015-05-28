@@ -616,6 +616,50 @@ namespace Range_models
                 Recalculate_ranges();
                 m_updates = 0;
             }
+        }        
+
+        void Adapt_with_kernal(unsigned value)
+        {
+            // RAM: experiment
+            static const auto kernal = std::array<unsigned, 7>
+            {
+                1, 1, 2, 8, 2, 1, 1
+            };
+
+            static const auto kernal_offset = kernal.size() >> 1;
+
+            // ugh, corner cases.
+            const auto size = m_f.size();
+            auto start =
+                (value >= kernal_offset) ?
+                    0 :
+                    kernal_offset - value;
+
+            auto tail_offset = (size - value) - 1;
+            auto end =
+                (tail_offset >= kernal_offset) ?
+                    7 :
+                    7 - (kernal_offset - tail_offset);
+
+            for (auto i = start; i < end; ++i)
+            {
+                m_f[(value - kernal_offset) + i] += kernal[i];
+                m_updates += kernal[i];
+            }
+
+            // RAM: TODO: Update trigger gets confused now!
+            // Need a seperate tracker for that.
+            if (m_updates >= m_update_trigger)
+            {
+                m_update_trigger += m_update_trigger;
+                if (m_update_trigger > m_slowest_update_rate)
+                {
+                    m_update_trigger = m_slowest_update_rate;
+                }
+
+                Recalculate_ranges();
+                m_updates = 0;
+            }
         }
 
         void Recalculate_ranges()
