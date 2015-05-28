@@ -1096,8 +1096,16 @@ namespace Sorted_position
                     assert(vec[2] <= static_cast<int>(max_position_2));
 
                     model.position_0.Encode(range, vec[0]);
-                    model.position_1.Encode(range, vec[1]);
-                    model.position_2.Encode(range, vec[2]);
+
+                    if (vec[0] > 0)
+                    {
+                        model.position_1.Encode(range, vec[1]);
+
+                        if (vec[1] > 0)
+                        {
+                            model.position_2.Encode(range, vec[2]);
+                        }
+                    }
 
                     bool all_same = (vec[0] == vec[1]) && (vec[1] == vec[2]);
 
@@ -1286,20 +1294,16 @@ namespace Sorted_position
                 if (pos_changed)
                 {
                     auto signs = model.position_signs.Decode(range);
+
+                    auto x = model.position_0.Decode(range);
+                    auto y = x ? model.position_1.Decode(range) : 0;
+                    auto z = y ? model.position_2.Decode(range) : 0;
+
                     auto v = Vec3i
                     {
-                        static_cast<int>
-                        (
-                            model.position_0.Decode(range)
-                        ),
-                        static_cast<int>
-                        (
-                            model.position_1.Decode(range)
-                        ),
-                        static_cast<int>
-                        (
-                            model.position_2.Decode(range)
-                        ),
+                        static_cast<int>(x),
+                        static_cast<int>(y),
+                        static_cast<int>(z),
                     };
 
                     // Read the Order
