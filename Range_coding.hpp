@@ -514,6 +514,9 @@ namespace Range_models
             assert(value < m_size);
             assert(max_value < m_size);
 
+            // Hmm, encoding one bit bad give me issues.
+            max_value = std::max(max_value, 2u);
+
             // Multiply the ranges instead of the value
             // so the frequencies still get updated correctly.
             auto old_range  = m_r[value];
@@ -572,6 +575,9 @@ namespace Range_models
         unsigned Decode(Decoder& coder, unsigned max_value)
         {
             assert(max_value < m_size);
+
+            // Hmm, encoding one bit bad give me issues.
+            max_value = std::max(max_value, 2u);
 
             auto range = coder.Decode();
             unsigned result = 0;
