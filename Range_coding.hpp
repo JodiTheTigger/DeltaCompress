@@ -520,10 +520,29 @@ namespace Range_models
             auto last_range = m_r[max_value];
             float max_cf = last_range.min + last_range.count;
             float multiplier = TOTAL_RANGE / max_cf;
+
+            // Man, rounding errors and off my one are my bane.
+            unsigned next_min = 0;
+            if (value < max_value)
+            {
+                next_min =
+                    static_cast<uint32_t>
+                    (
+                        std::round(m_r[value + 1].min * multiplier)
+                    );
+            }
+            else
+            {
+                next_min = TOTAL_RANGE;
+            }
+
+            auto new_min =
+                static_cast<uint32_t>(std::round(old_range.min * multiplier));
+
             auto new_range = Range
             {
-                static_cast<uint32_t>(std::round(old_range.min * multiplier)),
-                static_cast<uint32_t>(std::round(old_range.count * multiplier)),
+                new_min,
+                next_min - new_min,
             };
 
             coder.Encode(new_range);
@@ -560,27 +579,48 @@ namespace Range_models
             auto last_range = m_r[max_value];
             float max_cf = last_range.min + last_range.count;
             float multiplier = TOTAL_RANGE / max_cf;
-            uint32_t new_value
-                = static_cast<uint32_t>(std::round(range / multiplier));
 
             const auto size = m_size;
-            while ((m_r[result].min <= new_value) && (result < size))
+
+            while (result < size)
             {
+                auto new_min =
+                    static_cast<uint32_t>
+                    (
+                        std::round(m_r[result].min * multiplier)
+                    );
+
+                if (new_min > range)
+                {
+                    break;
+                }
+
                 ++result;
             }
 
             --result;
 
+            unsigned next_min = 0;
+            if (result < max_value)
+            {
+                next_min =
+                    static_cast<uint32_t>
+                    (
+                        std::round(m_r[result + 1].min * multiplier)
+                    );
+            }
+            else
+            {
+                next_min = TOTAL_RANGE;
+            }
+
+            auto new_min =
+                static_cast<uint32_t>(std::round(m_r[result].min * multiplier));
+
             auto new_range = Range
             {
-                static_cast<uint32_t>
-                (
-                    std::round(m_r[result].min * multiplier)
-                ),
-                static_cast<uint32_t>
-                (
-                    std::round(m_r[result].count * multiplier)
-                ),
+                new_min,
+                next_min - new_min,
             };
 
             coder.Update(new_range);
@@ -846,10 +886,12 @@ void range_tests()
             {
                 Decoder test_decoder(data);
 
+                auto t2 = 0;
                 for (unsigned t : tests)
                 {
                     auto value = model_out.Decode(test_decoder, max_value);
                     assert(value == (t % max_value));
+                    ++t2;
                 }
 
                 auto read = test_decoder.FlushAndGetBytesRead();
