@@ -826,12 +826,12 @@ namespace Sorted_position
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
         // ?: Can we use max rotational velocity
-        Krichevsky_Trofimov_Campos_Maxwell rotor_multiplier_lookup;;
-        Krichevsky_Trofimov_Campos_Maxwell rotor_signs;
+        Periodic_update rotor_multiplier_lookup;;
+        Periodic_update rotor_signs;
 
         // Um, this will be sloooow.
-        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_low;
-        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_high;
+        Periodic_update rotor_magnitudes_low;
+        Periodic_update rotor_magnitudes_high;
 
         // Position:
         // ?: Corrlation between max axis and our max axis?
@@ -840,20 +840,20 @@ namespace Sorted_position
         // ?: different models based on previous signs
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
-        Krichevsky_Trofimov_Campos_Maxwell position_signs;
+        Periodic_update position_signs;
 
         // Since this is sorted, the max values are basically
         // [0]: 1 + MaxPositionChangePerSnapshot * PacketDelta
         // [1]: 1 + [0] / 2
         // [2]: 1 + [0] / 3
-        Krichevsky_Trofimov_Campos_Maxwell position_0;
-        Krichevsky_Trofimov_Campos_Maxwell position_1;
-        Krichevsky_Trofimov_Campos_Maxwell position_2;
+        Periodic_update position_0;
+        Periodic_update position_1;
+        Periodic_update position_2;
 
         // If all three items are differnt use largest_index and next_largest
         // index. Otherwise two items match so use different_index only (rare).
-        Krichevsky_Trofimov_Campos_Maxwell  largest_index;
-        Krichevsky_Trofimov_Campos_Maxwell  different_index;
+        Periodic_update  largest_index;
+        Periodic_update  different_index;
         std::array<Binary, 3>               next_largest_index;
 
         // Interactive:
@@ -1447,12 +1447,12 @@ namespace Naieve_rotor
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
         // ?: Can we use max rotational velocity
-        Krichevsky_Trofimov_Campos_Maxwell rotor_multiplier_lookup  = {8, 16};
-        Krichevsky_Trofimov_Campos_Maxwell rotor_signs              = {8, 16};
+        Periodic_update rotor_multiplier_lookup  = {8, 16};
+        Periodic_update rotor_signs              = {8, 16};
 
         // Um, this will be sloooow.
-        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_low     = {256, 16*3};
-        Krichevsky_Trofimov_Campos_Maxwell rotor_magnitudes_high    = {32, 16*3};
+        Periodic_update rotor_magnitudes_low     = {256, 16*3};
+        Periodic_update rotor_magnitudes_high    = {32, 16*3};
 
         // Position:
         // ?: Corrlation between max axis and our max axis?
@@ -1461,11 +1461,11 @@ namespace Naieve_rotor
         // ?: different models based on previous signs
         // ?: code sorted or not
         // ?: If bits > 256, only code top 8 bits
-        Krichevsky_Trofimov_Campos_Maxwell position_signs = {8, 16};
+        Periodic_update position_signs = {8, 16};
 
         // Um, this will be sloooow.
-        Krichevsky_Trofimov_Campos_Maxwell position_magnitudes_low  = {256, 16*3};
-        Krichevsky_Trofimov_Campos_Maxwell position_magnitudes_high = {256, 16*3};
+        Periodic_update position_magnitudes_low  = {256, 16*3};
+        Periodic_update position_magnitudes_high = {256, 16*3};
 
         // Interactive:
         // one bit
@@ -1850,11 +1850,11 @@ namespace Naieve_gaffer
         // Test range vs tree
         // test if needed multiple models depending on previous model.
         Simple largest_index_quant_changed;
-        Krichevsky_Trofimov_Campos_Maxwell largest_index_quant = {4, 8};
+        Periodic_update largest_index_quant = {4, 8};
 
         struct Vector_model
         {
-            Krichevsky_Trofimov_Campos_Maxwell largest_index = {3, 8};
+            Periodic_update largest_index = {3, 8};
             std::array<Simple, 3> next_largest_index;
 
             // Note: even though I hard code 12, it shouldn't be hard coded.
@@ -1862,10 +1862,10 @@ namespace Naieve_gaffer
             // bits2 = MinBits(MaxPositionChangePerSnapshot * MaxFrameDelta)
             // bits = max(bits1, bits2)
 
-            std::array<Krichevsky_Trofimov_Campos_Maxwell, 2> bits_for_value =
+            std::array<Periodic_update, 2> bits_for_value =
             {{
-                Krichevsky_Trofimov_Campos_Maxwell{12, 16},
-                Krichevsky_Trofimov_Campos_Maxwell{12, 16},
+                Periodic_update{12, 16},
+                Periodic_update{12, 16},
             }};
 
             std::array<Binary_tree<Simple, 12>, 3> value;

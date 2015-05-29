@@ -453,13 +453,13 @@ namespace Range_models
         std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
     };
 
-    class Krichevsky_Trofimov_Campos_Maxwell
+    class Periodic_update
     {
     public:
         typedef std::vector<unsigned>  Freqencies;
         typedef std::vector<Range>     Ranges;
 
-        Krichevsky_Trofimov_Campos_Maxwell
+        Periodic_update
         (
             unsigned size,
             unsigned slowest_update_rate
@@ -480,7 +480,7 @@ namespace Range_models
             Recalculate_ranges();
         }
 
-        Krichevsky_Trofimov_Campos_Maxwell
+        Periodic_update
         (
             Freqencies frequencies,
             unsigned slowest_update_rate
@@ -1179,28 +1179,28 @@ void range_tests()
 
         for (const auto& range_set : range_data)
         {
-            Krichevsky_Trofimov_Campos_Maxwell::Freqencies
+            Periodic_update::Freqencies
                     frequencies{1,1,1,1};
-            Krichevsky_Trofimov_Campos_Maxwell::Freqencies
+            Periodic_update::Freqencies
                     overflow{65536,44,100000,34567};
 
             Range_test(
                 4,
                 range_set,
-                Krichevsky_Trofimov_Campos_Maxwell(frequencies, 8),
-                Krichevsky_Trofimov_Campos_Maxwell(frequencies, 8));
+                Periodic_update(frequencies, 8),
+                Periodic_update(frequencies, 8));
 
             Range_test(
                 4,
                 range_set,
-                Krichevsky_Trofimov_Campos_Maxwell(overflow, 8),
-                Krichevsky_Trofimov_Campos_Maxwell(overflow, 8));
+                Periodic_update(overflow, 8),
+                Periodic_update(overflow, 8));
 
             Range_test(
                 8,
                 range_set,
-                Krichevsky_Trofimov_Campos_Maxwell(8,8),
-                Krichevsky_Trofimov_Campos_Maxwell(8,8),
+                Periodic_update(8,8),
+                Periodic_update(8,8),
                 3);
         }
     }
