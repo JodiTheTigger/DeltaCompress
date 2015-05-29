@@ -2389,6 +2389,8 @@ void range_compress(std::vector<Frame>& frames)
     {
         unsigned bytes = 0;
         unsigned packetsCoded = 0;
+        unsigned min = 10000000;
+        unsigned max = 0;
 
         for (size_t i = PacketDelta; i < packets; ++i)
         {
@@ -2397,7 +2399,10 @@ void range_compress(std::vector<Frame>& frames)
                 frames[i],
                 PacketDelta);
 
-            bytes += buffer.size();
+            const unsigned size = buffer.size();
+            bytes += size;
+            min = std::min(min, size);
+            max = std::max(max, size);
 
             auto back = decoder(
                 frames[i-PacketDelta],
@@ -2416,11 +2421,13 @@ void range_compress(std::vector<Frame>& frames)
         printf("\n");
         printf("== Compression (model) =======================\n\n");
 
-        PRINT_INT(packetsCoded)
-        PRINT_INT(bytes)
-        PRINT_FLOAT(bytesPerSecondAverage)
-        PRINT_FLOAT(packetSizeAverge)
-        PRINT_FLOAT(kbps)
+        PRINT_INT(packetsCoded);
+        PRINT_INT(bytes);
+        PRINT_FLOAT(bytesPerSecondAverage);
+        PRINT_FLOAT(packetSizeAverge);
+        PRINT_INT(min);
+        PRINT_INT(max);
+        PRINT_FLOAT(kbps);
 
         printf("\n==============================================\n");
     };
@@ -2491,6 +2498,13 @@ int main(int, char**)
 
     if (do_compression)
     {
+        // To beat:
+        // total packed size 1258584
+        // Min packet size 2
+        // Max packet size 910
+        // 444.73 bytes/frame
+        // 213.47 kbps
+
         range_compress(frames);
     }
 
