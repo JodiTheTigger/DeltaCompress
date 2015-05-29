@@ -387,8 +387,8 @@ namespace Range_models
     {
     public:
         Binary_two_speed(
-                unsigned inertia_1 = 4,
-                unsigned inertia_2 = 4,
+                unsigned inertia_1 = 1,
+                unsigned inertia_2 = 6,
                 unsigned initial_probability_1 = QUARTER_RANGE,
                 unsigned initial_probability_2 = QUARTER_RANGE)
             : m_inertia_1(inertia_1)
