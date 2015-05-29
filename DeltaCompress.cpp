@@ -830,7 +830,7 @@ namespace Sorted_position
         Periodic_update rotor_signs;
 
         // Um, this will be sloooow.
-        Periodic_update rotor_magnitudes_low;
+        Periodic_update_with_kernel rotor_magnitudes_low;
         Periodic_update rotor_magnitudes_high;
 
         // Position:
@@ -846,9 +846,9 @@ namespace Sorted_position
         // [0]: 1 + MaxPositionChangePerSnapshot * PacketDelta
         // [1]: 1 + [0] / 2
         // [2]: 1 + [0] / 3
-        Periodic_update position_0;
-        Periodic_update position_1;
-        Periodic_update position_2;
+        Periodic_update_with_kernel position_0;
+        Periodic_update_with_kernel position_1;
+        Periodic_update_with_kernel position_2;
 
         // If all three items are differnt use largest_index and next_largest
         // index. Otherwise two items match so use different_index only (rare).
