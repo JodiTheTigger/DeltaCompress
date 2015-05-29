@@ -2510,14 +2510,14 @@ int main(int, char**)
 
         // position only
         // total packed size 593588
-        // Min packet size 0
+        // Min packet size 1
         // Max packet size 437
         // 209.75 bytes/frame
         // 100.68 kbps
 
         // quat only
         // total packed size 611906
-        // Min packet size 0
+        // Min packet size 1
         // Max packet size 448
         // 216.22 bytes/frame
         // 103.79 kbps
@@ -2528,6 +2528,7 @@ int main(int, char**)
         // Max packet size 48
         // 19.36 bytes/frame
         // 9.29 kbps
+
 
         range_compress(frames);
     }
