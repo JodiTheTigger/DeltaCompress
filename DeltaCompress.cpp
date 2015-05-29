@@ -803,6 +803,9 @@ unsigned MinBits(unsigned value)
 
 using namespace Range_models;
 
+//using Binary_model = Binary_two_speed;
+using Binary_model = Binary;
+
 namespace Sorted_position
 {
     struct Model
@@ -814,11 +817,11 @@ namespace Sorted_position
         // Model adaption should be based on previous + 30 previous.
         // bit 0 = any of previous 5 set to 1
         // bit 1 = any of last 33 to 28 set to 1
-        std::array<Binary, 4> quat_changed;
+        std::array<Binary_model, 4> quat_changed;
 
         // Position changed:
         // Model on if quat changed or not.
-        std::array<Binary, 2> position_changed;
+        std::array<Binary_model, 2> position_changed;
 
         // Rotor:
         // Encode signs seperatly (3 bit range).
@@ -854,14 +857,14 @@ namespace Sorted_position
         // index. Otherwise two items match so use different_index only (rare).
         Periodic_update  largest_index;
         Periodic_update  different_index;
-        std::array<Binary, 3>               next_largest_index;
+        std::array<Binary_model, 3>               next_largest_index;
 
         // Interactive:
         // one bit
         // model on:
         // Previous was interactive
         // Anything has changed
-        std::array<Binary, 2> interactive;
+        std::array<Binary_model, 2> interactive;
     };
 
     auto encode
@@ -1435,11 +1438,11 @@ namespace Naieve_rotor
         // Model adaption should be based on previous + 30 previous.
         // bit 0 = any of previous 5 set to 1
         // bit 1 = any of last 33 to 28 set to 1
-        std::array<Binary, 4> quat_changed;
+        std::array<Binary_model, 4> quat_changed;
 
         // Position changed:
         // Model on if quat changed or not.
-        std::array<Binary, 2> position_changed;
+        std::array<Binary_model, 2> position_changed;
 
         // Rotor:
         // Encode signs seperatly (3 bit range).
@@ -1472,7 +1475,7 @@ namespace Naieve_rotor
         // model on:
         // Previous was interactive
         // Anything has changed
-        std::array<Binary, 2> interactive;
+        std::array<Binary_model, 2> interactive;
     };
 
     auto encode
@@ -1839,23 +1842,23 @@ namespace Naieve_gaffer
         // Code position just like quat, but with max magnitude specifying bits
         // as well! yay! force zero.
         // interacting based on current interacting + quat/position changed.
-        using Simple = Binary;
 
-        std::array<Simple, 2> quat_changed =
+        std::array<Binary_model, 2> quat_changed =
         {{
             {4, 31},
+            //{1, 6, 31},
             {},
         }};
 
         // Test range vs tree
         // test if needed multiple models depending on previous model.
-        Simple largest_index_quant_changed;
+        Binary_model largest_index_quant_changed;
         Periodic_update largest_index_quant = {4, 8};
 
         struct Vector_model
         {
             Periodic_update largest_index = {3, 8};
-            std::array<Simple, 3> next_largest_index;
+            std::array<Binary_model, 3> next_largest_index;
 
             // Note: even though I hard code 12, it shouldn't be hard coded.
             // bits1 = MinBits(RotationMaxBits)
@@ -1868,7 +1871,7 @@ namespace Naieve_gaffer
                 Periodic_update{12, 16},
             }};
 
-            std::array<Binary_tree<Simple, 12>, 3> value;
+            std::array<Binary_tree<Binary_model, 12>, 3> value;
 
             bool Reduce_vector_using_magnitude;
         };
@@ -1878,14 +1881,14 @@ namespace Naieve_gaffer
         Vector_model quant_delta;
         Vector_model quant;
 
-        std::array<Simple, 2> position_changed;
+        std::array<Binary_model, 2> position_changed;
 
         Vector_model position;
 
         // 1 bit == previous interactive
         // 1 bit == quant changed
         // 1 bit == position changed
-        std::array<Simple, 8> interactive;
+        std::array<Binary_model, 8> interactive;
     };
 
     // //////////////////////////////////////////////////////
