@@ -54,34 +54,65 @@ namespace Range_coders
 
         ~Encoder()
         {
-            Renormalise();
-
-            auto temp = m_min >> SHIFT_BITS;
-
-            if  (
-                    (m_min & (BOTTOM_VALUE - 1)) >=
-                    ((m_bytes->size() & 0xffffffL) >> 1)
-                )
+            // Deal with overflow and underflow
+            unsigned overflow = 0;
             {
-                ++temp;
+                auto temp = m_min >> SHIFT_BITS;
+
+                auto round_up = BOTTOM_VALUE - 1;
+                auto a = m_min & round_up;
+                auto s = m_bytes->size();
+                auto sm = s & 0x00ffffff;
+                auto b = sm >> 1;
+
+                if  (
+                        a >= b
+                    )
+                {
+                    ++temp;
+                }
+
+                auto underflow_value = 0xFF;
+                if (temp > 0xFF)
+                {
+                    overflow++;
+                    underflow_value = 0;
+                }
+
+                Write(m_buffer + overflow);
+
+                auto underflow = m_underflow;
+                while (underflow)
+                {
+                    Write(underflow_value);
+                    underflow--;
+                }
             }
 
-            if (temp > 0xFF)
+            // RAM: Let's try Fabian's trick.
+            auto round_up = BOTTOM_VALUE - 1;
+            auto min = m_min;
+            auto hi = m_min + m_range;
+            while (round_up)
             {
-                Flush_underflow(0, 1);
-            }
-            else
-            {
-                Flush_underflow(0xFF, 0);
+                auto rounded = (min + round_up) & ~round_up;
+
+                if (rounded <= hi)
+                {
+                    min = rounded;
+                    break;
+                }
+
+                round_up >>= 8;
             }
 
-            // No idea what arturocampos was up to
-            // with his flush code, as using it created
-            // issues. This works in all cases.
-            while(temp)
+            while (min)
             {
-                Write(temp & 0xFF);
-                temp >>= 8;
+                auto to_write = (min >> SHIFT_BITS) & 0xFF;
+                Write(to_write);
+
+                min      <<= 8;
+                min      &= (TOP_VALUE - 1);
             }
         }
 
@@ -182,13 +213,13 @@ namespace Range_coders
             m_next_range = m_range >> TOTAL_RANGE_BITS;
             auto symbol_range = m_min / m_next_range;
 
-            if (symbol_range >= TOTAL_RANGE)
+            if (symbol_range < TOTAL_RANGE)
             {
-                return TOTAL_RANGE - 1;
+                return symbol_range;
             }
             else
             {
-                return symbol_range;
+                return TOTAL_RANGE - 1;
             }
         }
 
@@ -1033,12 +1064,14 @@ void range_tests()
         {
             Decoder decoder(data);
 
+            auto k = 0;
             for (const auto t : tests)
             {
                 auto value = decoder.Decode();
                 assert(value >= ranges[t].min);
                 assert(value < (ranges[t].min + ranges[t].count));
                 decoder.Update(ranges[t]);
+                ++k;
             }
 
             auto read = decoder.FlushAndGetBytesRead();
