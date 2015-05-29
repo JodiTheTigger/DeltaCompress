@@ -1099,11 +1099,17 @@ namespace Sorted_position
 
                     if (vec[0] > 0)
                     {
-                        model.position_1.Encode(range, vec[1]);
+                        const auto x = static_cast<unsigned>(vec[0]);
+                        const auto trunc_x = std::min(x, max_position_1 - 1);
+
+                        model.position_1.Encode(range, vec[1], trunc_x);
 
                         if (vec[1] > 0)
                         {
-                            model.position_2.Encode(range, vec[2]);
+                            const auto y = static_cast<unsigned>(vec[1]);
+                            const auto trunc_y = std::min(y, max_position_2 - 1);
+
+                            model.position_2.Encode(range, vec[2], trunc_y);
                         }
                     }
 
@@ -1296,8 +1302,14 @@ namespace Sorted_position
                     auto signs = model.position_signs.Decode(range);
 
                     auto x = model.position_0.Decode(range);
-                    auto y = x ? model.position_1.Decode(range) : 0;
-                    auto z = y ? model.position_2.Decode(range) : 0;
+
+                    const auto trunc_x = std::min(x, max_position_1 - 1);
+
+                    auto y = x ? model.position_1.Decode(range, trunc_x) : 0;
+
+                    const auto trunc_y = std::min(y, max_position_2 - 1);
+
+                    auto z = y ? model.position_2.Decode(range, trunc_y) : 0;
 
                     auto v = Vec3i
                     {
