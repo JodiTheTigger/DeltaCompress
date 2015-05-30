@@ -39,7 +39,7 @@ enum class Doing
     CHANGED_ONLY,
 };
 
-auto what_to_do = Doing::CHANGED_ONLY;
+auto what_to_do = Doing::EVERYTHING;
 
 // //////////////////////////////////////////////////////
 
