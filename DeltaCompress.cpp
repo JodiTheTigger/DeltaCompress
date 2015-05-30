@@ -31,6 +31,12 @@ bool do_compression = true;
 
 // //////////////////////////////////////////////////////
 
+bool do_position    = true;
+bool do_quat        = true;
+bool do_changed     = true;
+
+// //////////////////////////////////////////////////////
+
 #ifdef WIN32
 #define msvc_constexpr
 #else
@@ -954,7 +960,14 @@ namespace Sorted_position
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
 
-                model.quat_changed[quat_lookup].Encode(binary, quat_changed);
+                if (do_changed)
+                {
+                    model.quat_changed[quat_lookup].Encode
+                    (
+                        binary,
+                        quat_changed
+                    );
+                }
 
                 auto get_signs = [](const Vec3i& v) -> unsigned
                 {
@@ -988,7 +1001,7 @@ namespace Sorted_position
                     };
                 };
 
-                if (quat_changed)
+                if (quat_changed && do_quat)
                 {
                     auto b = to_gaffer(base[i]);
                     auto t = to_gaffer(target[i]);
@@ -1021,9 +1034,16 @@ namespace Sorted_position
 
                 unsigned pos_lookup = quat_changed ? 1 : 0;
 
-                model.position_changed[pos_lookup].Encode(binary, pos_changed);
+                if (do_changed)
+                {
+                    model.position_changed[pos_lookup].Encode
+                    (
+                        binary,
+                        pos_changed
+                    );
+                }
 
-                if (pos_changed)
+                if (pos_changed && do_position)
                 {
                     Vec3i delta
                     {
@@ -1141,11 +1161,14 @@ namespace Sorted_position
                     interactive_lookup = 1;
                 }
 
-                model.interactive[interactive_lookup].Encode
-                (
-                    binary,
-                    target[i].interacting
-                );
+                if (do_changed)
+                {
+                    model.interactive[interactive_lookup].Encode
+                    (
+                        binary,
+                        target[i].interacting
+                    );
+                }
             }
         }
 
@@ -1534,7 +1557,14 @@ namespace Naieve_rotor
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
 
-                model.quat_changed[quat_lookup].Encode(binary, quat_changed);
+                if (do_changed)
+                {
+                    model.quat_changed[quat_lookup].Encode
+                    (
+                        binary,
+                        quat_changed
+                    );
+                }
 
                 auto get_signs = [](const Vec3i& v) -> unsigned
                 {
@@ -1568,7 +1598,7 @@ namespace Naieve_rotor
                     };
                 };
 
-                if (quat_changed)
+                if (quat_changed && do_quat)
                 {
                     auto b = to_gaffer(base[i]);
                     auto t = to_gaffer(target[i]);
@@ -1601,9 +1631,16 @@ namespace Naieve_rotor
 
                 unsigned pos_lookup = quat_changed ? 1 : 0;
 
-                model.position_changed[pos_lookup].Encode(binary, pos_changed);
+                if (do_changed)
+                {
+                    model.position_changed[pos_lookup].Encode
+                    (
+                        binary,
+                        pos_changed
+                    );
+                }
 
-                if (pos_changed)
+                if (pos_changed && do_position)
                 {
                     Vec3i delta
                     {
@@ -1633,11 +1670,14 @@ namespace Naieve_rotor
                     interactive_lookup = 1;
                 }
 
-                model.interactive[interactive_lookup].Encode
-                (
-                    binary,
-                    target[i].interacting
-                );
+                if (do_changed)
+                {
+                    model.interactive[interactive_lookup].Encode
+                    (
+                        binary,
+                        target[i].interacting
+                    );
+                }
             }
         }
 
@@ -2175,13 +2215,16 @@ namespace Naieve_gaffer
                         :
                         0;
 
-                model.quat_changed[last_quat_changed].Encode
-                (
-                    binary,
-                    quant_changed
-                );
+                if (do_changed)
+                {
+                    model.quat_changed[last_quat_changed].Encode
+                    (
+                        binary,
+                        quant_changed
+                    );
+                }
 
-                if (quant_changed)
+                if (quant_changed && do_quat)
                 {
                     model.largest_index_quant_changed.Encode(
                         binary,
@@ -2232,9 +2275,16 @@ namespace Naieve_gaffer
                     (base[i].position_y != target[i].position_y) ||
                     (base[i].position_z != target[i].position_z);
 
-                model.position_changed[quant_changed].Encode(binary, pos_changed);
+                if (do_changed)
+                {
+                    model.position_changed[quant_changed].Encode
+                    (
+                        binary,
+                        pos_changed
+                    );
+                }
 
-                if (pos_changed)
+                if (pos_changed && do_position)
                 {
                     Vec3i delta
                     {
@@ -2255,9 +2305,12 @@ namespace Naieve_gaffer
                 interactive_index |= quant_changed << 1;
                 interactive_index |= pos_changed;
 
-                model.interactive[interactive_index].Encode(
-                    binary,
-                    target[i].interacting);
+                if (do_changed)
+                {
+                    model.interactive[interactive_index].Encode(
+                        binary,
+                        target[i].interacting);
+                }
             }
         }
 
@@ -2394,6 +2447,7 @@ void range_compress(std::vector<Frame>& frames)
         unsigned packetsCoded = 0;
         unsigned min = 10000000;
         unsigned max = 0;
+        const bool do_decompress = do_position && do_quat && do_changed;
 
         for (size_t i = PacketDelta; i < packets; ++i)
         {
@@ -2410,12 +2464,15 @@ void range_compress(std::vector<Frame>& frames)
                 max = std::max(max, size);
             }
 
-            auto back = decoder(
-                frames[i-PacketDelta],
-                buffer,
-                PacketDelta);
+            if (do_decompress)
+            {
+                auto back = decoder(
+                    frames[i-PacketDelta],
+                    buffer,
+                    PacketDelta);
 
-            assert(back == frames[i]);
+                assert(back == frames[i]);
+            }
 
             packetsCoded++;
         }
