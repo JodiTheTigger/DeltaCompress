@@ -23,7 +23,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool doTests            = true;
+bool doTests            = false;
 bool doStats            = true;
 bool doCompression      = false;
 bool doRangeCompression = false;
@@ -2611,6 +2611,61 @@ auto Find_rotor_multiple(
     return rotor_multiply;
 }
 
+auto Find_rotor_multiple_bound(
+    const Rotor& to_encode,
+    const Quat2& base_quat,
+    const Gaffer& tg) -> float
+{
+    auto bounds =
+    {
+        113.0f,
+        148.0f,
+        176.0f,
+        205.0f,
+        249.0f,
+        329.0f,
+        471.0f,
+        969.0f,
+        4247.0f,
+        65535.0f,
+    };
+
+    for (auto rotor_multiply : bounds)
+    {
+        IntVec3 coded =
+        {
+            static_cast<int>(round(to_encode[0] * rotor_multiply)),
+            static_cast<int>(round(to_encode[1] * rotor_multiply)),
+            static_cast<int>(round(to_encode[2] * rotor_multiply)),
+        };
+
+        Rotor decoded =
+        {
+            coded.x / rotor_multiply,
+            coded.y / rotor_multiply,
+            coded.z / rotor_multiply,
+        };
+
+        auto decoded_quat = to_quat(decoded);
+        auto result_target_quat = Mul(decoded_quat, base_quat);
+        auto result = ConvertGaffer2(result_target_quat);
+
+        if  (
+                (result.largest_index == tg.largest_index) &&
+                (result.a == tg.a) &&
+                (result.b == tg.b) &&
+                (result.c == tg.c)
+            )
+        {
+            return rotor_multiply;
+        }
+    }
+
+    // :-(
+    return -1;
+}
+
+
 auto Print_rotor_multiples()
 {
     auto Get_rotor = [](
@@ -2652,34 +2707,34 @@ auto Print_rotor_multiples()
                 r[2],
                 r[3]);
 
-            // RAM: I've given up testing properly.
-            auto new_rotor_method_low = to_rotor
-            (
-                target_quat,
-                base_quat,
-                -0.4995127f * g_to_q2
-            );
+            // RAM: See what this does: result: nothing..
+//            auto new_rotor_method_low = to_rotor
+//            (
+//                target_quat,
+//                base_quat,
+//                -0.4995127f * g_to_q2
+//            );
 
-            auto new_rotor_method_hi = to_rotor
-            (
-                target_quat,
-                base_quat,
-                0.4995127f * g_to_q2
-            );
+//            auto new_rotor_method_hi = to_rotor
+//            (
+//                target_quat,
+//                base_quat,
+//                0.4995127f * g_to_q2
+//            );
 
-            printf("\n----\n");
-            printf(
-                "%f,%f,%f\n",
-                1.0f / new_rotor_method_low[0],
-                1.0f / new_rotor_method_low[1],
-                1.0f / new_rotor_method_low[2]);
+//            printf("\n----\n");
+//            printf(
+//                "%f,%f,%f\n",
+//                1.0f / new_rotor_method_low[0],
+//                1.0f / new_rotor_method_low[1],
+//                1.0f / new_rotor_method_low[2]);
 
-            printf(
-                "%f,%f,%f\n",
-                1.0f / new_rotor_method_hi[0],
-                1.0f / new_rotor_method_hi[1],
-                1.0f / new_rotor_method_hi[2]);
-            printf("----\n");
+//            printf(
+//                "%f,%f,%f\n",
+//                1.0f / new_rotor_method_hi[0],
+//                1.0f / new_rotor_method_hi[1],
+//                1.0f / new_rotor_method_hi[2]);
+//            printf("----\n");
         }
 
         return to_encode;
@@ -2855,6 +2910,13 @@ auto Print_rotor_multiples()
             printf("======\n");
             SpewFloat4(adj_target_quat, out_target_quat);
             SpewFloat4(adj_r, out_r);
+
+            printf(
+                "%f,%f,%f\n",
+                adj_rotor[0],
+                adj_rotor[1],
+                adj_rotor[2]);
+
             printf("------\n");
 
             auto min_val = 100.0f;
@@ -2905,6 +2967,8 @@ auto Print_rotor_multiples()
         };
 
         Calc(505, target4);
+        Calc(504, target4);
+        Calc(M, target4);
         Calc(M, target3);
         Calc(M, target2);
         Calc(M, target);
@@ -6357,61 +6421,61 @@ std::vector<uint8_t> EncodeStats(
 
                         // RAM: Ok, lets try my back caluclating approace
                         // to see when it doesn't work.
-                        auto recalc_target = ConvertGaffer3(tg);
+//                        auto recalc_target = ConvertGaffer3(tg);
 
-                        float calculated_multiplier = 1.0f;
+//                        float calculated_multiplier = 1.0f;
 
-                        {
-                            // secondly test if that value converts
-                            // back and forward again.
-                            if (other)
-                            {
-                                recalc_target = Mul(recalc_target, -1.0f);
-                            }
+//                        {
+//                            // secondly test if that value converts
+//                            // back and forward again.
+//                            if (other)
+//                            {
+//                                recalc_target = Mul(recalc_target, -1.0f);
+//                            }
 
-                            auto c_r = R(base_quat, recalc_target);
-                            auto c_rotor = to_rotor(c_r);
+//                            auto c_r = R(base_quat, recalc_target);
+//                            auto c_rotor = to_rotor(c_r);
 
-                            float min_c = 10000.0f;
-                            for (auto c : c_rotor)
-                            {
-                                if (c != 0)
-                                {
-                                    if (std::abs(c) < min_c)
-                                    {
-                                        min_c = std::abs(c);
-                                    }
-                                }
-                            }
+//                            float min_c = 10000.0f;
+//                            for (auto c : c_rotor)
+//                            {
+//                                if (c != 0)
+//                                {
+//                                    if (std::abs(c) < min_c)
+//                                    {
+//                                        min_c = std::abs(c);
+//                                    }
+//                                }
+//                            }
 
-                            calculated_multiplier =
-                                std::trunc(1.0f / min_c) + 1.0f;
+//                            calculated_multiplier =
+//                                std::trunc(1.0f / min_c) + 1.0f;
 
-                            IntVec3 coded =
-                            {
-                                static_cast<int>(round(c_rotor[0] * calculated_multiplier)),
-                                static_cast<int>(round(c_rotor[1] * calculated_multiplier)),
-                                static_cast<int>(round(c_rotor[2] * calculated_multiplier)),
-                            };
+//                            IntVec3 coded =
+//                            {
+//                                static_cast<int>(round(c_rotor[0] * calculated_multiplier)),
+//                                static_cast<int>(round(c_rotor[1] * calculated_multiplier)),
+//                                static_cast<int>(round(c_rotor[2] * calculated_multiplier)),
+//                            };
 
-                            auto back = Rotor
-                            {
-                                coded.x / calculated_multiplier,
-                                coded.y / calculated_multiplier,
-                                coded.z / calculated_multiplier,
-                            };
+//                            auto back = Rotor
+//                            {
+//                                coded.x / calculated_multiplier,
+//                                coded.y / calculated_multiplier,
+//                                coded.z / calculated_multiplier,
+//                            };
 
-                            auto b_rotor = to_quat(back);
-                            auto b_result = Mul(b_rotor, base_quat);
-                            auto b = ConvertGaffer2(b_result);
+//                            auto b_rotor = to_quat(back);
+//                            auto b_result = Mul(b_rotor, base_quat);
+//                            auto b = ConvertGaffer2(b_result);
 
-                            // RAM: Doesn't work for 255,256,255.
-                            //b.a *= 1;
-                            assert(b.largest_index == tg.largest_index);
-//                            assert(b.a == tg.a);
-//                            assert(b.b == tg.b);
-//                            assert(b.c == tg.c);
-                        }
+//                            // RAM: Doesn't work for 255,256,255.
+//                            b.a *= 1;
+////                            assert(b.largest_index == tg.largest_index);
+////                            assert(b.a == tg.a);
+////                            assert(b.b == tg.b);
+////                            assert(b.c == tg.c);
+//                        }
 
 
                         // Well, that didn't work. Always guessed min of 10 bits
@@ -6441,9 +6505,15 @@ std::vector<uint8_t> EncodeStats(
 //                        //ROTOR_MULTIPLY = std::min(ROTOR_MULTIPLY, 256.0f);
 
                         //float ROTOR_MULTIPLY = 1.49f / min_r;
+//                        float ROTOR_MULTIPLY =
+//                            Find_rotor_multiple(
+//                                1.0f,
+//                                to_encode,
+//                                base_quat,
+//                                tg);
+
                         float ROTOR_MULTIPLY =
-                            Find_rotor_multiple(
-                                1.0f,
+                            Find_rotor_multiple_bound(
                                 to_encode,
                                 base_quat,
                                 tg);
