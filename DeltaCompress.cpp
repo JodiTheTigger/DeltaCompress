@@ -2404,8 +2404,11 @@ void range_compress(std::vector<Frame>& frames)
 
             const unsigned size = buffer.size();
             bytes += size;
-            min = std::min(min, size);
-            max = std::max(max, size);
+            if (bytes)
+            {
+                min = std::min(min, size);
+                max = std::max(max, size);
+            }
 
             auto back = decoder(
                 frames[i-PacketDelta],
