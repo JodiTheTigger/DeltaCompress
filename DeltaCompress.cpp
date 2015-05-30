@@ -2601,9 +2601,9 @@ auto Find_rotor_multiple(
             // treat anything less than 1 / 1 << 16 as zero
             // Then if that fails, just multiply by 10/8/2?
             //ROTOR_MULTIPLY *= 1.6;
-            //rotor_multiply += 128.0f;
-            rotor_multiply += 1.0f;
-            //ROTOR_MULTIPLY += 64.0f;
+            rotor_multiply += 128.0f;
+            //rotor_multiply += 1.0f;
+            //rotor_multiply += 64.0f;
             //ROTOR_MULTIPLY *= 2;
         }
     }
@@ -2616,19 +2616,89 @@ auto Find_rotor_multiple_bound(
     const Quat2& base_quat,
     const Gaffer& tg) -> float
 {
+//    // 4.94/12
+//    auto bounds =
+//    {
+//        113.0f,
+//        148.0f,
+//        176.0f,
+//        205.0f,
+//        249.0f,
+//        329.0f,
+//        471.0f,
+//        969.0f,
+//        4247.0f,
+//        65535.0f,
+//    };
+
+//    // 4.78 / 11
+//    auto bounds =
+//    {
+//        113.0f,
+//        148.0f,
+//        176.0f,
+//        205.0f,
+//        249.0f,
+//        329.0f,
+//        471.0f,
+//        512.0f,
+//        969.0f,
+//        1025.0f,
+//        1281.0f,
+//        4247.0f,
+//        65535.0f,
+//    };
+
+//    // 4.80/12
+//    auto bounds =
+//    {
+//        113.0f,
+//        148.0f,
+//        205.0f,
+//        249.0f,
+//        329.0f,
+//        471.0f,
+//        512.0f,
+//        969.0f,
+//        4247.0f,
+//        65535.0f,
+//    };
+
+    // 4.87/12
     auto bounds =
     {
-        113.0f,
-        148.0f,
-        176.0f,
-        205.0f,
-        249.0f,
+        130.0f,
+        222.0f,
         329.0f,
         471.0f,
+        512.0f,
         969.0f,
         4247.0f,
         65535.0f,
     };
+
+//    // 6.14/15
+//    auto bounds =
+//    {
+//        222.0f,
+//        512.0f,
+//        4247.0f,
+//        65535.0f,
+//    };
+
+
+//    // 5.02/12
+//    auto bounds =
+//    {
+//        128.0f,
+//        205.0f,
+//        329.0f,
+//        512.0f,
+//        969.0f,
+//        1281.0f,
+//        4247.0f,
+//        65535.0f,
+//    };
 
     for (auto rotor_multiply : bounds)
     {
@@ -6507,7 +6577,7 @@ std::vector<uint8_t> EncodeStats(
                         //float ROTOR_MULTIPLY = 1.49f / min_r;
 //                        float ROTOR_MULTIPLY =
 //                            Find_rotor_multiple(
-//                                1.0f,
+//                                128.0f,
 //                                to_encode,
 //                                base_quat,
 //                                tg);
