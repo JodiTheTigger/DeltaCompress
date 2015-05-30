@@ -31,9 +31,15 @@ bool do_compression = true;
 
 // //////////////////////////////////////////////////////
 
-bool do_position    = true;
-bool do_quat        = true;
-bool do_changed     = true;
+enum class Doing
+{
+    EVERYTHING,
+    POSITION_ONLY,
+    QUAT_ONLY,
+    CHANGED_ONLY,
+};
+
+auto what_to_do = Doing::CHANGED_ONLY;
 
 // //////////////////////////////////////////////////////
 
@@ -806,6 +812,14 @@ unsigned MinBits(unsigned value)
 }
 
 // //////////////////////////////////////////////////////
+
+bool do_position =
+    (what_to_do == Doing::EVERYTHING) ||
+    (what_to_do == Doing::POSITION_ONLY);
+bool do_quat =
+    (what_to_do == Doing::EVERYTHING) || (what_to_do == Doing::QUAT_ONLY);
+bool do_changed =
+    (what_to_do == Doing::EVERYTHING) || (what_to_do == Doing::CHANGED_ONLY);
 
 using namespace Range_models;
 
@@ -2434,14 +2448,88 @@ namespace Naieve_gaffer
 
 // //////////////////////////////////////////////////////
 
+// To beat:
+// total packed size 1258584
+// Min packet size 2
+// Max packet size 910
+// 444.73 bytes/frame
+// 213.47 kbps
+
+// position only
+// total packed size 593588
+// Min packet size 1
+// Max packet size 437
+// 209.75 bytes/frame
+// 100.68 kbps
+
+// quat only
+// total packed size 611906
+// Min packet size 1
+// Max packet size 448
+// 216.22 bytes/frame
+// 103.79 kbps
+
+// quat changed, pos changed and interactive only
+// total packed size 54793
+// Min packet size 2
+// Max packet size 48
+// 19.36 bytes/frame
+// 9.29 kbps
+
+struct Stats
+{
+    unsigned packet_size;
+    unsigned min;
+    unsigned max;
+    float bytes_per_frame;
+    float kbps;
+};
+
+auto fabian_stats = std::vector<Stats>
+{
+    {
+        1258584,
+        2,
+        910,
+        444.73,
+        213.47
+    },
+    {
+        593588,
+        1,
+        448,
+        216.22,
+        103.79
+    },
+    {
+        611906,
+        1,
+        448,
+        216.22,
+        103.79
+    },
+    {
+        54793,
+        2,
+        48,
+        19.36,
+        9.29
+    },
+};
+
+// //////////////////////////////////////////////////////
+
 #define PRINT_INT(x) printf("%-32s\t%d\n", #x, x);
 #define PRINT_FLOAT(x) printf("%-32s\t%f\n", #x, x);
+
+#define PRINT_COMPARISON_INT(x,y) printf("%-32s\t%d / %d (%d %%)\n", #x, x,y,(y*100/x));
+#define PRINT_COMPARISON_FLOAT(x,y) printf("%-32s\t%f / %f (%d %%)\n", #x, x,y,(int)(y*100/x));
 
 void range_compress(std::vector<Frame>& frames)
 {
     auto packets = frames.size();
 
-    auto test = [&](auto encoder, auto decoder)
+    auto test = [&](auto encoder, auto decoder, const auto& title)
     {
         unsigned bytes = 0;
         unsigned packetsCoded = 0;
@@ -2482,38 +2570,38 @@ void range_compress(std::vector<Frame>& frames)
         float kbps = bytesPerSecondAverage * 8 / 1000.0f;
 
         printf("\n");
-        printf("== Compression (model) =======================\n\n");
+        printf("== Compression (%s) =======================\n\n", title);
 
         PRINT_INT(packetsCoded);
-        PRINT_INT(bytes);
+        PRINT_COMPARISON_INT(bytes, fabian_stats[(int) what_to_do].packet_size);
         PRINT_FLOAT(bytesPerSecondAverage);
-        PRINT_FLOAT(packetSizeAverge);
-        PRINT_INT(min);
-        PRINT_INT(max);
-        PRINT_FLOAT(kbps);
+        PRINT_COMPARISON_FLOAT(packetSizeAverge, fabian_stats[(int) what_to_do].bytes_per_frame);
+        PRINT_COMPARISON_INT(min, fabian_stats[(int) what_to_do].min);
+        PRINT_COMPARISON_INT(max, fabian_stats[(int) what_to_do].max);
+        PRINT_COMPARISON_FLOAT(kbps, fabian_stats[(int) what_to_do].kbps);
 
         printf("\n==============================================\n");
     };
 
-    printf("Sorted_position");
     test
     (
         Sorted_position::encode,
-        Sorted_position::decode
+        Sorted_position::decode,
+        "Sorted_position"
     );
 
-    printf("Naieve_rotor");
     test
     (
         Naieve_rotor::encode,
-        Naieve_rotor::decode
+        Naieve_rotor::decode,
+        "Naieve_rotor"
     );
 
-    printf("Naieve_gaffer");
     test
     (
         Naieve_gaffer::encode,
-        Naieve_gaffer::decode
+        Naieve_gaffer::decode,
+        "Naieve_gaffer"
     );
 }
 
@@ -2561,35 +2649,6 @@ int main(int, char**)
 
     if (do_compression)
     {
-        // To beat:
-        // total packed size 1258584
-        // Min packet size 2
-        // Max packet size 910
-        // 444.73 bytes/frame
-        // 213.47 kbps
-
-        // position only
-        // total packed size 593588
-        // Min packet size 1
-        // Max packet size 437
-        // 209.75 bytes/frame
-        // 100.68 kbps
-
-        // quat only
-        // total packed size 611906
-        // Min packet size 1
-        // Max packet size 448
-        // 216.22 bytes/frame
-        // 103.79 kbps
-
-        // quat changed, pos changed and interactive only
-        // total packed size 54793
-        // Min packet size 2
-        // Max packet size 48
-        // 19.36 bytes/frame
-        // 9.29 kbps
-
-
         range_compress(frames);
     }
 
