@@ -826,6 +826,649 @@ using namespace Range_models;
 //using Binary_model = Binary_two_speed;
 using Binary_model = Binary;
 
+
+namespace Actually_trying
+{
+    struct Model
+    {
+        static const unsigned position_0_update = 16;
+        static const unsigned position_1_update = 8;
+        static const unsigned position_2_update = 5;
+        // Quat changed:
+        // Model adaption should be based on previous + 30 previous.
+        // bit 0 = any of previous 5 set to 1
+        // bit 1 = any of last 33 to 28 set to 1
+        std::array<Binary_model, 4> quat_changed;
+
+        // Position changed:
+        // Model on if quat changed or not.
+        std::array<Binary_model, 2> position_changed;
+
+        // Rotor:
+        // Encode signs seperatly (3 bit range).
+        // ?: different models based on previous signs
+        // ?: code sorted or not
+        // ?: If bits > 256, only code top 8 bits
+        // ?: Can we use max rotational velocity
+        Periodic_update rotor_multiplier_lookup;;
+        Periodic_update rotor_signs;
+
+        // Um, this will be sloooow.
+        Periodic_update_with_kernel rotor_magnitudes_low;
+        Periodic_update rotor_magnitudes_high;
+
+        // Position:
+        // ?: Corrlation between max axis and our max axis?
+        // Encode signs seperatly
+        // Use max velocity
+        // ?: different models based on previous signs
+        // ?: code sorted or not
+        // ?: If bits > 256, only code top 8 bits
+        Periodic_update position_signs;
+
+        // Since this is sorted, the max values are basically
+        // [0]: 1 + MaxPositionChangePerSnapshot * PacketDelta
+        // [1]: 1 + [0] / 2
+        // [2]: 1 + [0] / 3
+        Periodic_update_with_kernel position_0;
+        Periodic_update_with_kernel position_1;
+        Periodic_update_with_kernel position_2;
+
+        // If all three items are differnt use largest_index and next_largest
+        // index. Otherwise two items match so use different_index only (rare).
+        Periodic_update  largest_index;
+        Periodic_update  different_index;
+        std::array<Binary_model, 3>               next_largest_index;
+
+        // Interactive:
+        // one bit
+        // model on:
+        // Previous was interactive
+        // Anything has changed
+        std::array<Binary_model, 2> interactive;
+    };
+
+    auto encode
+    (
+        const Frame& base,
+        const Frame& target,
+        unsigned frameDelta
+    )
+    -> Range_types::Bytes
+    {
+        auto                size = base.size();
+        Range_types::Bytes  data;
+
+        const unsigned max_position_0 =
+            1 +
+            static_cast<unsigned>
+            (
+                MaxPositionChangePerSnapshot *
+                frameDelta
+            );
+
+        const unsigned max_position_1 = 1 + (max_position_0 >> 1);
+        const unsigned max_position_2 = 1 + (max_position_0 / 3);
+
+        Model model =
+        {
+            {},
+            {},
+            {8, 16},
+            {8, 16},
+            {256, 16*3},
+            {32, 16*3},
+
+
+            {8, 16},
+            {max_position_0, Model::position_0_update},
+            {max_position_1, Model::position_1_update},
+            {max_position_2, Model::position_2_update},
+            {3, 8},
+            {3, 1},
+
+            {},
+            {},
+        };
+
+        {
+            Range_coders::Encoder           range(data);
+            Range_coders::Binary_encoder    binary(range);
+
+            for (unsigned i = 0; i < size; ++i)
+            {
+                // //////////////////////////////////////////////////////
+
+                unsigned quat_lookup = 0;
+
+                auto any_5_changed =
+                    [&base, &target](unsigned i, unsigned history)
+                    -> bool
+                {
+                    if (i < history)
+                    {
+                        return false;
+                    }
+
+                    auto max = (i - history) + 5;
+                    for (unsigned j = max - 5; j < max; ++j)
+                    {
+                        if (!quat_equal(base[j], target[j]))
+                        {
+                            return true;
+                            break;
+                        }
+                    }
+
+                    return false;
+                };
+
+                if (any_5_changed(i, 33))
+                {
+                    quat_lookup = 1;
+                }
+
+                if (any_5_changed(i, 5))
+                {
+                    quat_lookup |= 2;
+                }
+
+                auto quat_changed = !quat_equal(base[i], target[i]);
+
+                if (do_changed)
+                {
+                    model.quat_changed[quat_lookup].Encode
+                    (
+                        binary,
+                        quat_changed
+                    );
+                }
+
+                auto get_signs = [](const Vec3i& v) -> unsigned
+                {
+                    unsigned result = 0;
+
+                    if (v[0] < 0)
+                    {
+                        result |= 1;
+                    }
+
+                    if (v[1] < 0)
+                    {
+                        result |= 2;
+                    }
+
+                    if (v[2] < 0)
+                    {
+                        result |= 4;
+                    }
+
+                    return result;
+                };
+
+                auto strip_signs = [](const Vec3i& v) -> Vec3i
+                {
+                    return
+                    {
+                        std::abs(v[0]),
+                        std::abs(v[1]),
+                        std::abs(v[2]),
+                    };
+                };
+
+                if (quat_changed && do_quat)
+                {
+                    auto b = to_gaffer(base[i]);
+                    auto t = to_gaffer(target[i]);
+                    auto m = to_maxwell(b, t);
+                    auto signs = get_signs(m.vec);
+                    auto vec = strip_signs(m.vec);
+
+                    model.rotor_multiplier_lookup.Encode
+                    (
+                        range,
+                        m.multiplier_index
+                    );
+
+                    model.rotor_signs.Encode
+                    (
+                        range,
+                        signs
+                    );
+
+                    for (auto v: vec)
+                    {
+                        model.rotor_magnitudes_high.Encode(range, v >> 8);
+                        model.rotor_magnitudes_low.Encode(range, v & 0xFF);
+                    }
+                }
+
+                // //////////////////////////////////////////////////////
+
+                auto pos_changed = !pos_equal(base[i], target[i]);
+
+                unsigned pos_lookup = quat_changed ? 1 : 0;
+
+                if (do_changed)
+                {
+                    model.position_changed[pos_lookup].Encode
+                    (
+                        binary,
+                        pos_changed
+                    );
+                }
+
+                if (pos_changed && do_position)
+                {
+                    Vec3i delta
+                    {
+                        target[i].position_x - base[i].position_x,
+                        target[i].position_y - base[i].position_y,
+                        target[i].position_z - base[i].position_z
+                    };
+
+                    auto signs = get_signs(delta);
+                    auto vec = strip_signs(delta);
+
+                    model.position_signs.Encode(range, signs);
+
+                    // Sort
+                    int odd = -1;
+                    {
+                        if ((vec[0] != vec[1]) && (vec[1] == vec[2]))
+                        {
+                            odd = 0u;
+                        }
+                        if ((vec[0] != vec[1]) && (vec[0] == vec[2]))
+                        {
+                            odd = 1u;
+                        }
+                        if ((vec[0] == vec[1]) && (vec[1] != vec[2]))
+                        {
+                            odd = 2u;
+                        }
+                    }
+
+                    unsigned top = 0;
+                    unsigned next = 0;
+                    {
+                        using std::swap;
+
+                        if  (
+                                (vec[1] > vec[0]) &&
+                                (vec[1] >= vec[2])
+                            )
+                        {
+                            swap(vec[0], vec[1]);
+                            top = 1;
+                        }
+                        else
+                        {
+                            if  (
+                                    (vec[2] > vec[0]) &&
+                                    (vec[2] >= vec[1])
+                                )
+                            {
+                                swap(vec[0], vec[2]);
+                                swap(vec[1], vec[2]);
+                                top = 2;
+                            }
+                        }
+
+                        assert(vec[0] >= vec[1]);
+                        assert(vec[0] >= vec[2]);
+
+                        if (vec[2] > vec[1])
+                        {
+                            swap(vec[1], vec[2]);
+                            next = 1;
+                        }
+
+                        assert(vec[1] >= vec[2]);
+                    }
+
+                    // RAM: TODO: Use max magnitude to determine
+                    // truncation values. Also, truncate
+                    assert(vec[0] <= static_cast<int>(max_position_0));
+                    assert(vec[1] <= static_cast<int>(max_position_1));
+                    assert(vec[2] <= static_cast<int>(max_position_2));
+
+                    model.position_0.Encode(range, vec[0]);
+
+                    if (vec[0] > 0)
+                    {
+                        const auto x = static_cast<unsigned>(vec[0]);
+                        const auto trunc_x = std::min(x, max_position_1 - 1);
+
+                        model.position_1.Encode(range, vec[1], trunc_x);
+
+                        if (vec[1] > 0)
+                        {
+                            const auto y = static_cast<unsigned>(vec[1]);
+                            const auto trunc_y = std::min(y, max_position_2 - 1);
+
+                            model.position_2.Encode(range, vec[2], trunc_y);
+                        }
+                    }
+
+                    bool all_same = (vec[0] == vec[1]) && (vec[1] == vec[2]);
+
+                    if (!all_same)
+                    {
+                        if (odd < 0)
+                        {
+                            model.largest_index.Encode(range, top);
+                            model.next_largest_index[top].Encode(binary, next);
+                        }
+                        else
+                        {
+                            model.different_index.Encode(range, odd);
+                        }
+                    }
+                }
+
+                // //////////////////////////////////////////////////////
+
+                unsigned interactive_lookup = 0;
+
+                if ((pos_changed) || (quat_changed))
+                {
+                    interactive_lookup = 1;
+                }
+
+                if (do_changed)
+                {
+                    model.interactive[interactive_lookup].Encode
+                    (
+                        binary,
+                        target[i].interacting
+                    );
+                }
+            }
+        }
+
+        return data;
+    }
+
+    auto decode
+    (
+        const Frame& base,
+        const Range_types::Bytes& data,
+        unsigned frameDelta
+    )
+    -> Frame
+    {
+        auto    size = base.size();
+        Frame   target;
+
+        const unsigned max_position_0 =
+            1 +
+            static_cast<unsigned>
+            (
+                MaxPositionChangePerSnapshot *
+                frameDelta
+            );
+
+        const unsigned max_position_1 = 1 + (max_position_0 >> 1);
+        const unsigned max_position_2 = 1 + (max_position_0 / 3);
+
+        Model model =
+        {
+            {},
+            {},
+            {8, 16},
+            {8, 16},
+            {256, 16*3},
+            {32, 16*3},
+
+
+            {8, 16},
+            {max_position_0, Model::position_0_update},
+            {max_position_1, Model::position_1_update},
+            {max_position_2, Model::position_2_update},
+            {3, 8},
+            {3, 1},
+
+            {},
+            {},
+        };
+
+        {
+            Range_coders::Decoder           range(data);
+            Range_coders::Binary_decoder    binary(range);
+
+            for (unsigned i = 0; i < size; ++i)
+            {
+                // //////////////////////////////////////////////////////
+
+                unsigned quat_lookup = 0;
+
+                auto any_5_changed =
+                    [&base, &target](unsigned i, unsigned history)
+                    -> bool
+                {
+                    if (i < history)
+                    {
+                        return false;
+                    }
+
+                    auto max = (i - history) + 5;
+                    for (unsigned j = max - 5; j < max; ++j)
+                    {
+                        if (!quat_equal(base[j], target[j]))
+                        {
+                            return true;
+                            break;
+                        }
+                    }
+
+                    return false;
+                };
+
+                auto add_signs = [](unsigned signs, const Vec3i& v) -> Vec3i
+                {
+                    return
+                    {
+                        (signs & 1) ? -v[0] : v[0],
+                        (signs & 2) ? -v[1] : v[1],
+                        (signs & 4) ? -v[2] : v[2],
+                    };
+                };
+
+                if (any_5_changed(i, 33))
+                {
+                    quat_lookup = 1;
+                }
+
+                if (any_5_changed(i, 5))
+                {
+                    quat_lookup |= 2;
+                }
+
+                auto quat_changed =
+                    model.quat_changed[quat_lookup].Decode(binary);
+
+                if (quat_changed)
+                {
+                    auto index = model.rotor_multiplier_lookup.Decode(range);
+                    auto signs = model.rotor_signs.Decode(range);
+                    auto v = Vec3i
+                    {
+                        static_cast<int>
+                        (
+                            model.rotor_magnitudes_high.Decode(range) << 8 |
+                            model.rotor_magnitudes_low.Decode(range)
+                        ),
+                        static_cast<int>
+                        (
+                            model.rotor_magnitudes_high.Decode(range) << 8 |
+                            model.rotor_magnitudes_low.Decode(range)
+                        ),
+                        static_cast<int>
+                        (
+                            model.rotor_magnitudes_high.Decode(range) << 8 |
+                            model.rotor_magnitudes_low.Decode(range)
+                        ),
+                    };
+
+                    auto m = Maxwell
+                    {
+                        index,
+                        add_signs(signs, v)
+                    };
+
+                    auto b = to_gaffer(base[i]);
+                    auto t = to_gaffer(b, m);
+
+                    target[i].orientation_largest = t.orientation_largest;
+                    target[i].orientation_a       = t.vec[0];
+                    target[i].orientation_b       = t.vec[1];
+                    target[i].orientation_c       = t.vec[2];
+                }
+                else
+                {
+                    target[i].orientation_largest = base[i].orientation_largest;
+                    target[i].orientation_a       = base[i].orientation_a;
+                    target[i].orientation_b       = base[i].orientation_b;
+                    target[i].orientation_c       = base[i].orientation_c;
+                }
+
+                // //////////////////////////////////////////////////////
+
+                auto pos_changed =
+                    model.position_changed[quat_changed].Decode(binary);
+
+                if (pos_changed)
+                {
+                    auto signs = model.position_signs.Decode(range);
+
+                    auto x = model.position_0.Decode(range);
+
+                    const auto trunc_x = std::min(x, max_position_1 - 1);
+
+                    auto y = x ? model.position_1.Decode(range, trunc_x) : 0;
+
+                    const auto trunc_y = std::min(y, max_position_2 - 1);
+
+                    auto z = y ? model.position_2.Decode(range, trunc_y) : 0;
+
+                    auto v = Vec3i
+                    {
+                        static_cast<int>(x),
+                        static_cast<int>(y),
+                        static_cast<int>(z),
+                    };
+
+                    // Read the Order
+                    auto largest = 0;
+                    auto nextLargest = 0;
+
+                    if ((v[0] != v[1]) || (v[1] != v[2]))
+                    {
+                        if ((v[0] != v[1]) && (v[1] != v[2]))
+                        {
+                            largest =
+                                model.largest_index.Decode(range);
+
+                            nextLargest =
+                                model.next_largest_index[largest].Decode
+                                (
+                                    binary
+                                );
+                        }
+                        else
+                        {
+                            bool all_same = (v[0] == v[1]) && (v[1] == v[2]);
+
+                            if (!all_same)
+                            {
+                                auto odd_one =
+                                    model.different_index.Decode(range);
+
+                                if (v[0] != v[1])
+                                {
+                                    largest = odd_one;
+                                }
+                                else
+                                {
+                                    switch (odd_one)
+                                    {
+                                        default:
+                                        case 0:
+                                        {
+                                            largest = 1;
+                                            nextLargest = 1;
+                                            break;
+                                        }
+                                        case 1:
+                                        {
+                                            largest = 0;
+                                            nextLargest = 1;
+                                            break;
+                                        }
+                                        case 2:
+                                        {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    {
+                        using std::swap;
+
+                        if (nextLargest)
+                        {
+                            swap(v[1], v[2]);
+                        }
+
+                        if (largest)
+                        {
+                            if (largest == 1)
+                            {
+                                swap(v[0], v[1]);
+                            }
+                            else
+                            {
+                                swap(v[0], v[1]);
+                                swap(v[1], v[2]);
+                            }
+                        }
+                    };
+
+                    auto vec = add_signs(signs, v);
+
+                    target[i].position_x = vec[0] + base[i].position_x;
+                    target[i].position_y = vec[1] + base[i].position_y;
+                    target[i].position_z = vec[2] + base[i].position_z;
+
+                }
+                else
+                {
+                    target[i].position_x = base[i].position_x;
+                    target[i].position_y = base[i].position_y;
+                    target[i].position_z = base[i].position_z;
+                }
+
+                // //////////////////////////////////////////////////////
+
+                target[i].interacting =
+                    model.interactive[(quat_changed | pos_changed)].Decode
+                    (
+                        binary
+                    );
+            }
+        }
+
+        return target;
+    }
+};
+
+// //////////////////////////////////////////////////////
+
+
 namespace Sorted_position
 {
     struct Model
@@ -2582,6 +3225,13 @@ void range_compress(std::vector<Frame>& frames)
 
         printf("\n==============================================\n");
     };
+
+    test
+    (
+        Actually_trying::encode,
+        Actually_trying::decode,
+        "Actually_trying"
+    );
 
     test
     (
