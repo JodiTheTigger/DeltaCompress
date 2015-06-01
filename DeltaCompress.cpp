@@ -1000,10 +1000,12 @@ namespace Actually_trying
 
         float total = 0;
         float sum = 0;
+        bool something = false;
         for(const auto& c : corrs)
         {
-            if (i > c.offset)
+            if (i >= c.offset)
             {
+                something = true;
                 total += c.weight;
                 float local = 0;
 
@@ -1016,7 +1018,14 @@ namespace Actually_trying
             }
         }
 
-        return sum / total;
+        if (something)
+        {
+            return sum / total;
+        }
+        else
+        {
+            return 0;
+        }
 
 
         // There is correlation in the quat changed due to
@@ -1109,6 +1118,10 @@ namespace Actually_trying
 
                 // start from current - history, count x times to see if changed.
 
+                // RAM: TODO: Treat #0 differently as it's the play controlled
+                // piece.
+                // RAM: TODO: Pre init probabilities for #0
+
                 auto last_x_changed =
                     [&base, &target](unsigned current, unsigned x, unsigned history)
                     -> bool
@@ -1174,6 +1187,8 @@ namespace Actually_trying
                 model.quat_changed[quat_index].Encode(binary, quat_changed);
                 model.position_changed[quat_changed].Encode(binary, pos_changed);
 
+                // Note: You CAN get no interaction even if the quat or pos
+                // changes.
                 unsigned interacting_model = base[i].interacting;
                 if (pos_changed | quat_changed)
                 {
