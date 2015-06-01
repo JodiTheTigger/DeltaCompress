@@ -821,6 +821,8 @@ bool do_quat =
 bool do_changed =
     (what_to_do == Doing::EVERYTHING) || (what_to_do == Doing::CHANGED_ONLY);
 
+// //////////////////////////////////////////////////////
+
 using namespace Range_models;
 
 //using Binary_model = Binary_two_speed;
@@ -898,6 +900,147 @@ namespace Actually_trying
 //        // Anything has changed
 //        std::array<Binary_model, 2> interactive;
     };
+
+    auto quat_changed_correlation
+    (
+        const std::array<unsigned, Cubes>& changed,
+        unsigned i
+    )
+    -> float
+    {
+        struct Correlation_result
+        {
+            float result;
+            float total;
+        };
+
+        struct Cor
+        {
+            std::array<float, 5> kernal;
+            unsigned offset;
+            float total;
+        };
+
+        // There is correlation in the quat changed due to
+        // the 30x30 grid. Here are the weightings on wether
+        // the quat would have changed based on past quats.
+
+        auto corrs =
+        {
+            Cor
+            {
+                {
+                    0.6,
+                    0.53,
+                    0.48,
+                    0.42,
+                    0.37
+                },
+                5,
+                2.4f
+            },
+            Cor
+            {
+                {
+
+                    0.40,
+                    0.42,
+                    0.45,
+                    0.42,
+                    0.40
+                },
+                30 + 2,
+                2.09f
+            },
+            Cor
+            {
+                {
+                    0.29,
+                    0.31,
+                    0.32,
+                    0.31,
+                    0.29
+                },
+                60 + 2,
+                1.52f
+            },
+            Cor
+            {
+                {
+                    0.24,
+                    0.25,
+                    0.26,
+                    0.25,
+                    0.24
+                },
+                90 + 2,
+                1.24f
+            },
+            Cor
+            {
+                {
+                    0.20,
+                    0.21,
+                    0.22,
+                    0.21,
+                    0.20
+                },
+                120 + 2,
+                1.04f
+            },
+        };
+
+        float total = 0;
+        float sum = 0;
+        for(const auto& c : corrs)
+        {
+            if (i > c.offset)
+            {
+                total += c.total;
+
+                for (unsigned j = 0; j < 5; ++j)
+                {
+                    sum += c.kernal[j] * changed[(i + j) - c.offset];
+                }
+            }
+        }
+
+        return sum / total;
+
+
+        // There is correlation in the quat changed due to
+        // the 30x30 grid. Here are the weightings on wether
+        // the quat would have changed based on past quats.
+
+        // Group sum: 8.29
+        // 0-group (0.6) (sum: 2.4)
+        // -1: 0.6
+        // -2: 0.53
+        // -3: 0.48
+        // -4: 0.42
+        // -5: 0.37
+
+        // Assume following groups are symetrical about max point
+        // 1-group (0.45) (2.09)
+        // -30: 0.45
+        // -31: 0.42
+        // -32: 0.40
+
+        // 2-group (0.32) (1.52)
+        // -60: 0.32
+        // -61: 0.31
+        // -62: 0.29
+
+        // 3-group (0.26) (1.24)
+        // -90: 0.26
+        // -91: 0.25
+        // -92: 0.24
+
+        // 4-group (0.22) (1.04)
+        // -120: 0.22
+        // -121: 0.21
+        // -122: 0.20
+    }
 
     auto encode
     (
