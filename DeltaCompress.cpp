@@ -1112,18 +1112,45 @@ namespace Actually_trying
             Range_coders::Encoder           range(data);
             Range_coders::Binary_encoder    binary(range);
 
-            for (unsigned i = 0; i < size; ++i)
+            // //////////////////////////////////////////////////////
+
+            {
+                // Treat Cube 0 different as it's play controlled.
+                // It's always interacting, so no need to encode that.
+                // Used fixed frequencies deduced from parsing the entire
+                // data set.
+                // Also it moves more than it rotates, so treat that
+                // as the base prediction element.
+                static const unsigned CUBE_0_POS_CHANGED = 61669;
+                static const unsigned CUBE_0_QUAT_CHANGED_POS_0 = 392;
+                static const unsigned CUBE_0_QUAT_CHANGED_POS_1 = 64526;
+
+                // Wait, what?
+                assert(target[0].interacting);
+
+                auto quat_changed = !quat_equal(base[0], target[0]);
+                auto pos_changed = !pos_equal(base[0], target[0]);
+
+                binary.Encode(pos_changed, CUBE_0_POS_CHANGED);
+
+                if (!pos_changed)
+                {
+                    binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_0);
+                }
+                else
+                {
+                    binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_1);
+                }
+            }
+
+
+            // //////////////////////////////////////////////////////
+
+            for (unsigned i = 1; i < size; ++i)
             {
                 // //////////////////////////////////////////////////////
 
                 // start from current - history, count x times to see if changed.
-
-                // RAM: TODO: Treat #0 differently as it's the play controlled
-                // piece.
-                // RAM: TODO: Pre init probabilities for #0
-                // NOTE: item 0 is _always_interacting.
-                // NOTE: quat changed (Binary_two_speed): 1, 2425
-                // NOTE: pos changed (Binary_two_speed): 1, 2388
 
                 auto last_x_changed =
                     [&base, &target](unsigned current, unsigned x, unsigned history)
@@ -1175,13 +1202,13 @@ namespace Actually_trying
                 last_quat_changed_too = 0;
                 last_quat_changed_row_before = 0;
 
-                if (i > 0)
-                {
-                    // RAM: Debug
-                    auto c = quat_changed_correlation(correlations, i);
+//                if (i > 0)
+//                {
+//                    // RAM: Debug
+//                    auto c = quat_changed_correlation(correlations, i);
 
-                    printf("%f\n", c);
-                }
+//                    printf("%f\n", c);
+//                }
 
                 auto quat_index =
                     last_quat_changed_too +
