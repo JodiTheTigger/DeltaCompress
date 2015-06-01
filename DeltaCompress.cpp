@@ -901,9 +901,11 @@ namespace Actually_trying
 //        std::array<Binary_model, 2> interactive;
     };
 
+    using Correlations = std::array<unsigned, Cubes>;
+
     auto quat_changed_correlation
     (
-        const std::array<unsigned, Cubes>& changed,
+        const Correlations& changed,
         unsigned i
     )
     -> float
@@ -919,6 +921,7 @@ namespace Actually_trying
             std::array<float, 5> kernal;
             unsigned offset;
             float total;
+            float weight;
         };
 
         // There is correlation in the quat changed due to
@@ -937,7 +940,8 @@ namespace Actually_trying
                     0.37
                 },
                 5,
-                2.4f
+                2.4f,
+                0.6f
             },
             Cor
             {
@@ -950,7 +954,8 @@ namespace Actually_trying
                     0.40
                 },
                 30 + 2,
-                2.09f
+                2.09f,
+                0.45f
             },
             Cor
             {
@@ -962,7 +967,8 @@ namespace Actually_trying
                     0.29
                 },
                 60 + 2,
-                1.52f
+                1.52f,
+                0.32
             },
             Cor
             {
@@ -974,7 +980,8 @@ namespace Actually_trying
                     0.24
                 },
                 90 + 2,
-                1.24f
+                1.24f,
+                0.26
             },
             Cor
             {
@@ -986,7 +993,8 @@ namespace Actually_trying
                     0.20
                 },
                 120 + 2,
-                1.04f
+                1.04f,
+                0.22
             },
         };
 
@@ -996,12 +1004,15 @@ namespace Actually_trying
         {
             if (i > c.offset)
             {
-                total += c.total;
+                total += c.weight;
+                float local = 0;
 
                 for (unsigned j = 0; j < 5; ++j)
                 {
-                    sum += c.kernal[j] * changed[(i + j) - c.offset];
+                    local += c.kernal[j] * changed[(i + j) - c.offset];
                 }
+
+                sum += (local / c.total) * c.weight;
             }
         }
 
@@ -1086,6 +1097,8 @@ namespace Actually_trying
 //            {},
 //        };
 
+        Correlations correlations;
+
         {
             Range_coders::Encoder           range(data);
             Range_coders::Binary_encoder    binary(range);
@@ -1125,6 +1138,8 @@ namespace Actually_trying
                 auto quat_changed = !quat_equal(base[i], target[i]);
                 auto pos_changed = !pos_equal(base[i], target[i]);
 
+                correlations[i] = quat_changed;
+
                 auto last_quat_changed_too =
                     last_x_changed
                     (
@@ -1143,6 +1158,14 @@ namespace Actually_trying
 
                 last_quat_changed_too = 0;
                 last_quat_changed_row_before = 0;
+
+                if (i > 0)
+                {
+                    // RAM: Debug
+                    auto c = quat_changed_correlation(correlations, i);
+
+                    printf("%f\n", c);
+                }
 
                 auto quat_index =
                     last_quat_changed_too +
