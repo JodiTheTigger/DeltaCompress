@@ -1121,11 +1121,9 @@ namespace Actually_trying
                 // RAM: TODO: Treat #0 differently as it's the play controlled
                 // piece.
                 // RAM: TODO: Pre init probabilities for #0
-                // RAM: first item tracking
-                // Ended up with
-                // 32767
-                // 32705
-                // 65472
+                // NOTE: item 0 is _always_interacting.
+                // NOTE: quat changed (Binary_two_speed): 1, 2425
+                // NOTE: pos changed (Binary_two_speed): 1, 2388
 
                 auto last_x_changed =
                     [&base, &target](unsigned current, unsigned x, unsigned history)
