@@ -7,6 +7,7 @@
 // //////////////////////////////////////////////////////
 
 #define _CRT_SECURE_NO_WARNINGS
+#define _USE_MATH_DEFINES
 
 #include <stdint.h>
 #include <stdio.h>
@@ -18,8 +19,17 @@
 #include <algorithm>
 #include <functional>
 #include <cmath>
+#include <type_traits>
 
 #include "Range_coding.hpp"
+
+// //////////////////////////////////////////////////////
+
+#ifdef WIN32
+#define msvc_constexpr
+#else
+#define msvc_constexpr constexpr
+#endif
 
 // //////////////////////////////////////////////////////
 
@@ -2087,6 +2097,322 @@ IntVec3 BitVector3TruncatedDecode(
 
 // //////////////////////////////////////////////////////
 
+namespace Argh
+{
+// //////////////////////////////////////////////////////
+
+using Vec3i = std::array<int, 3>;
+using Vec4f = std::array<float, 4>;
+using Vec3f = std::array<float, 4>;
+
+struct Gaffer
+{
+    unsigned orientation_largest;
+    Vec3i vec;
+};
+
+struct Rotor
+{
+    int multiplier_index;
+    Vec3i vec;
+};
+
+struct Quat
+{
+    Vec4f vec;
+
+    float constexpr operator[](unsigned index) const
+    {
+        return vec[index];
+    }
+
+    float& operator[](unsigned index)
+    {
+        return vec[index];
+    }
+};
+
+float* begin(Quat& q)
+{
+    return &(q.vec[0]);
+}
+
+float* end(Quat& q)
+{
+    return &(q.vec[4]);
+}
+
+// //////////////////////////////////////////////////////
+
+static_assert
+(
+    std::is_pod<Gaffer>::value,
+    "Not a POD."
+);
+
+static_assert
+(
+    std::is_pod<Rotor>::value,
+    "Not a POD."
+);
+
+static_assert
+(
+    std::is_pod<Quat>::value,
+    "Not a POD."
+);
+
+// //////////////////////////////////////////////////////
+
+Quat constexpr Mul(const Quat& lhs, float rhs)
+{
+    return
+    {
+        lhs[0]*rhs,
+        lhs[1]*rhs,
+        lhs[2]*rhs,
+        lhs[3]*rhs
+    };
+}
+
+float constexpr Magnitude_squared(const Quat& quat)
+{
+    return
+        quat[0] * quat[0] +
+        quat[1] * quat[1] +
+        quat[2] * quat[2] +
+        quat[3] * quat[3];
+}
+
+Quat msvc_constexpr Normalise(const Quat& q)
+{
+    return Mul(q, 1.0f / std::sqrt(Magnitude_squared(q)));
+}
+
+//Vec4f constexpr Square(const Vec4f& v)
+//{
+//    return
+//    {
+//        v[0]*v[0],
+//        v[1]*v[1],
+//        v[2]*v[2],
+//        v[3]*v[3],
+//    };
+//}
+
+// //////////////////////////////////////////////////////
+
+// Converting between quantised quats and back again is really pissy.
+
+static const float G_256    = 256.4995127f * M_PI;
+static const float Q_TO_G   = G_256 * M_SQRT2;
+static const float G_TO_Q   = 1.0f / (G_256 * M_SQRT2);
+
+// Again: did some research, -16, -16, -256 seems to be the worse.
+// try using that as max sum?
+static const float GAFFER_ONE_SQUARED =
+        (256 * 256) +
+        (256 * 256) +
+        (16 * 16) +
+        (16 * 16);
+
+Quat to_quat(const Gaffer& gaffer)
+{
+    Quat result
+    {
+        static_cast<float>(gaffer.vec[0] - 256),
+        static_cast<float>(gaffer.vec[1] - 256),
+        static_cast<float>(gaffer.vec[2] - 256),
+        0.0,
+    };
+
+    auto largest_squared = Quat
+    {
+        result[0] * result[0],
+        result[1] * result[1],
+        result[2] * result[2],
+        0,
+    };
+
+    auto magnitude_squared =
+            largest_squared[0] + largest_squared[1] + largest_squared[2];
+
+    auto largest_value_squared = GAFFER_ONE_SQUARED - magnitude_squared;
+
+    assert(largest_value_squared >= 0);
+
+    // Deal with quantising errors.
+    auto next_largest = largest_squared[0];
+    if (next_largest < largest_squared[1])
+    {
+        next_largest = largest_squared[1];
+    }
+    if (next_largest < largest_squared[2])
+    {
+        next_largest = largest_squared[2];
+    }
+
+    if (next_largest > largest_value_squared)
+    {
+        // I need to add an offset to make sure it is still
+        // the largest as opposed to equal.
+        // CBFd to figure out what number to actually use.
+        largest_value_squared = next_largest + 20;
+    }
+
+    auto largest = sqrt(largest_value_squared);
+
+    if (gaffer.orientation_largest == 0)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+        result[1] = result[0];
+    }
+
+    if (gaffer.orientation_largest == 1)
+    {
+        result[3] = result[2];
+        result[2] = result[1];
+    }
+
+    if (gaffer.orientation_largest == 2)
+    {
+        result[3] = result[2];
+    }
+
+    result[gaffer.orientation_largest] = largest;
+    result = Mul(result, G_TO_Q);
+
+    {
+        auto mag = Magnitude_squared(result);
+        auto quantised = 256 * (mag - 1.0f);
+        assert(std::abs(quantised) < 0.5f);
+    }
+
+    result = Normalise(result);
+    return result;
+}
+
+Gaffer to_gaffer(const Quat& quat)
+{
+    const auto size = quat.vec.size();
+    unsigned largest_index = 0;
+    float largest = 0;
+
+    auto squared = Quat2
+    {
+        quat[0] * quat[0],
+        quat[1] * quat[1],
+        quat[2] * quat[2],
+        quat[3] * quat[3],
+    };
+
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if (squared[i] >= largest)
+        {
+            if (squared[i] == largest)
+            {
+                if (quat[i] < 0)
+                {
+                    continue;
+                }
+            }
+
+            largest = squared[i];
+            largest_index = i;
+        }
+    }
+
+    // If the largest is -ve then we need to negate the quat so it's positive.
+    auto fixed_quat = quat;
+    if (quat[largest_index] < 0)
+    {
+        fixed_quat = Mul(quat, -1.0f);
+    }
+
+    auto write_index = 0;
+    Quat gaffer;
+
+    for (unsigned i = 0; i < size; ++i)
+    {
+        if (i != largest_index)
+        {
+            gaffer[write_index++] = fixed_quat[i];
+        }
+    }
+
+    // Screw it, if the quat would produce 256 or -257
+    // then re-adjust
+    auto multiple = 1.0f;
+    static const auto MAX_POSITIVE = (255.0f / 256.0f) * M_SQRT1_2;
+    static const auto MAX_NEGATIVE = -1.0f * M_SQRT1_2;
+
+    if (gaffer[0] > MAX_POSITIVE)
+    {
+        multiple = MAX_POSITIVE / gaffer[0];
+    }
+    if (gaffer[1] > MAX_POSITIVE)
+    {
+        multiple = MAX_POSITIVE / gaffer[1];
+    }
+    if (gaffer[2] > MAX_POSITIVE)
+    {
+        multiple = MAX_POSITIVE / gaffer[2];
+    }
+
+
+    if (gaffer[0] < MAX_NEGATIVE)
+    {
+        multiple = MAX_NEGATIVE / gaffer[0];
+    }
+    if (gaffer[1] < MAX_NEGATIVE)
+    {
+        multiple = MAX_NEGATIVE / gaffer[1];
+    }
+    if (gaffer[2] < MAX_NEGATIVE)
+    {
+        multiple = MAX_NEGATIVE / gaffer[2];
+    }
+
+    auto result = Gaffer
+    {
+        largest_index,
+        {
+            256 + static_cast<int>(round(gaffer[0] * Q_TO_G * multiple)),
+            256 + static_cast<int>(round(gaffer[1] * Q_TO_G * multiple)),
+            256 + static_cast<int>(round(gaffer[2] * Q_TO_G * multiple)),
+        }
+    };
+
+    assert(result.vec[0] >= 0);
+    assert(result.vec[1] >= 0);
+    assert(result.vec[2] >= 0);
+
+    assert(result.vec[0] < 512);
+    assert(result.vec[1] < 512);
+    assert(result.vec[2] < 512);
+
+    return result;
+}
+
+Gaffer to_gaffer(const DeltaData& delta)
+{
+    return Gaffer
+    {
+        static_cast<unsigned>(delta.orientation_largest),
+        {
+            delta.orientation_a,
+            delta.orientation_b,
+            delta.orientation_c,
+        }
+    };
+}
+
+}
+
+// //////////////////////////////////////////////////////
+
 using Quat = std::array<float, 4>;
 
 struct Gaffer
@@ -2106,8 +2432,8 @@ float constexpr Magnitude_squared(const Quat& quat)
         quat[3] * quat[3];
 }
 
-float q_to_g = 256.0 * 1.414213562373095048801688724209698078569671875;
-float g_to_q = 1.0 / (256.0 * 1.414213562373095048801688724209698078569671875);
+float Q_TO_G = 256.0 * 1.414213562373095048801688724209698078569671875;
+float G_TO_Q = 1.0 / (256.0 * 1.414213562373095048801688724209698078569671875);
 
 // stupid float precision and quantising
 const float q_max_s = 256.49 * 256.49 * 2.0;
@@ -2115,7 +2441,7 @@ const float q_max = std::truncf(sqrt(q_max_s)) + 0.49;
 
 // Again: did some research, -16, -16, -256 seems to be the worse.
 // try using that as max sum?
-const float gaffer_one_squared =
+const float GAFFER_ONE_SQUARED =
         (256 * 256) +
         (256 * 256) +
         (16 * 16) +
@@ -2126,9 +2452,9 @@ const float gaffer_one_squared =
 
 // Question is: When do we use 256, and when do we use 256.4995127?
 
-float g_256 = 256.4995127;
-float q_to_g2 = g_256 * 1.414213562373095048801688724209698078569671875;
-float g_to_q2 = 1.0 / (g_256 * 1.414213562373095048801688724209698078569671875);
+float G_256 = 256.4995127;
+float q_to_g2 = G_256 * 1.414213562373095048801688724209698078569671875;
+float g_to_q2 = 1.0 / (G_256 * 1.414213562373095048801688724209698078569671875);
 
 Quat2 ConvertGaffer2(const Gaffer& gaffer)
 {
@@ -2151,7 +2477,7 @@ Quat2 ConvertGaffer2(const Gaffer& gaffer)
     auto magnitude_squared =
             largest_squared[0] + largest_squared[1] + largest_squared[2];
 
-    auto largest_value_squared = gaffer_one_squared - magnitude_squared;
+    auto largest_value_squared = GAFFER_ONE_SQUARED - magnitude_squared;
 
     assert(largest_value_squared >= 0);
 
@@ -2411,9 +2737,9 @@ Quat ConvertGaffer(const Gaffer& gaffer)
     // converting to 0-1.
     Quat result
     {
-        (gaffer.a - 256) * g_to_q,
-        (gaffer.b - 256) * g_to_q,
-        (gaffer.c - 256) * g_to_q,
+        (gaffer.a - 256) * G_TO_Q,
+        (gaffer.b - 256) * G_TO_Q,
+        (gaffer.c - 256) * G_TO_Q,
         0.0,
     };
 
@@ -2488,9 +2814,9 @@ Gaffer ConvertGaffer(const Quat& quat)
     return
     {
         largest_index,
-        256 + static_cast<int>(round(gaffer[0] * q_to_g)),
-        256 + static_cast<int>(round(gaffer[1] * q_to_g)),
-        256 + static_cast<int>(round(gaffer[2] * q_to_g)),
+        256 + static_cast<int>(round(gaffer[0] * Q_TO_G)),
+        256 + static_cast<int>(round(gaffer[1] * Q_TO_G)),
+        256 + static_cast<int>(round(gaffer[2] * Q_TO_G)),
     };
 }
 
@@ -3189,9 +3515,9 @@ void Gaffer_tests()
                 // Not all permitations of the gaffer are valid.
                 Quat g
                 {
-                    (i - 256) * g_to_q,
-                    (j - 256) * g_to_q,
-                    (k - 256) * g_to_q,
+                    (i - 256) * G_TO_Q,
+                    (j - 256) * G_TO_Q,
+                    (k - 256) * G_TO_Q,
                     0.0,
                 };
 
