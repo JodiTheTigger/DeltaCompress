@@ -1121,6 +1121,11 @@ namespace Actually_trying
                 // RAM: TODO: Treat #0 differently as it's the play controlled
                 // piece.
                 // RAM: TODO: Pre init probabilities for #0
+                // RAM: first item tracking
+                // Ended up with
+                // 32767
+                // 32705
+                // 65472
 
                 auto last_x_changed =
                     [&base, &target](unsigned current, unsigned x, unsigned history)
