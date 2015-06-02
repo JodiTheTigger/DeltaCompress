@@ -285,6 +285,8 @@ struct Stats
     unsigned rotor_bits_14;
     unsigned rotor_bits_15;
     unsigned rotor_bits_wtf;
+    MinMaxSum rotor_max;
+    MinMaxSum rotor_bit_count;
 };
 
 enum class ChangedArrayEncoding
@@ -321,6 +323,7 @@ enum class QuatPacker
     Gaffer,
     BitVector3Sorted,
     Sorted_no_bit_count,
+    Rotor,
 };
 
 // //////////////////////////////////////////////////////
@@ -5467,23 +5470,26 @@ std::vector<uint8_t> EncodeStats(
             {
                 // Test the new stuff
                 {
-                    auto b = Argh::Gaffer
-                    {
-                        static_cast<unsigned>(base[i].orientation_largest),
-                        base[i].orientation_a,
-                        base[i].orientation_b,
-                        base[i].orientation_c,
-                    };
-                    auto t = Argh::Gaffer
-                    {
-                        static_cast<unsigned>(target[i].orientation_largest),
-                        target[i].orientation_a,
-                        target[i].orientation_b,
-                        target[i].orientation_c,
-                    };
+                    auto b = Argh::to_gaffer(base[i]);
+                    auto t = Argh::to_gaffer(target[i]);
 
                     auto m =
                         Argh::to_maxwell(b, t, Argh::DEFAULT_MUTLIPLES);
+
+                    {
+                        for (auto a : m.vec)
+                        {
+                            auto f =
+                                a / Argh::DEFAULT_MUTLIPLES[m.multiplier_index];
+
+                            f *= 1000;
+                            f = std::abs(f);
+
+                            unsigned d = 1 + (unsigned) f;
+
+                            stats.rotor_max.Update(d);
+                        }
+                    }
 
                     auto result =
                         Argh::to_gaffer(b, m, Argh::DEFAULT_MUTLIPLES);
@@ -5583,6 +5589,51 @@ std::vector<uint8_t> EncodeStats(
                     {
                         deltas.Write(1, 1);
                         WriteFullQuant();
+                    }
+
+                    break;
+                }
+
+                case QuatPacker::Rotor:
+                {
+                    if (quatSame)
+                    {
+                        deltas.Write(0, 1);
+                    }
+                    else
+                    {
+                        deltas.Write(1, 1);
+
+                        auto b = Argh::to_gaffer(base[i]);
+                        auto t = Argh::to_gaffer(target[i]);
+
+                        auto m =
+                            Argh::to_maxwell(b, t, Argh::DEFAULT_MUTLIPLES);
+
+                        auto multiplier =
+                            Argh::DEFAULT_MUTLIPLES[m.multiplier_index];
+
+                        unsigned bitsWritten = 3;
+                        deltas.Write(m.multiplier_index, 3);
+
+                        BitStream encoded;
+                        IntVec3 ugh =
+                        {
+                            m.vec[0],
+                            m.vec[1],
+                            m.vec[2],
+                        };
+
+                        auto codedBits = BitVector3UnrelatedEncode(
+                            ugh,
+                            multiplier,
+                            encoded);
+
+                        deltas.Write(encoded);
+                        bitsWritten += codedBits;
+
+
+                        stats.quatDeltaPackedBitCount.Update(bitsWritten);
                     }
 
                     break;
@@ -7266,6 +7317,8 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         0,
         0,
         0,
+        {1000000,0,0,0},
+        {1000000,0,0,0},
     };
 
     // Lets actually do the stuff.
@@ -7441,6 +7494,20 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
     PRINT_FLOAT(rotor_bits_average);
     PRINT_INT(stats.rotor_bits.min);
     PRINT_INT(stats.rotor_bits.max);
+
+    printf("\n");
+
+    auto rotor_max_average = Average(stats.rotor_max);
+    PRINT_FLOAT(rotor_max_average);
+    PRINT_INT(stats.rotor_max.min);
+    PRINT_INT(stats.rotor_max.max);
+
+    printf("\n");
+
+    auto rotor_bits2_average = Average(stats.rotor_bit_count);
+    PRINT_FLOAT(rotor_bits2_average);
+    PRINT_INT(stats.rotor_bit_count.min);
+    PRINT_INT(stats.rotor_bit_count.max);
 
     printf("\n");
 
