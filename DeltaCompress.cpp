@@ -26,7 +26,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests       = true;
+bool do_tests       = false;
 bool do_compression = true;
 
 // //////////////////////////////////////////////////////
@@ -1089,7 +1089,7 @@ namespace Actually_trying
             const auto&                     base_first = base[0];
 
             // //////////////////////////////////////////////////////
-
+#if 0
             {
                 // Treat Cube 0 different as it's play controlled.
                 // It's always interacting, so no need to encode that.
@@ -1118,7 +1118,7 @@ namespace Actually_trying
                     binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_1);
                 }
             }
-
+#endif
 
             // //////////////////////////////////////////////////////
 
@@ -1192,31 +1192,34 @@ namespace Actually_trying
 
                 // start from current - history, count x times to see if changed.
 
-                auto last_x_changed =
-                    [&base, &target](unsigned current, unsigned x, unsigned history)
-                    -> bool
-                {
-                    assert(history);
-                    assert(x <= history);
+//                auto last_x_changed =
+//                    [&base, &target](unsigned current, unsigned x, unsigned history)
+//                    -> bool
+//                {
+//                    assert(history);
+//                    assert(x <= history);
 
-                    if (current < history)
-                    {
-                        return false;
-                    }
+//                    if (current < history)
+//                    {
+//                        return false;
+//                    }
 
-                    auto start_index = current - history;
-                    auto end_index = start_index + x;
-                    for (unsigned j = start_index; j <= end_index; ++j)
-                    {
-                        if (!quat_equal(base[j], target[j]))
-                        {
-                            return true;
-                            break;
-                        }
-                    }
+//                    auto start_index = current - history;
+//                    auto end_index = start_index + x;
+//                    for (unsigned j = start_index; j <= end_index; ++j)
+//                    {
+//                        if (!quat_equal(base[j], target[j]))
+//                        {
+//                            return true;
+//                        }
+//                        if (!pos_equal(base[j], target[j]))
+//                        {
+//                            return true;
+//                        }
+//                    }
 
-                    return false;
-                };
+//                    return false;
+//                };
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
                 auto pos_changed = !pos_equal(base[i], target[i]);                
@@ -1227,23 +1230,23 @@ namespace Actually_trying
 //                    std::array<Binary_two_speed, 8> f_pos_changed;
 //                    std::array<Binary_two_speed, 4> f_interacting;
 
-                    auto last_quat_changed_too =
-                        last_x_changed
-                        (
-                            i,
-                            Model::NEIGHBOUR_QUAT_CHECK,
-                            Model::NEIGHBOUR_QUAT_CHECK
-                        );
+                    // RAM: TODO: Fabian test is the last quat or position
+                    // changed. Not one or the other.
+
+                    auto quat_changed_1 = !quat_equal(base[i-1], target[i-1]);
+                    auto pos_changed_1 = !pos_equal(base[i-1], target[i-1]);
+
+                    auto last_changed = quat_changed_1 | pos_changed_1;
 
                     auto close = close_to_cube_0_fabian(base[i]);
-                    auto quat_lookup = last_quat_changed_too + 2*close;
-                    model.f_quat_changed[quat_lookup].Encode
+                    auto lookup = last_changed + 2*close;
+                    model.f_quat_changed[lookup].Encode
                     (
                         binary,
                         quat_changed
                     );
 
-                    model.f_pos_changed[pos_changed + 2*quat_lookup].Encode
+                    model.f_pos_changed[quat_changed + 2 * lookup].Encode
                     (
                         binary,
                         pos_changed
