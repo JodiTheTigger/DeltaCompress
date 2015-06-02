@@ -54,10 +54,13 @@ namespace Range_coders
 
         ~Encoder()
         {
+            // At what point do we figure out the last range?
+            // and deeal with underflows.
             Renormalise();
 
             auto temp = m_min >> SHIFT_BITS;
 
+            // RAM: Need to understand why the comparison with bytes written.
             if  (
                     (m_min & (BOTTOM_VALUE - 1)) >=
                     ((m_bytes->size() & 0xffffffL) >> 1)
@@ -78,6 +81,7 @@ namespace Range_coders
             // No idea what arturocampos was up to
             // with his flush code, as using it created
             // issues. This works in all cases.
+            // RAM: But does it all wrong. WTF? Fix this!
             while(temp)
             {
                 Write(temp & 0xFF);
