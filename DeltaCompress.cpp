@@ -839,6 +839,11 @@ namespace Actually_trying
         std::array<Binary_two_speed, 2> position_changed;
         std::array<Binary_two_speed, 4> interactive;
 
+        // Fabian
+        std::array<Binary_two_speed, 4> f_quat_changed;
+        std::array<Binary_two_speed, 8> f_pos_changed;
+        std::array<Binary_two_speed, 4> f_interacting;
+
 
 
 
@@ -967,6 +972,7 @@ namespace Actually_trying
             },
         };
 
+        // Remember cube 0 is to be ignored as it's player controlled.
         float total = 0;
         float sum = 0;
         bool something = false;
@@ -1075,11 +1081,12 @@ namespace Actually_trying
 //            {},
 //        };
 
-        Correlations correlations;
+        //Correlations correlations;
 
         {
             Range_coders::Encoder           range(data);
             Range_coders::Binary_encoder    binary(range);
+            const auto&                     base_first = base[0];
 
             // //////////////////////////////////////////////////////
 
@@ -1111,6 +1118,70 @@ namespace Actually_trying
                     binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_1);
                 }
             }
+
+
+            // //////////////////////////////////////////////////////
+
+            // Got this from Fabian, but well DUH. If a cube is near
+            // cube 0, then of course it's more likely to change.
+            // %changed pos/quat within distance
+            //
+            //  5%   768
+            // 33%  1536
+            // 50%  2304
+            // 66%  3328
+            // 95%  6656
+            // Fabian uses 2048 per component.
+//            static const unsigned DANGER_DISTANCE = 3328;
+//            static const unsigned DANGER_DISTANCE_SQUARED
+//                = DANGER_DISTANCE * DANGER_DISTANCE;
+
+            auto close_to_cube_0_fabian = [&base_first]
+            (
+                const DeltaData& data
+            )
+            -> bool
+            {
+                const auto delta = Vec3i
+                {
+                    data.position_x - base_first.position_x,
+                    data.position_y - base_first.position_y,
+                    data.position_z - base_first.position_z
+                };
+
+                for(auto d : delta)
+                {
+                    if (std::abs(d) > 2048)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            };
+
+//            auto close_to_cube_0 = [&base_first]
+//            (
+//                const DeltaData& data
+//            )
+//            -> bool
+//            {
+//                const auto delta = Vec3i
+//                {
+//                    data.position_x - base_first.position_x,
+//                    data.position_y - base_first.position_y,
+//                    data.position_z - base_first.position_z
+//                };
+
+//                auto distance = static_cast<unsigned>
+//                (
+//                    delta[0] * delta[0] +
+//                    delta[1] * delta[1] +
+//                    delta[2] * delta[2]
+//                );
+
+//                return distance <= DANGER_DISTANCE_SQUARED;
+//            };
 
 
             // //////////////////////////////////////////////////////
@@ -1148,53 +1219,93 @@ namespace Actually_trying
                 };
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
-                auto pos_changed = !pos_equal(base[i], target[i]);
+                auto pos_changed = !pos_equal(base[i], target[i]);                
 
-                correlations[i] = quat_changed;
-
-                auto last_quat_changed_too =
-                    last_x_changed
-                    (
-                        i,
-                        Model::NEIGHBOUR_QUAT_CHECK,
-                        Model::NEIGHBOUR_QUAT_CHECK
-                    );
-
-                auto last_quat_changed_row_before =
-                    last_x_changed
-                    (
-                        i,
-                        5,
-                        33
-                    );
-
-                last_quat_changed_too = 0;
-                last_quat_changed_row_before = 0;
-
-//                if (i > 0)
-//                {
-//                    // RAM: Debug
-//                    auto c = quat_changed_correlation(correlations, i);
-
-//                    printf("%f\n", c);
-//                }
-
-                auto quat_index =
-                    last_quat_changed_too +
-                    2 * last_quat_changed_row_before;
-
-                model.quat_changed[quat_index].Encode(binary, quat_changed);
-                model.position_changed[quat_changed].Encode(binary, pos_changed);
-
-                // Note: You CAN get no interaction even if the quat or pos
-                // changes.
-                unsigned interacting_model = base[i].interacting;
-                if (pos_changed | quat_changed)
+                // //////////////////////////////////////////////////////
                 {
-                    interacting_model |= 2;
+//                    std::array<Binary_two_speed, 4> f_quat_changed;
+//                    std::array<Binary_two_speed, 8> f_pos_changed;
+//                    std::array<Binary_two_speed, 4> f_interacting;
+
+                    auto last_quat_changed_too =
+                        last_x_changed
+                        (
+                            i,
+                            Model::NEIGHBOUR_QUAT_CHECK,
+                            Model::NEIGHBOUR_QUAT_CHECK
+                        );
+
+                    auto close = close_to_cube_0_fabian(base[i]);
+                    auto quat_lookup = last_quat_changed_too + 2*close;
+                    model.f_quat_changed[quat_lookup].Encode
+                    (
+                        binary,
+                        quat_changed
+                    );
+
+                    model.f_pos_changed[pos_changed + 2*quat_lookup].Encode
+                    (
+                        binary,
+                        pos_changed
+                    );
+
+                    auto interact_lookup =
+                        base[i].interacting +
+                        (2 * (quat_changed | pos_changed));
+
+                    model.f_interacting[interact_lookup].Encode
+                    (
+                        binary,
+                        target[i].interacting
+                    );
                 }
 
-                model.interactive[interacting_model].Encode(binary, target[i].interacting);
+//                correlations[i] = quat_changed;
+
+//                auto last_quat_changed_too =
+//                    last_x_changed
+//                    (
+//                        i,
+//                        Model::NEIGHBOUR_QUAT_CHECK,
+//                        Model::NEIGHBOUR_QUAT_CHECK
+//                    );
+
+//                auto last_quat_changed_row_before =
+//                    last_x_changed
+//                    (
+//                        i,
+//                        5,
+//                        33
+//                    );
+
+//                last_quat_changed_too = 0;
+//                last_quat_changed_row_before = 0;
+
+////                if (i > 0)
+////                {
+////                    // RAM: Debug
+////                    auto c = quat_changed_correlation(correlations, i);
+
+////                    printf("%f\n", c);
+////                }
+
+//                auto quat_index =
+//                    last_quat_changed_too +
+//                    2 * last_quat_changed_row_before;
+
+//                model.quat_changed[quat_index].Encode(binary, quat_changed);
+//                model.position_changed[quat_changed].Encode(binary, pos_changed);
+
+//                // Note: You CAN get no interaction even if the quat or pos
+//                // changes.
+//                unsigned interacting_model = base[i].interacting;
+//                if (pos_changed | quat_changed)
+//                {
+//                    interacting_model |= 2;
+//                }
+
+//                model.interactive[interacting_model].Encode(binary, target[i].interacting);
+
 
                 // //////////////////////////////////////////////////////
             }
