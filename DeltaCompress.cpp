@@ -27,7 +27,7 @@
 
 bool doTests            = false;
 bool doStats            = true;
-bool doCompression      = false;
+bool doCompression      = true;
 bool doRangeCompression = false;
 bool doRangeSearch      = false;
 
@@ -5632,7 +5632,10 @@ std::vector<uint8_t> EncodeStats(
                         deltas.Write(encoded);
                         bitsWritten += codedBits;
 
-                        stats.quatDeltaPackedBitCount.Update(bitsWritten);
+                        // Oh comon!
+                        //assert(bitsWritten <= 29);
+
+                        stats.rotor_bit_count.Update(bitsWritten);
                     }
 
                     break;
@@ -7908,7 +7911,7 @@ int main(int, char**)
     {
         ChangedArrayEncoding::Exp,
         PosVector3Packer::Sorted_no_bit_count,
-        QuatPacker::BitVector3Unrelated,
+        QuatPacker::Rotor,
     };
 
     if (doStats)
