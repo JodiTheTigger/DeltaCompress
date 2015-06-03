@@ -5,6 +5,12 @@
 // have a bad time.
 
 // RAM: TODO: Check out http://ezcodesample.com/reanatomy.html
+// RAM: http://ezcodesample.com/reanatomy.html
+// RAM: Implement http://ezcodesample.com/arithmetic/rangemapper2.txt
+//      In the hope it doesn't have the overflow problem I'm having
+//      and that it plays better with Fabian's tail improvement.
+//      No wait,  it looks too complicated, try Dmitry Subbotin carryless
+//      range coder instead.
 
 #pragma once
 
