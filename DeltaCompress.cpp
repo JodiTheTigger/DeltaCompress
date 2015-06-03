@@ -855,15 +855,6 @@ namespace {
 
 // //////////////////////////////////////////////////////
 
-struct IntVec3
-{
-    int x;
-    int y;
-    int z;
-};
-
-// //////////////////////////////////////////////////////
-
 auto Largest_next_magnitude(
         unsigned magnitude,
         unsigned zig_zag_axis) -> unsigned
@@ -892,7 +883,7 @@ auto Largest_next_magnitude(
 }
 
 void Vector3Encode(
-        IntVec3 vec,
+        Vec3i vec,
         unsigned max_magnitude,
         Everything_model::Vector_model& model,
         Encoder& range,
@@ -903,14 +894,14 @@ void Vector3Encode(
 
     // //////////////////////////////////////////
 
-    assert(abs(vec.x) <= static_cast<int>(max_magnitude));
-    assert(abs(vec.y) <= static_cast<int>(max_magnitude));
-    assert(abs(vec.z) <= static_cast<int>(max_magnitude));
+    assert(abs(vec[0]) <= static_cast<int>(max_magnitude));
+    assert(abs(vec[1]) <= static_cast<int>(max_magnitude));
+    assert(abs(vec[2]) <= static_cast<int>(max_magnitude));
 
     // Sort from largest to smallest
-    auto zx = Zig_zag(vec.x);
-    auto zy = Zig_zag(vec.y);
-    auto zz = Zig_zag(vec.z);
+    auto zx = Zig_zag(vec[0]);
+    auto zy = Zig_zag(vec[1]);
+    auto zz = Zig_zag(vec[2]);
 
     // default order, x,y,z.
     {
@@ -1010,13 +1001,13 @@ void Vector3Encode(
     model.value[2].Encode(binary, zz, max_bits_required);
 }
 
-IntVec3 Vector3Decode(
+Vec3i Vector3Decode(
         unsigned max_magnitude,
         Everything_model::Vector_model& model,
         Decoder& range,
         Binary_decoder& binary)
 {
-    IntVec3 result = {0,0,0};
+    Vec3i result = {0,0,0};
 
     // +1 for the sign bit.
     unsigned max_bits_required = 1 + MinBits(max_magnitude);
@@ -1027,25 +1018,25 @@ IntVec3 Vector3Decode(
     auto top = model.largest_index.Decode(range);
     auto next = model.next_largest_index[top].Decode(binary);
 
-    auto ReturnSorted = [&top, &next](IntVec3 vec) -> IntVec3
+    auto ReturnSorted = [&top, &next](Vec3i vec) -> Vec3i
     {
         using std::swap;
 
         if (next)
         {
-            swap(vec.y, vec.z);
+            swap(vec[1], vec[2]);
         }
 
         if (top)
         {
             if (top == 1)
             {
-                swap(vec.x, vec.y);
+                swap(vec[0], vec[1]);
             }
             else
             {
-                swap(vec.x, vec.y);
-                swap(vec.y, vec.z);
+                swap(vec[0], vec[1]);
+                swap(vec[1], vec[2]);
             }
         }
 
@@ -1085,12 +1076,12 @@ IntVec3 Vector3Decode(
 
     // //////////////////////////////////////////
 
-    if (!Code(result.x, 0))
+    if (!Code(result[0], 0))
     {
         return ReturnSorted(result);
     }
 
-    if (!Code(result.y, 1))
+    if (!Code(result[1], 1))
     {
         return ReturnSorted(result);
     }
@@ -1098,7 +1089,7 @@ IntVec3 Vector3Decode(
     // //////////////////////////////////////////
 
     auto zz = model.value[2].Decode(binary, max_bits_required);
-    result.z = Zig_zag(zz);
+    result[2] = Zig_zag(zz);
 
     return ReturnSorted(result);
 }
@@ -1152,7 +1143,7 @@ auto Encode_frames(
                     model.largest_index_quant.Encode(
                         range, target[i].orientation_largest);
 
-                    IntVec3 not_delta
+                    Vec3i not_delta
                     {
                         target[i].orientation_a,
                         target[i].orientation_b,
@@ -1169,7 +1160,7 @@ auto Encode_frames(
 
                 if (!quant_index_changed)
                 {
-                    IntVec3 delta
+                    Vec3i delta
                     {
                         target[i].orientation_a - base[i].orientation_a,
                         target[i].orientation_b - base[i].orientation_b,
@@ -1194,7 +1185,7 @@ auto Encode_frames(
 
             if (pos_changed)
             {
-                IntVec3 delta
+                Vec3i delta
                 {
                     target[i].position_x - base[i].position_x,
                     target[i].position_y - base[i].position_y,
@@ -1261,14 +1252,14 @@ auto Decode_frames(
                     range,
                     binary);
 
-                target[i].orientation_a = not_delta.x;
-                target[i].orientation_b = not_delta.y;
-                target[i].orientation_c = not_delta.z;
+                target[i].orientation_a = not_delta[0];
+                target[i].orientation_b = not_delta[1];
+                target[i].orientation_c = not_delta[2];
             }
 
             if (!quant_index_changed)
             {
-                IntVec3 delta = Vector3Decode(
+                Vec3i delta = Vector3Decode(
                     (1u << RotationMaxBits) - 1,
                     model.quant_delta,
                     range,
@@ -1276,9 +1267,9 @@ auto Decode_frames(
 
                 target[i].orientation_largest =
                         base[i].orientation_largest;
-                target[i].orientation_a = base[i].orientation_a + delta.x;
-                target[i].orientation_b = base[i].orientation_b + delta.y;
-                target[i].orientation_c = base[i].orientation_c + delta.z;
+                target[i].orientation_a = base[i].orientation_a + delta[0];
+                target[i].orientation_b = base[i].orientation_b + delta[1];
+                target[i].orientation_c = base[i].orientation_c + delta[2];
             }
         }
 
@@ -1302,9 +1293,9 @@ auto Decode_frames(
                 range,
                 binary);
 
-            target[i].position_x = base[i].position_x + delta.x;
-            target[i].position_y = base[i].position_y + delta.y;
-            target[i].position_z = base[i].position_z + delta.z;
+            target[i].position_x = base[i].position_x + delta[0];
+            target[i].position_y = base[i].position_y + delta[1];
+            target[i].position_z = base[i].position_z + delta[2];
         }
 
         if (!pos_changed)
@@ -1330,7 +1321,7 @@ auto Model_tests()
     {
         int const max = static_cast<int>((MaxPositionChangePerSnapshot) * 6 + 1);
 
-        IntVec3 data =
+        Vec3i data =
         {
             -434,
             -90,
@@ -1373,9 +1364,7 @@ auto Model_tests()
                     d_range,
                     d_binary);
 
-                assert(data.x == decoded.x);
-                assert(data.y == decoded.y);
-                assert(data.z == decoded.z);
+                assert(data == decoded);
             }
         }
     }
