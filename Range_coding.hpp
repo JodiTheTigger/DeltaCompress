@@ -42,6 +42,117 @@ namespace Range_types
 // Coders
 // //////////////////////////////////////////////
 
+namespace Carryless_range_coder
+{
+    using namespace Range_types;
+
+    static const uint32_t CODE_BITS     = 32;
+//    static const uint32_t TOP_VALUE     = (1ul << (CODE_BITS - 1));
+//    static const uint32_t SHIFT_BITS    = (CODE_BITS - 9);
+//    static const uint32_t EXTRA_BITS    = ((CODE_BITS - 2) % 8 + 1);
+//    static const uint32_t BOTTOM_VALUE  = (TOP_VALUE >> 8);
+
+    static const uint32_t MAX_RANGE              = ~0;
+    static const uint32_t TOP_SHIFT              = CODE_BITS - 8;
+    static const uint32_t TOP                    = 1ul << TOP_SHIFT;
+    static const uint32_t BOTTOM                 = TOP >> 8;
+    static const uint32_t BOTTOM_MASK            = BOTTOM - 1;
+    static const uint32_t PROBABILITY_RANGE_BITS = CODE_BITS - 16;
+    static const uint32_t PROBABILITY_RANGE_SIZE = 1 << PROBABILITY_RANGE_BITS;
+    static const uint32_t PROBABILITY_RANGE_MAX  = PROBABILITY_RANGE_SIZE - 1;
+
+    class Encoder
+    {
+    private:
+        uint32_t m_min      = 0;
+        uint32_t m_range    = MAX_RANGE;
+
+    public:
+        Encoder(Bytes& bytes)
+            : m_bytes(&bytes)
+        {}
+
+        ~Encoder()
+        {
+            // Change the range so that we write the minimum amount of tail
+            // bytes.
+            auto min        = m_min;
+            auto max        = m_min + m_range;
+            auto round_up   = PROBABILITY_RANGE_MAX - 1;
+
+            while (round_up)
+            {
+                auto rounded = (min + round_up) & ~round_up;
+                if (rounded <= max)
+                {
+                    min = rounded;
+                    break;
+                }
+
+                round_up >>= 8;
+            }
+
+            while (min)
+            {
+                auto to_write = (min >> SHIFT_BITS) & 0xFF;
+                Write(to_write);
+
+                min <<= 8;
+            }
+        }
+
+        void Encode(Range range)
+        {
+
+            auto new_range          = m_range >> PROBABILITY_RANGE_BITS;
+            auto new_range_start    = range.min * new_range;
+
+            m_min  += new_range_start;
+            m_range = new_range * range.count;
+
+            // Break out the bit shift, and range renorm into sepeate
+            // loops for readability.
+
+            // RAM: TODO: Read
+            // http://cbloomrants.blogspot.co.nz/2008/10/10-05-08-5.html
+            // and clarify offsets used, as you're still confused with 16.
+
+            // while the top byte is different
+            while ((m_low ^ (m_low + m_range)) < TOP)
+            {
+                Write(m_low >> TOP_SHIFT);
+                m_range <<= 8;
+                m_low <<= 8;
+            }
+
+            // Deal with the range been too small, and carrys.
+            while (m_range < PROBABILITY_RANGE_SIZE)
+            {
+                Write(m_low >> TOP_SHIFT);
+                m_range = ((~m_min) & PROBABILITY_RANGE_MAX);
+                m_range <<= 8;
+                m_low <<= 8;
+            }
+        }
+
+    private:
+        Bytes*  m_bytes = 0;
+        bool    m_first = false;
+
+        void Write(uint8_t value)
+        {
+            if (!m_first)
+            {
+                m_bytes->push_back(value);
+            }
+            else
+            {
+                m_first = false;
+            }
+        }
+    };
+}
+
 namespace Range_coders
 {
     using namespace Range_types;
