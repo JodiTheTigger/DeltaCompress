@@ -5632,7 +5632,6 @@ std::vector<uint8_t> EncodeStats(
                         deltas.Write(encoded);
                         bitsWritten += codedBits;
 
-
                         stats.quatDeltaPackedBitCount.Update(bitsWritten);
                     }
 
@@ -6339,6 +6338,48 @@ std::vector<uint8_t> Encode(
                     break;
                 }
 
+                case QuatPacker::Rotor:
+                {
+                    if (quatSame)
+                    {
+                        deltas.Write(0, 1);
+                    }
+                    else
+                    {
+                        deltas.Write(1, 1);
+
+                        auto b = Argh::to_gaffer(base[i]);
+                        auto t = Argh::to_gaffer(target[i]);
+
+                        auto m =
+                            Argh::to_maxwell(b, t, Argh::DEFAULT_MUTLIPLES);
+
+                        auto multiplier =
+                            Argh::DEFAULT_MUTLIPLES[m.multiplier_index];
+
+                        unsigned bitsWritten = 3;
+                        deltas.Write(m.multiplier_index, 3);
+
+                        BitStream encoded;
+                        IntVec3 ugh =
+                        {
+                            m.vec[0],
+                            m.vec[1],
+                            m.vec[2],
+                        };
+
+                        auto codedBits = BitVector3UnrelatedEncode(
+                            ugh,
+                            multiplier,
+                            encoded);
+
+                        deltas.Write(encoded);
+                        bitsWritten += codedBits;
+                    }
+
+                    break;
+                }
+
                 case QuatPacker::BitVector3Unrelated:
                 case QuatPacker::BitVector3BitCount:
                 case QuatPacker::BitVector3Sorted:
@@ -6928,6 +6969,49 @@ Frame Decode(
                         result[i].orientation_a         = bits.Read(RotationMaxBits);
                         result[i].orientation_b         = bits.Read(RotationMaxBits);
                         result[i].orientation_c         = bits.Read(RotationMaxBits);
+                    }
+                    else
+                    {
+                        result[i].orientation_largest   = base[i].orientation_largest;
+                        result[i].orientation_a         = base[i].orientation_a;
+                        result[i].orientation_b         = base[i].orientation_b;
+                        result[i].orientation_c         = base[i].orientation_c;
+                    }
+
+                    break;
+                }
+
+                case QuatPacker::Rotor:
+                {
+                    auto changed = bits.Read(1);
+
+                    if (changed)
+                    {
+                        auto multiplier_index = bits.Read(3);
+                        auto multiplier =
+                            Argh::DEFAULT_MUTLIPLES[multiplier_index];
+
+                        auto vec = BitVector3UnrelatedDecode(
+                            multiplier,
+                            bits);
+
+                        auto m = Argh::Maxwell
+                        {
+                            multiplier_index,
+                            {
+                                vec.x,
+                                vec.y,
+                                vec.z,
+                            }
+                        };
+
+                        auto b = Argh::to_gaffer(base[i]);
+                        auto t = Argh::to_gaffer(b, m, Argh::DEFAULT_MUTLIPLES);
+
+                        result[i].orientation_largest   = t.orientation_largest;
+                        result[i].orientation_a         = t.vec[0];
+                        result[i].orientation_b         = t.vec[1];
+                        result[i].orientation_c         = t.vec[2];
                     }
                     else
                     {
