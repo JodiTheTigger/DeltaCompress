@@ -287,6 +287,8 @@ struct Stats
     unsigned rotor_bits_wtf;
     MinMaxSum rotor_max;
     MinMaxSum rotor_bit_count;
+
+    std::array<unsigned, 8> rotor_indicies;
 };
 
 enum class ChangedArrayEncoding
@@ -754,6 +756,8 @@ static const Multipliers DEFAULT_MUTLIPLES =
     4247.0f,
     65535.0f,
 };
+
+static const float MULTIPLIER_MAX_VALUE_ADJUST = 0.6f;
 
 // The for love of god I couldn't derive the formula for generating the
 // multiplier. So I have to just search for it instead.
@@ -5624,16 +5628,41 @@ std::vector<uint8_t> EncodeStats(
                             m.vec[2],
                         };
 
+                        ++stats.rotor_indicies[m.multiplier_index];
+
                         auto codedBits = BitVector3UnrelatedEncode(
                             ugh,
-                            multiplier,
+                            static_cast<unsigned>
+                                (multiplier * Argh::MULTIPLIER_MAX_VALUE_ADJUST),
                             encoded);
+//                        auto codedBits = Sorted_no_bit_count_Encode(
+//                            ugh,
+//                            multiplier,
+//                            Use_magnitude_as::Constant,
+//                            encoded);
+
 
                         deltas.Write(encoded);
                         bitsWritten += codedBits;
 
-                        // Oh comon!
-                        //assert(bitsWritten <= 29);
+//                        {
+//                            if (bitsWritten <= 16)
+//                            {
+//                                printf(".");
+//                            }
+//                            else
+//                            {
+//                                // :-( over 29 bits seems 50/50.
+//                                if (bitsWritten < 29)
+//                                {
+//                                    printf("o");
+//                                }
+//                                else
+//                                {
+//                                    printf("X");
+//                                }
+//                            }
+//                        }
 
                         stats.rotor_bit_count.Update(bitsWritten);
                     }
@@ -6373,7 +6402,8 @@ std::vector<uint8_t> Encode(
 
                         auto codedBits = BitVector3UnrelatedEncode(
                             ugh,
-                            multiplier,
+                            static_cast<unsigned>
+                                (multiplier * Argh::MULTIPLIER_MAX_VALUE_ADJUST),
                             encoded);
 
                         deltas.Write(encoded);
@@ -6995,7 +7025,8 @@ Frame Decode(
                             Argh::DEFAULT_MUTLIPLES[multiplier_index];
 
                         auto vec = BitVector3UnrelatedDecode(
-                            multiplier,
+                            static_cast<unsigned>
+                                (multiplier * Argh::MULTIPLIER_MAX_VALUE_ADJUST),
                             bits);
 
                         auto m = Argh::Maxwell
@@ -7406,6 +7437,7 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
         0,
         {1000000,0,0,0},
         {1000000,0,0,0},
+        {0,0,0,0,0,0,0,0},
     };
 
     // Lets actually do the stuff.
@@ -7598,6 +7630,16 @@ void CalculateStats(std::vector<Frame>& frames, const Config& config)
 
     printf("\n");
 
+    PRINT_INT(stats.rotor_indicies[0]);
+    PRINT_INT(stats.rotor_indicies[1]);
+    PRINT_INT(stats.rotor_indicies[2]);
+    PRINT_INT(stats.rotor_indicies[3]);
+    PRINT_INT(stats.rotor_indicies[4]);
+    PRINT_INT(stats.rotor_indicies[5]);
+    PRINT_INT(stats.rotor_indicies[6]);
+    PRINT_INT(stats.rotor_indicies[7]);
+
+    printf("\n");
 
     printf("\n==============================================\n");
 
