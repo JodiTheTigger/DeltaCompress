@@ -5,6 +5,12 @@
 // have a bad time.
 
 // RAM: TODO: Check out http://ezcodesample.com/reanatomy.html
+// RAM: http://ezcodesample.com/reanatomy.html
+// RAM: Implement http://ezcodesample.com/arithmetic/rangemapper2.txt
+//      In the hope it doesn't have the overflow problem I'm having
+//      and that it plays better with Fabian's tail improvement.
+//      No wait,  it looks too complicated, try Dmitry Subbotin carryless
+//      range coder instead.
 
 #pragma once
 
@@ -20,8 +26,8 @@
 
 namespace Range_types
 {
-    static const uint32_t TOTAL_RANGE_BITS  = 16;
-    static const uint32_t TOTAL_RANGE       = 1 << TOTAL_RANGE_BITS;
+    static const uint32_t PROBABILITY_RANGE_BITS = 16;
+    static const uint32_t PROBABILITY_RANGE      = 1 << PROBABILITY_RANGE_BITS;
 
     using Bytes = std::vector<uint8_t>;
 
@@ -40,10 +46,12 @@ namespace Range_coders
 {
     using namespace Range_types;
 
-    static const uint32_t TOP_VALUE         = 0x80000000;
-    static const uint32_t BOTTOM_VALUE      = 0x00800000;
-    static const uint32_t SHIFT_BITS        = 23;
-    static const uint32_t EXTRA_BITS        = 7;
+    // Uses 31 instead of 32 bits to reserve space for a possible carry.
+    static const uint32_t CODE_BITS     = 32;
+    static const uint32_t TOP_VALUE     = (1ul << (CODE_BITS - 1));
+    static const uint32_t SHIFT_BITS    = (CODE_BITS - 9);
+    static const uint32_t EXTRA_BITS    = ((CODE_BITS - 2) % 8 + 1);
+    static const uint32_t BOTTOM_VALUE  = (TOP_VALUE >> 8);
 
     class Encoder
     {
@@ -54,50 +62,41 @@ namespace Range_coders
 
         ~Encoder()
         {
-            // Deal with overflow and underflow
-            unsigned overflow = 0;
+            Renormalise();
+
+            // If we still haven't converged to a top bit, we need to
+            // force it to converge and flush the underflows.
+            auto temp = m_min >> SHIFT_BITS;
+
+            // Still NFI why the comparison with bytes written is made.
+            if  (
+                    (m_min & (BOTTOM_VALUE - 1)) >=
+                    ((m_bytes->size() & 0xffffffL) >> 1)
+                )
             {
-                auto temp = m_min >> SHIFT_BITS;
-
-                auto round_up = BOTTOM_VALUE - 1;
-                auto a = m_min & round_up;
-                auto s = m_bytes->size();
-                auto sm = s & 0x00ffffff;
-                auto b = sm >> 1;
-
-                if  (
-                        a >= b
-                    )
-                {
-                    ++temp;
-                }
-
-                auto underflow_value = 0xFF;
-                if (temp > 0xFF)
-                {
-                    overflow++;
-                    underflow_value = 0;
-                }
-
-                Write(m_buffer + overflow);
-
-                auto underflow = m_underflow;
-                while (underflow)
-                {
-                    Write(underflow_value);
-                    underflow--;
-                }
+                ++temp;
             }
 
-            // RAM: Let's try Fabian's trick.
-            auto round_up = BOTTOM_VALUE - 1;
-            auto min = m_min;
-            auto hi = m_min + m_range;
+            if (temp > 0xFF)
+            {
+                Flush_underflow_with_carry(1);
+            }
+            else
+            {
+                Flush_underflow_with_carry(0);
+            }
+
+            // Ok, so now we should be in the state with no underflows left.
+            // Change the range so that we write the minimum amount of tail
+            // bytes.
+            auto min        = m_min;
+            auto max        = m_min + m_range;
+            auto round_up   = BOTTOM_VALUE - 1;
+
             while (round_up)
             {
                 auto rounded = (min + round_up) & ~round_up;
-
-                if (rounded <= hi)
+                if (rounded <= max)
                 {
                     min = rounded;
                     break;
@@ -111,8 +110,8 @@ namespace Range_coders
                 auto to_write = (min >> SHIFT_BITS) & 0xFF;
                 Write(to_write);
 
-                min      <<= 8;
-                min      &= (TOP_VALUE - 1);
+                min <<= 8;
+                min &= (TOP_VALUE - 1);
             }
         }
 
@@ -120,12 +119,12 @@ namespace Range_coders
         {
             Renormalise();
 
-            auto new_range = m_range >> TOTAL_RANGE_BITS;
-            auto new_range_start = new_range * range.min;
+            auto new_range          = m_range >> PROBABILITY_RANGE_BITS;
+            auto new_range_start    = range.min * new_range;
 
             m_min += new_range_start;
 
-            if (range.min + range.count < TOTAL_RANGE)
+            if (range.min + range.count < PROBABILITY_RANGE)
             {
                 m_range = new_range * range.count;
             }
@@ -136,12 +135,12 @@ namespace Range_coders
         }
 
     private:
-        Bytes*      m_bytes         = 0;
-        uint32_t    m_range         = TOP_VALUE;
-        uint32_t    m_min           = 0;
-        uint8_t     m_underflow     = 0;
-        uint8_t     m_buffer        = 0;
-        bool        m_first         = true;
+        Bytes*      m_bytes                 = 0;
+        uint32_t    m_range                 = TOP_VALUE;
+        uint32_t    m_min                   = 0;
+        uint8_t     m_underflow_byte_count  = 0;
+        uint8_t     m_buffer                = 0;
+        bool        m_first                 = true;
 
         void Write(uint8_t value)
         {
@@ -155,17 +154,22 @@ namespace Range_coders
             }
         }
 
-        void Flush_underflow(uint8_t value, uint8_t overflow)
+        void Flush_underflow_with_carry(uint8_t carry)
         {
-            Write(m_buffer + overflow);
+            // Silly way of avoiding a branch
+            const uint8_t buffered_bits = 0xFF * (1 - carry);
 
-            while (m_underflow)
+            Write(m_buffer + carry);
+
+            auto underfloat_count = m_underflow_byte_count;
+            while (underfloat_count)
             {
-                Write(value);
-                --m_underflow;
+                Write(buffered_bits);
+                --underfloat_count;
             }
 
-            m_buffer = m_min >> SHIFT_BITS;
+            m_buffer                = m_min >> SHIFT_BITS;
+            m_underflow_byte_count  = 0;
         }
 
         void Renormalise()
@@ -174,17 +178,17 @@ namespace Range_coders
             {
                 if (m_min < (0xFF << SHIFT_BITS))
                 {
-                    Flush_underflow(0xFF, 0);
+                    Flush_underflow_with_carry(0);
                 }
                 else
                 {
                     if (m_min & TOP_VALUE)
                     {
-                        Flush_underflow(0, 1);
+                        Flush_underflow_with_carry(1);
                     }
                     else
                     {
-                        ++m_underflow;
+                        ++m_underflow_byte_count;
                     }
                 }
 
@@ -210,16 +214,16 @@ namespace Range_coders
         {
             Renormalise();
 
-            m_next_range = m_range >> TOTAL_RANGE_BITS;
+            m_next_range = m_range >> PROBABILITY_RANGE_BITS;
             auto symbol_range = m_min / m_next_range;
 
-            if (symbol_range < TOTAL_RANGE)
+            if (symbol_range >= PROBABILITY_RANGE)
             {
-                return symbol_range;
+                return PROBABILITY_RANGE - 1;
             }
             else
             {
-                return TOTAL_RANGE - 1;
+                return symbol_range;
             }
         }
 
@@ -227,7 +231,7 @@ namespace Range_coders
         {
             auto temp = m_next_range * range.min;
             m_min -= temp;
-            if ((range.min + range.count) < TOTAL_RANGE)
+            if ((range.min + range.count) < PROBABILITY_RANGE)
             {
                 m_range = m_next_range * range.count;
             }
@@ -290,7 +294,7 @@ namespace Range_coders
             m_encoder->Encode(
                 value ?
                     Range{0, one_probability} :
-                    Range{one_probability, TOTAL_RANGE - one_probability});
+                    Range{one_probability, PROBABILITY_RANGE - one_probability});
         }
 
     private:
@@ -312,7 +316,7 @@ namespace Range_coders
             m_decoder->Update(
                 result ?
                     Range{0, one_probability} :
-                    Range{one_probability, TOTAL_RANGE - one_probability});
+                    Range{one_probability, PROBABILITY_RANGE - one_probability});
 
             return result;
         }
@@ -344,7 +348,7 @@ namespace Range_models
     public:
         Binary(
                 unsigned inertia = 4,
-                unsigned initial_probability = (TOTAL_RANGE / 2))
+                unsigned initial_probability = (PROBABILITY_RANGE / 2))
             : m_inertia(inertia)
             , m_one_probability(initial_probability)
         {
@@ -374,7 +378,7 @@ namespace Range_models
             if (value)
             {
                 m_one_probability +=
-                    (TOTAL_RANGE - m_one_probability) >> m_inertia;
+                    (PROBABILITY_RANGE - m_one_probability) >> m_inertia;
             }
             else
             {
@@ -387,8 +391,8 @@ namespace Range_models
     {
     public:
         Binary_two_speed(
-                unsigned inertia_1 = 1,
-                unsigned inertia_2 = 6,
+                unsigned inertia_1 = 4,
+                unsigned inertia_2 = 4,
                 unsigned initial_probability_1 = QUARTER_RANGE,
                 unsigned initial_probability_2 = QUARTER_RANGE)
             : m_inertia_1(inertia_1)
@@ -412,7 +416,7 @@ namespace Range_models
         }
 
     private:
-        static const unsigned HALF_RANGE    = TOTAL_RANGE / 2;
+        static const unsigned HALF_RANGE    = PROBABILITY_RANGE / 2;
         static const unsigned QUARTER_RANGE = HALF_RANGE / 2;
 
         unsigned m_inertia_1;
@@ -446,7 +450,7 @@ namespace Range_models
 
             // Model the MSB first, then work our way down.
             // Seems adds are better than << 1.
-            unsigned rebuilt = 1;            
+            unsigned rebuilt = 1;
 
             unsigned skips = BITS - bits;
             value <<= skips;
@@ -495,7 +499,7 @@ namespace Range_models
             unsigned size,
             unsigned slowest_update_rate
         )
-            : m_f()            
+            : m_f()
             , m_r(size)
             , m_size(size)
             , m_slowest_update_rate(slowest_update_rate)
@@ -553,7 +557,7 @@ namespace Range_models
             auto old_range  = m_r[value];
             auto last_range = m_r[max_value];
             float max_cf = last_range.min + last_range.count;
-            float multiplier = TOTAL_RANGE / max_cf;
+            float multiplier = PROBABILITY_RANGE / max_cf;
 
             // Man, rounding errors and off my one are my bane.
             unsigned next_min = 0;
@@ -567,7 +571,7 @@ namespace Range_models
             }
             else
             {
-                next_min = TOTAL_RANGE;
+                next_min = PROBABILITY_RANGE;
             }
 
             auto new_min =
@@ -615,7 +619,7 @@ namespace Range_models
 
             auto last_range = m_r[max_value];
             float max_cf = last_range.min + last_range.count;
-            float multiplier = TOTAL_RANGE / max_cf;
+            float multiplier = PROBABILITY_RANGE / max_cf;
 
             const auto size = m_size;
 
@@ -648,7 +652,7 @@ namespace Range_models
             }
             else
             {
-                next_min = TOTAL_RANGE;
+                next_min = PROBABILITY_RANGE;
             }
 
             auto new_min =
@@ -699,7 +703,7 @@ namespace Range_models
         {
             unsigned total = m_last_total + m_updates;
 
-            if (total > TOTAL_RANGE)
+            if (total > PROBABILITY_RANGE)
             {
                 // Dunno how to do this nice for now. Brute it.
                 total = 0;
@@ -713,8 +717,8 @@ namespace Range_models
             }
 
             const auto size     = m_size;
-            auto multiple       = TOTAL_RANGE / total;
-            auto reminder       = TOTAL_RANGE % total;
+            auto multiple       = PROBABILITY_RANGE / total;
+            auto reminder       = PROBABILITY_RANGE % total;
             auto global_adjust  = reminder / size;
             auto reminder_count = reminder % size;
             unsigned last_min   = 0;
@@ -735,7 +739,7 @@ namespace Range_models
                 last_min += m_r[i].count;
             }
 
-            assert(last_min == TOTAL_RANGE);
+            assert(last_min == PROBABILITY_RANGE);
 
             m_last_total = total;
         }
@@ -805,7 +809,7 @@ namespace Range_models
         }
 
         void Encode(Encoder& coder, unsigned value, unsigned max_value)
-        {            
+        {
             assert(value < m_size);
             assert(max_value < m_size);
 
@@ -817,7 +821,7 @@ namespace Range_models
             auto old_range  = m_r[value];
             auto last_range = m_r[max_value];
             float max_cf = last_range.min + last_range.count;
-            float multiplier = TOTAL_RANGE / max_cf;
+            float multiplier = PROBABILITY_RANGE / max_cf;
 
             // Man, rounding errors and off my one are my bane.
             unsigned next_min = 0;
@@ -831,7 +835,7 @@ namespace Range_models
             }
             else
             {
-                next_min = TOTAL_RANGE;
+                next_min = PROBABILITY_RANGE;
             }
 
             auto new_min =
@@ -879,7 +883,7 @@ namespace Range_models
 
             auto last_range = m_r[max_value];
             float max_cf = last_range.min + last_range.count;
-            float multiplier = TOTAL_RANGE / max_cf;
+            float multiplier = PROBABILITY_RANGE / max_cf;
 
             const auto size = m_size;
 
@@ -912,7 +916,7 @@ namespace Range_models
             }
             else
             {
-                next_min = TOTAL_RANGE;
+                next_min = PROBABILITY_RANGE;
             }
 
             auto new_min =
@@ -989,7 +993,7 @@ namespace Range_models
         {
             unsigned total = m_last_total + m_updates;
 
-            if (total > TOTAL_RANGE)
+            if (total > PROBABILITY_RANGE)
             {
                 // Dunno how to do this nice for now. Brute it.
                 total = 0;
@@ -1003,8 +1007,8 @@ namespace Range_models
             }
 
             const auto size     = m_size;
-            auto multiple       = TOTAL_RANGE / total;
-            auto reminder       = TOTAL_RANGE % total;
+            auto multiple       = PROBABILITY_RANGE / total;
+            auto reminder       = PROBABILITY_RANGE % total;
             auto global_adjust  = reminder / size;
             auto reminder_count = reminder % size;
             unsigned last_min   = 0;
@@ -1025,7 +1029,7 @@ namespace Range_models
                 last_min += m_r[i].count;
             }
 
-            assert(last_min == TOTAL_RANGE);
+            assert(last_min == PROBABILITY_RANGE);
 
             m_last_total = total;
             m_updates = 0;
@@ -1064,14 +1068,14 @@ void range_tests()
         {
             Decoder decoder(data);
 
-            auto k = 0;
+            auto k =0;
             for (const auto t : tests)
             {
                 auto value = decoder.Decode();
                 assert(value >= ranges[t].min);
                 assert(value < (ranges[t].min + ranges[t].count));
                 decoder.Update(ranges[t]);
-                ++k;
+                k++;
             }
 
             auto read = decoder.FlushAndGetBytesRead();
