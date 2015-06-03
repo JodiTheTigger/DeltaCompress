@@ -1094,8 +1094,6 @@ Vec3i Vector3Decode(
     return ReturnSorted(result);
 }
 
-
-
 auto Encode_frames(
     const Frame& base,
     const Frame& target,
@@ -1453,6 +1451,7 @@ int main(int, char**)
 
     if (do_tests)
     {
+        Range_tests();
         Model_tests();
         Zig_zag_test();
     }
