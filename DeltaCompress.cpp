@@ -330,10 +330,6 @@ enum class QuatPacker
 
 // //////////////////////////////////////////////////////
 
-namespace Argh {
-
-// //////////////////////////////////////////////////////
-
 using Vec3i = std::array<int, 3>;
 using Vec4f = std::array<float, 4>;
 using Vec3f = std::array<float, 4>;
@@ -885,10 +881,6 @@ auto to_gaffer
 
     return to_gaffer(target_quat);
 }
-
-// //////////////////////////////////////////////////////
-
-} // namespace
 
 // //////////////////////////////////////////////////////
 
@@ -2366,8 +2358,6 @@ IntVec3 BitVector3TruncatedDecode(
 
 void Gaffer_tests()
 {
-    using namespace Argh;
-
     {
         auto gaffer = Gaffer
         {
@@ -5482,17 +5472,17 @@ std::vector<uint8_t> EncodeStats(
             {
                 // Test the new stuff
                 {
-                    auto b = Argh::to_gaffer(base[i]);
-                    auto t = Argh::to_gaffer(target[i]);
+                    auto b = to_gaffer(base[i]);
+                    auto t = to_gaffer(target[i]);
 
                     auto m =
-                        Argh::to_maxwell(b, t, Argh::DEFAULT_MUTLIPLES);
+                        to_maxwell(b, t, DEFAULT_MUTLIPLES);
 
                     {
                         for (auto a : m.vec)
                         {
                             auto f =
-                                a / Argh::DEFAULT_MUTLIPLES[m.multiplier_index];
+                                a / DEFAULT_MUTLIPLES[m.multiplier_index];
 
                             f *= 1000;
                             f = std::abs(f);
@@ -5504,12 +5494,12 @@ std::vector<uint8_t> EncodeStats(
                     }
 
                     auto result =
-                        Argh::to_gaffer(b, m, Argh::DEFAULT_MUTLIPLES);
+                        to_gaffer(b, m, DEFAULT_MUTLIPLES);
 
                     assert(result == t);
 
                     auto ROTOR_MULTIPLY =
-                        Argh::DEFAULT_MUTLIPLES[m.multiplier_index];
+                        DEFAULT_MUTLIPLES[m.multiplier_index];
 
                     // stats
                     if (ROTOR_MULTIPLY <= 128)
@@ -5616,17 +5606,17 @@ std::vector<uint8_t> EncodeStats(
                     {
                         deltas.Write(1, 1);
 
-                        auto b = Argh::to_gaffer(base[i]);
-                        auto t = Argh::to_gaffer(target[i]);
+                        auto b = to_gaffer(base[i]);
+                        auto t = to_gaffer(target[i]);
 
                         auto m =
-                            Argh::to_maxwell(b, t, Argh::DEFAULT_MUTLIPLES);
+                            to_maxwell(b, t, DEFAULT_MUTLIPLES);
 
                         auto multiplier =
-                            Argh::DEFAULT_MUTLIPLES[m.multiplier_index];
+                            DEFAULT_MUTLIPLES[m.multiplier_index];
 
                         unsigned bitsWritten =
-                            MinBits(Argh::DEFAULT_MUTLIPLES.size()-1);
+                            MinBits(DEFAULT_MUTLIPLES.size()-1);
 
                         deltas.Write(m.multiplier_index, bitsWritten);
 
@@ -5643,7 +5633,7 @@ std::vector<uint8_t> EncodeStats(
                         auto codedBits = BitVector3UnrelatedEncode(
                             ugh,
                             static_cast<unsigned>
-                                (multiplier * Argh::MULTIPLIER_MAX_VALUE_ADJUST),
+                                (multiplier * MULTIPLIER_MAX_VALUE_ADJUST),
                             encoded);
 //                        auto codedBits = Sorted_no_bit_count_Encode(
 //                            ugh,
@@ -6390,17 +6380,17 @@ std::vector<uint8_t> Encode(
                     {
                         deltas.Write(1, 1);
 
-                        auto b = Argh::to_gaffer(base[i]);
-                        auto t = Argh::to_gaffer(target[i]);
+                        auto b = to_gaffer(base[i]);
+                        auto t = to_gaffer(target[i]);
 
                         auto m =
-                            Argh::to_maxwell(b, t, Argh::DEFAULT_MUTLIPLES);
+                            to_maxwell(b, t, DEFAULT_MUTLIPLES);
 
                         auto multiplier =
-                            Argh::DEFAULT_MUTLIPLES[m.multiplier_index];
+                            DEFAULT_MUTLIPLES[m.multiplier_index];
 
                         unsigned bitsWritten =
-                            MinBits(Argh::DEFAULT_MUTLIPLES.size()-1);
+                            MinBits(DEFAULT_MUTLIPLES.size()-1);
 
                         deltas.Write(m.multiplier_index, bitsWritten);
 
@@ -6415,7 +6405,7 @@ std::vector<uint8_t> Encode(
                         auto codedBits = BitVector3UnrelatedEncode(
                             ugh,
                             static_cast<unsigned>
-                                (multiplier * Argh::MULTIPLIER_MAX_VALUE_ADJUST),
+                                (multiplier * MULTIPLIER_MAX_VALUE_ADJUST),
                             encoded);
 
                         deltas.Write(encoded);
@@ -7033,18 +7023,18 @@ Frame Decode(
                     if (changed)
                     {
                         unsigned bitsWritten =
-                            MinBits(Argh::DEFAULT_MUTLIPLES.size()-1);
+                            MinBits(DEFAULT_MUTLIPLES.size()-1);
 
                         auto multiplier_index = bits.Read(bitsWritten);
                         auto multiplier =
-                            Argh::DEFAULT_MUTLIPLES[multiplier_index];
+                            DEFAULT_MUTLIPLES[multiplier_index];
 
                         auto vec = BitVector3UnrelatedDecode(
                             static_cast<unsigned>
-                                (multiplier * Argh::MULTIPLIER_MAX_VALUE_ADJUST),
+                                (multiplier * MULTIPLIER_MAX_VALUE_ADJUST),
                             bits);
 
-                        auto m = Argh::Maxwell
+                        auto m = Maxwell
                         {
                             multiplier_index,
                             {
@@ -7054,8 +7044,8 @@ Frame Decode(
                             }
                         };
 
-                        auto b = Argh::to_gaffer(base[i]);
-                        auto t = Argh::to_gaffer(b, m, Argh::DEFAULT_MUTLIPLES);
+                        auto b = to_gaffer(base[i]);
+                        auto t = to_gaffer(b, m, DEFAULT_MUTLIPLES);
 
                         result[i].orientation_largest   = t.orientation_largest;
                         result[i].orientation_a         = t.vec[0];
