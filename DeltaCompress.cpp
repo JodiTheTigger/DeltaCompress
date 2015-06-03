@@ -7958,7 +7958,7 @@ int main(int, char**)
     {
         ChangedArrayEncoding::Exp,
         PosVector3Packer::Sorted_no_bit_count,
-        QuatPacker::Rotor,
+        QuatPacker::Gaffer,
     };
 
     if (doStats)
