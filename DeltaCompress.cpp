@@ -5617,8 +5617,10 @@ std::vector<uint8_t> EncodeStats(
                         auto multiplier =
                             Argh::DEFAULT_MUTLIPLES[m.multiplier_index];
 
-                        unsigned bitsWritten = 3;
-                        deltas.Write(m.multiplier_index, 3);
+                        unsigned bitsWritten =
+                            MinBits(Argh::DEFAULT_MUTLIPLES.size()-1);
+
+                        deltas.Write(m.multiplier_index, bitsWritten);
 
                         BitStream encoded;
                         IntVec3 ugh =
@@ -6389,8 +6391,10 @@ std::vector<uint8_t> Encode(
                         auto multiplier =
                             Argh::DEFAULT_MUTLIPLES[m.multiplier_index];
 
-                        unsigned bitsWritten = 3;
-                        deltas.Write(m.multiplier_index, 3);
+                        unsigned bitsWritten =
+                            MinBits(Argh::DEFAULT_MUTLIPLES.size()-1);
+
+                        deltas.Write(m.multiplier_index, bitsWritten);
 
                         BitStream encoded;
                         IntVec3 ugh =
@@ -7020,7 +7024,10 @@ Frame Decode(
 
                     if (changed)
                     {
-                        auto multiplier_index = bits.Read(3);
+                        unsigned bitsWritten =
+                            MinBits(Argh::DEFAULT_MUTLIPLES.size()-1);
+
+                        auto multiplier_index = bits.Read(bitsWritten);
                         auto multiplier =
                             Argh::DEFAULT_MUTLIPLES[multiplier_index];
 
