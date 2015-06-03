@@ -757,6 +757,14 @@ static const Multipliers DEFAULT_MUTLIPLES =
     65535.0f,
 };
 
+//static const Multipliers DEFAULT_MUTLIPLES =
+//{
+//    471.0f,
+//    512.0f,
+//    969.0f,
+//    65535.0f,
+//};
+
 static const float MULTIPLIER_MAX_VALUE_ADJUST = 0.6f;
 
 // The for love of god I couldn't derive the formula for generating the
