@@ -62,10 +62,6 @@ namespace Carryless_range_coder
 
     class Encoder
     {
-    private:
-        uint32_t m_min      = 0;
-        uint32_t m_range    = RANGE_MAX;
-
     public:
         Encoder(Bytes& bytes)
             : m_bytes(&bytes)
@@ -135,19 +131,93 @@ namespace Carryless_range_coder
         }
 
     private:
-        Bytes*  m_bytes = 0;
-        bool    m_first = false;
+        Bytes*  m_bytes     = 0;
+        uint32_t m_min      = 0;
+        uint32_t m_range    = RANGE_MAX;
 
         void Write(uint8_t value)
         {
-            if (!m_first)
+            m_bytes->push_back(value);
+        }
+    };
+
+    class Decoder
+    {
+    public:
+        Decoder(const Bytes& bytes)
+            : m_bytes(&bytes)
+            , m_byte_size(bytes.size())
+        {
+            for (unsigned i = CODE_BITS; i > 0; i -= A_BYTES_WORTH)
             {
-                m_bytes->push_back(value);
+                m_code = m_code << A_BYTES_WORTH | Read();
             }
-            else
+        }
+
+        uint32_t Decode()
+        {
+            m_next_range = m_range >> PROBABILITY_RANGE_BITS;
+            auto symbol_range = (m_code - m_min) / m_next_range;
+
+            assert(symbol_range <= PROBABILITY_MAX);
+
+            return symbol_range;
+        }
+
+        void Update(Range range)
+        {
+            assert((range.min + range.count) <= PROBABILITY_MAX);
+
+            m_min += m_next_range * range.min;
+            m_range = m_next_range * range.count;
+
+            // Break out the bit shift, and range renorm into sepeate
+            // loops for readability.
+
+            // while the top byte is different
+            while ((m_min ^ (m_min + m_range)) < RANGE_MIN)
             {
-                m_first = false;
+                m_code  <<= A_BYTES_WORTH;
+                m_code   |= Read();
+                m_min   <<= A_BYTES_WORTH;
+                m_range <<= A_BYTES_WORTH;
             }
+
+            // Deal with the range been too small, and carrys.
+            while (m_range < PROBABILITY_SIZE)
+            {
+                auto m_high = m_min | PROBABILITY_MAX;
+                m_range = m_high - m_min;
+
+                m_code  <<= A_BYTES_WORTH;
+                m_code   |= Read();
+                m_range <<= A_BYTES_WORTH;
+                m_min   <<= A_BYTES_WORTH;
+            }
+        }
+
+        uint32_t FlushAndGetBytesRead()
+        {
+            return m_read_index;
+        }
+
+    private:
+        const Bytes*    m_bytes        = 0;
+        uint32_t        m_min          = 0;
+        uint32_t        m_range        = RANGE_MAX;
+        uint32_t        m_code         = 0;
+        uint32_t        m_next_range   = 0;
+        uint32_t        m_byte_size    = 0;
+        uint32_t        m_read_index   = 0;
+
+        uint8_t Read()
+        {
+            if (m_read_index < m_byte_size)
+            {
+                return (*m_bytes)[m_read_index++];
+            }
+
+            return 0;
         }
     };
 }
