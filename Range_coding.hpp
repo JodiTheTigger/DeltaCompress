@@ -46,18 +46,18 @@ namespace Carryless_range_coder
 {
     using namespace Range_types;
 
-    static const uint32_t CODE_BITS     = 32;
-//    static const uint32_t TOP_VALUE     = (1ul << (CODE_BITS - 1));
-//    static const uint32_t SHIFT_BITS    = (CODE_BITS - 9);
-//    static const uint32_t EXTRA_BITS    = ((CODE_BITS - 2) % 8 + 1);
-//    static const uint32_t BOTTOM_VALUE  = (TOP_VALUE >> 8);
+    // RAM: TODO: Read
+    // http://cbloomrants.blogspot.co.nz/2008/10/10-05-08-5.html
+    // and clarify offsets used, as you're still confused with 16.
 
+    static const uint32_t CODE_BITS              = 32;
     static const uint32_t MAX_RANGE              = ~0;
-    static const uint32_t TOP_SHIFT              = CODE_BITS - 8;
-    static const uint32_t TOP                    = 1ul << TOP_SHIFT;
-    static const uint32_t BOTTOM                 = TOP >> 8;
-    static const uint32_t BOTTOM_MASK            = BOTTOM - 1;
-    static const uint32_t PROBABILITY_RANGE_BITS = CODE_BITS - 16;
+    static const uint32_t TOP_RANGE_BITS         = 8;
+    static const uint32_t SMASH_RANGE_BITS       = 8;
+    static const uint32_t TOP_SHIFT              = CODE_BITS - TOP_RANGE_BITS;
+    static const uint32_t LOWEST_RANGE_VALUE     = 1u << TOP_SHIFT;
+    static const uint32_t NON_RANGE_MASK         = LOWEST_RANGE_VALUE - 1;
+    static const uint32_t PROBABILITY_RANGE_BITS = CODE_BITS - (TOP_RANGE_BITS + SMASH_RANGE_BITS);
     static const uint32_t PROBABILITY_RANGE_SIZE = 1 << PROBABILITY_RANGE_BITS;
     static const uint32_t PROBABILITY_RANGE_MAX  = PROBABILITY_RANGE_SIZE - 1;
 
@@ -78,7 +78,7 @@ namespace Carryless_range_coder
             // bytes.
             auto min        = m_min;
             auto max        = m_min + m_range;
-            auto round_up   = PROBABILITY_RANGE_MAX - 1;
+            auto round_up   = NON_RANGE_MASK;
 
             while (round_up)
             {
@@ -89,15 +89,15 @@ namespace Carryless_range_coder
                     break;
                 }
 
-                round_up >>= 8;
+                round_up >>= TOP_RANGE_BITS;
             }
 
             while (min)
             {
-                auto to_write = (min >> SHIFT_BITS) & 0xFF;
+                auto to_write = (min >> TOP_SHIFT) & 0xFF;
                 Write(to_write);
 
-                min <<= 8;
+                min <<= TOP_RANGE_BITS;
             }
         }
 
@@ -113,25 +113,25 @@ namespace Carryless_range_coder
             // Break out the bit shift, and range renorm into sepeate
             // loops for readability.
 
-            // RAM: TODO: Read
-            // http://cbloomrants.blogspot.co.nz/2008/10/10-05-08-5.html
-            // and clarify offsets used, as you're still confused with 16.
-
             // while the top byte is different
-            while ((m_low ^ (m_low + m_range)) < TOP)
+            while ((m_min ^ (m_min + m_range)) < LOWEST_RANGE_VALUE)
             {
-                Write(m_low >> TOP_SHIFT);
-                m_range <<= 8;
-                m_low <<= 8;
+                Write(m_min >> TOP_SHIFT);
+
+                m_range <<= TOP_RANGE_BITS;
+                m_min <<= TOP_RANGE_BITS;
             }
 
             // Deal with the range been too small, and carrys.
             while (m_range < PROBABILITY_RANGE_SIZE)
             {
-                Write(m_low >> TOP_SHIFT);
-                m_range = ((~m_min) & PROBABILITY_RANGE_MAX);
-                m_range <<= 8;
-                m_low <<= 8;
+                Write(m_min >> TOP_SHIFT);
+
+                auto m_high = m_min | PROBABILITY_RANGE_MAX;
+                m_range = m_high - m_min;
+
+                m_range <<= TOP_RANGE_BITS;
+                m_min <<= TOP_RANGE_BITS;
             }
         }
 
