@@ -50,22 +50,21 @@ namespace Carryless_range_coder
     // http://cbloomrants.blogspot.co.nz/2008/10/10-05-08-5.html
     // and clarify offsets used, as you're still confused with 16.
 
-    static const uint32_t CODE_BITS              = 32;
-    static const uint32_t MAX_RANGE              = ~0;
-    static const uint32_t TOP_RANGE_BITS         = 8;
-    static const uint32_t SMASH_RANGE_BITS       = 8;
-    static const uint32_t TOP_SHIFT              = CODE_BITS - TOP_RANGE_BITS;
-    static const uint32_t LOWEST_RANGE_VALUE     = 1u << TOP_SHIFT;
-    static const uint32_t NON_RANGE_MASK         = LOWEST_RANGE_VALUE - 1;
-    static const uint32_t PROBABILITY_RANGE_BITS = CODE_BITS - (TOP_RANGE_BITS + SMASH_RANGE_BITS);
-    static const uint32_t PROBABILITY_RANGE_SIZE = 1 << PROBABILITY_RANGE_BITS;
-    static const uint32_t PROBABILITY_RANGE_MAX  = PROBABILITY_RANGE_SIZE - 1;
+    static const uint32_t CODE_BITS        = 32;
+    static const uint32_t A_BYTES_WORTH    = 8;
+    static const uint32_t RANGE_MAX        = ~0;
+    static const uint32_t RANGE_MIN_SHIFT  = CODE_BITS - A_BYTES_WORTH;
+    static const uint32_t RANGE_MIN        = 1u << RANGE_MIN_SHIFT;
+    static const uint32_t NON_RANGE_MASK   = RANGE_MIN - 1;
+    static const uint32_t PROBABILITY_BITS = CODE_BITS - 2 * A_BYTES_WORTH;
+    static const uint32_t PROBABILITY_SIZE = 1u << PROBABILITY_BITS;
+    static const uint32_t PROBABILITY_MAX  = PROBABILITY_SIZE - 1;
 
     class Encoder
     {
     private:
         uint32_t m_min      = 0;
-        uint32_t m_range    = MAX_RANGE;
+        uint32_t m_range    = RANGE_MAX;
 
     public:
         Encoder(Bytes& bytes)
@@ -89,15 +88,15 @@ namespace Carryless_range_coder
                     break;
                 }
 
-                round_up >>= TOP_RANGE_BITS;
+                round_up >>= A_BYTES_WORTH;
             }
 
             while (min)
             {
-                auto to_write = (min >> TOP_SHIFT) & 0xFF;
+                auto to_write = (min >> RANGE_MIN_SHIFT) & 0xFF;
                 Write(to_write);
 
-                min <<= TOP_RANGE_BITS;
+                min <<= A_BYTES_WORTH;
             }
         }
 
@@ -114,24 +113,24 @@ namespace Carryless_range_coder
             // loops for readability.
 
             // while the top byte is different
-            while ((m_min ^ (m_min + m_range)) < LOWEST_RANGE_VALUE)
+            while ((m_min ^ (m_min + m_range)) < RANGE_MIN)
             {
-                Write(m_min >> TOP_SHIFT);
+                Write(m_min >> RANGE_MIN_SHIFT);
 
-                m_range <<= TOP_RANGE_BITS;
-                m_min <<= TOP_RANGE_BITS;
+                m_range <<= A_BYTES_WORTH;
+                m_min   <<= A_BYTES_WORTH;
             }
 
             // Deal with the range been too small, and carrys.
-            while (m_range < PROBABILITY_RANGE_SIZE)
+            while (m_range < PROBABILITY_SIZE)
             {
-                Write(m_min >> TOP_SHIFT);
+                Write(m_min >> RANGE_MIN_SHIFT);
 
-                auto m_high = m_min | PROBABILITY_RANGE_MAX;
+                auto m_high = m_min | PROBABILITY_MAX;
                 m_range = m_high - m_min;
 
-                m_range <<= TOP_RANGE_BITS;
-                m_min <<= TOP_RANGE_BITS;
+                m_range <<= A_BYTES_WORTH;
+                m_min   <<= A_BYTES_WORTH;
             }
         }
 
