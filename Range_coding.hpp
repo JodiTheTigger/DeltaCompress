@@ -19,6 +19,14 @@
 //      This means the models become templates as well.
 //      Make both coders work at 32 andd 64 bits.
 //      Fix the max allowed range for the original 32-9 instead of 33-16 bits.
+//
+// RAM: Ok, don't even do that. Just test the carry-less against the first range
+//      Coder, and move over to the one that compresses better. Just give up
+//      about the min and max size problem as the only way to solve that
+//      is to use a binary coder (exclusivly) instead. Maybe just do that.
+//      yea. Implement a binary encoder as well, see if we can match fabian
+//      and then try again. But do that as a last resort if we cannot get
+//      anywhere near Fabian's totals.
 
 #pragma once
 
