@@ -14,6 +14,11 @@
 //      No, wait, it seems like range stealing works the way arth coders
 //      avoid having underflow and carry issues. By have a spare range up their
 //      sleve.
+// RAM: Ok, the steam range doesn't work. So don't use it, remove it.
+//      Make the binary coder a template function to remove duplication.
+//      This means the models become templates as well.
+//      Make both coders work at 32 andd 64 bits.
+//      Fix the max allowed range for the original 32-9 instead of 33-16 bits.
 
 #pragma once
 
