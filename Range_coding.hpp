@@ -1,16 +1,8 @@
 // Copyright 2015 Richard Maxwell, all rights reserved.
 
-// Try doing http://www.arturocampos.com/ac_range.html
-// NOTE: don't encode more than 2 << 24 values or you will
-// have a bad time.
-
-// RAM: TODO: Check out http://ezcodesample.com/reanatomy.html
-// RAM: http://ezcodesample.com/reanatomy.html
-// RAM: Implement http://ezcodesample.com/arithmetic/rangemapper2.txt
-//      In the hope it doesn't have the overflow problem I'm having
-//      and that it plays better with Fabian's tail improvement.
-//      No wait,  it looks too complicated, try Dmitry Subbotin carryless
-//      range coder instead.
+// Interesting reading:
+// http://www.arturocampos.com/ac_range.html
+// http://cbloomrants.blogspot.co.nz/2010/09/09-16-10-modern-arithmetic-coding-from.html
 
 #pragma once
 
@@ -42,6 +34,8 @@ namespace Range_types
 // Coders
 // //////////////////////////////////////////////
 
+// NOTE: don't encode more than 2 << 24 values or you will
+// have a bad time.
 namespace Range_coders
 {
     using namespace Range_types;
