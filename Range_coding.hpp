@@ -11,6 +11,9 @@
 //      and that it plays better with Fabian's tail improvement.
 //      No wait,  it looks too complicated, try Dmitry Subbotin carryless
 //      range coder instead.
+//      No, wait, it seems like range stealing works the way arth coders
+//      avoid having underflow and carry issues. By have a spare range up their
+//      sleve.
 
 #pragma once
 
@@ -98,8 +101,9 @@ namespace Carryless_range_coder
 
         void Encode(Range range)
         {
+            assert((range.min + range.count) <= PROBABILITY_SIZE);
 
-            auto new_range          = m_range >> PROBABILITY_RANGE_BITS;
+            auto new_range          = m_range >> PROBABILITY_BITS;
             auto new_range_start    = range.min * new_range;
 
             m_min  += new_range_start;
@@ -108,14 +112,14 @@ namespace Carryless_range_coder
             // Break out the bit shift, and range renorm into sepeate
             // loops for readability.
 
-            // while the top byte is different
+            // while the top byte is the same
             while ((m_min ^ (m_min + m_range)) < RANGE_MIN)
             {
                 Write(m_min >> RANGE_MIN_SHIFT);
 
                 m_range <<= A_BYTES_WORTH;
                 m_min   <<= A_BYTES_WORTH;
-            }
+            }            
 
             // Deal with the range been too small, and carrys.
             while (m_range < PROBABILITY_SIZE)
@@ -156,25 +160,24 @@ namespace Carryless_range_coder
 
         uint32_t Decode()
         {
-            m_next_range = m_range >> PROBABILITY_RANGE_BITS;
+            m_next_range = m_range >> PROBABILITY_BITS;
             auto symbol_range = (m_code - m_min) / m_next_range;
 
-            assert(symbol_range <= PROBABILITY_MAX);
+            assert(symbol_range <= PROBABILITY_SIZE);
 
             return symbol_range;
         }
 
         void Update(Range range)
         {
-            assert((range.min + range.count) <= PROBABILITY_MAX);
+            assert((range.min + range.count) <= PROBABILITY_SIZE);
 
             m_min += m_next_range * range.min;
             m_range = m_next_range * range.count;
 
             // Break out the bit shift, and range renorm into sepeate
             // loops for readability.
-
-            // while the top byte is different
+            // while the top byte is the same
             while ((m_min ^ (m_min + m_range)) < RANGE_MIN)
             {
                 m_code  <<= A_BYTES_WORTH;
@@ -219,6 +222,57 @@ namespace Carryless_range_coder
 
             return 0;
         }
+    };
+
+
+
+    class Binary_encoder
+    {
+    public:
+        Binary_encoder(Encoder& coder)
+            : m_encoder(&coder)
+        {}
+
+        void Encode(unsigned value, uint16_t one_probability)
+        {
+            // Note: First range is for one_probability, not zero.
+            m_encoder->Encode(
+                value ?
+                    Range{0, one_probability} :
+                    Range{one_probability, Carryless_range_coder::PROBABILITY_MAX - one_probability});
+        }
+
+    private:
+        Encoder* m_encoder;
+    };
+
+    class Binary_decoder
+    {
+    public:
+        Binary_decoder(Decoder& coder)
+            : m_decoder(&coder)
+        {}
+
+        unsigned Decode(unsigned one_probability)
+        {
+            auto symbol = m_decoder->Decode();
+            auto result = (symbol < one_probability);
+
+            m_decoder->Update(
+                result ?
+                    Range{0, one_probability} :
+                    Range{one_probability, Carryless_range_coder::PROBABILITY_MAX - one_probability});
+
+            return result;
+        }
+
+        uint32_t FlushAndGetBytesRead()
+        {
+            return m_decoder->FlushAndGetBytesRead();
+        }
+
+    private:
+        Decoder* m_decoder;
     };
 }
 
@@ -519,7 +573,7 @@ namespace Range_coders
 namespace Range_models
 {
     using namespace Range_types;
-    using namespace Range_coders;
+    using namespace Carryless_range_coder;
 
     // Ideas from https://github.com/rygorous/gaffer_net/blob/master/main.cpp
 
@@ -1220,7 +1274,7 @@ namespace Range_models
 void range_tests()
 {
     using namespace Range_types;
-    using namespace Range_coders;
+    using namespace Carryless_range_coder;
     using namespace Range_models;
 
     {
