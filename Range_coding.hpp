@@ -27,6 +27,11 @@
 //      yea. Implement a binary encoder as well, see if we can match fabian
 //      and then try again. But do that as a last resort if we cannot get
 //      anywhere near Fabian's totals.
+//
+// RAM: Yup, carry-less is worse. Drop it. It also fails packet assert as well.
+//      when used for a full packet code/decode.
+//      (probally due to flush code due to voerflow/underflow something).
+
 
 #pragma once
 
