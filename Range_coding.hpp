@@ -45,6 +45,285 @@ namespace Range_types
 // Coders
 // //////////////////////////////////////////////
 
+namespace Stolen_0_range_coder
+{
+    using namespace Range_types;
+
+    // RAM: TODO: Read
+    // http://cbloomrants.blogspot.co.nz/2008/10/10-05-08-5.html
+    // and clarify offsets used, as you're still confused with 16.
+
+    static const uint32_t CODE_BITS        = 32;
+    static const uint32_t A_BYTES_WORTH    = 8;
+    static const uint32_t RANGE_MAX        = ~0;
+    static const uint32_t RANGE_MIN_SHIFT  = CODE_BITS - A_BYTES_WORTH;
+    static const uint32_t RANGE_MIN        = 1u << RANGE_MIN_SHIFT;
+    static const uint32_t NON_RANGE_MASK   = RANGE_MIN - 1;
+    static const uint32_t PROBABILITY_BITS = CODE_BITS - 2 * A_BYTES_WORTH;
+    static const uint32_t PROBABILITY_SIZE = 1u << PROBABILITY_BITS;
+    static const uint32_t PROBABILITY_MAX  = PROBABILITY_SIZE - 1;
+
+    class Encoder
+    {
+    public:
+        Encoder(Bytes& bytes)
+            : m_bytes(&bytes)
+        {}
+
+        ~Encoder()
+        {
+            // Change the range so that we write the minimum amount of tail
+            // bytes.
+            auto min        = m_min;
+            auto max        = m_min + m_range;
+            auto round_up   = NON_RANGE_MASK;
+
+            while (round_up)
+            {
+                auto rounded = (min + round_up) & ~round_up;
+                if (rounded <= max)
+                {
+                    min = rounded;
+                    break;
+                }
+
+                round_up >>= A_BYTES_WORTH;
+            }
+
+            while (min)
+            {
+                auto to_write = (min >> RANGE_MIN_SHIFT) & 0xFF;
+                Write(to_write);
+
+                min <<= A_BYTES_WORTH;
+            }
+        }
+
+        void Encode(Range range)
+        {
+            // Theif!
+            if (not range.min)
+            {
+                // Yea, can't steal it all...
+                assert(range.count > 1);
+
+                ++range.min;
+                --range.count;
+            }
+
+            assert((range.min + range.count) <= PROBABILITY_SIZE);
+
+            auto new_range          = m_range >> PROBABILITY_BITS;
+            auto new_range_start    = range.min * new_range;
+
+            m_min  += new_range_start;
+            m_range = new_range * range.count;
+
+            // Break out the bit shift, and range renorm into sepeate
+            // loops for readability.
+
+            // while the top byte is the same
+            while ((m_min ^ (m_min + m_range)) < RANGE_MIN)
+            {
+                Write(m_min >> RANGE_MIN_SHIFT);
+
+                m_range <<= A_BYTES_WORTH;
+                m_min   <<= A_BYTES_WORTH;
+            }
+
+            // Deal with the range been too small, and carrys.
+            // Ive done this wrong. See
+            // http://ezcodesample.com/arithmetic/RanCodeAdp.txt
+            // and understand why. Basically range is turning into 0
+            // then after that I'm stuck in this loop forever.
+            while (m_range < PROBABILITY_SIZE)
+            {
+                // Um, will this work?
+                // RAM: FIXME: Copy/paste! Use recursion?
+                // Insert a range {0,1} to get past the carries.
+                auto new_range          = m_range >> PROBABILITY_BITS;
+                auto new_range_start    = 0 * new_range;
+
+                m_min  += new_range_start;
+                m_range = new_range * 1;
+
+                // while the top byte is the same
+                while ((m_min ^ (m_min + m_range)) < RANGE_MIN)
+                {
+                    Write(m_min >> RANGE_MIN_SHIFT);
+
+                    m_range <<= A_BYTES_WORTH;
+                    m_min   <<= A_BYTES_WORTH;
+                }
+            }
+        }
+
+    private:
+        Bytes*  m_bytes     = 0;
+        uint32_t m_min      = 0;
+        uint32_t m_range    = RANGE_MAX;
+
+        void Write(uint8_t value)
+        {
+            m_bytes->push_back(value);
+        }
+    };
+
+    class Decoder
+    {
+    public:
+        Decoder(const Bytes& bytes)
+            : m_bytes(&bytes)
+            , m_byte_size(bytes.size())
+        {
+            for (unsigned i = CODE_BITS; i > 0; i -= A_BYTES_WORTH)
+            {
+                m_code = m_code << A_BYTES_WORTH | Read();
+            }
+        }
+
+        uint32_t Decode()
+        {
+            m_next_range = m_range >> PROBABILITY_BITS;
+            auto symbol_range = (m_code - m_min) / m_next_range;
+
+            assert(symbol_range <= PROBABILITY_SIZE);
+
+            // Shhh, don't say I stole it
+            while (not symbol_range)
+            {
+                Update_internal({0, 1});
+
+                m_next_range = m_range >> PROBABILITY_BITS;
+                symbol_range = (m_code - m_min) / m_next_range;
+            }
+
+            return symbol_range;
+        }
+
+        void Update(Range range)
+        {
+            // Theif!
+            if (not range.min)
+            {
+                // Yea, can't steal it all...
+                assert(range.count > 1);
+
+                ++range.min;
+                --range.count;
+            }
+
+            Update_internal(range);
+        }
+
+        void Update_internal(Range range)
+        {
+            assert((range.min + range.count) <= PROBABILITY_SIZE);
+
+            m_min += m_next_range * range.min;
+            m_range = m_next_range * range.count;
+
+            // Break out the bit shift, and range renorm into sepeate
+            // loops for readability.
+            // while the top byte is the same
+            while ((m_min ^ (m_min + m_range)) < RANGE_MIN)
+            {
+                m_code  <<= A_BYTES_WORTH;
+                m_code   |= Read();
+                m_min   <<= A_BYTES_WORTH;
+                m_range <<= A_BYTES_WORTH;
+            }
+
+            // Deal with the range been too small, and carrys.
+            while (m_range < PROBABILITY_SIZE)
+            {
+                auto m_high = m_min | PROBABILITY_MAX;
+                m_range = m_high - m_min;
+
+                m_code  <<= A_BYTES_WORTH;
+                m_code   |= Read();
+                m_range <<= A_BYTES_WORTH;
+                m_min   <<= A_BYTES_WORTH;
+            }
+        }
+
+        uint32_t FlushAndGetBytesRead()
+        {
+            return m_read_index;
+        }
+
+    private:
+        const Bytes*    m_bytes        = 0;
+        uint32_t        m_min          = 0;
+        uint32_t        m_range        = RANGE_MAX;
+        uint32_t        m_code         = 0;
+        uint32_t        m_next_range   = 0;
+        uint32_t        m_byte_size    = 0;
+        uint32_t        m_read_index   = 0;
+
+        uint8_t Read()
+        {
+            if (m_read_index < m_byte_size)
+            {
+                return (*m_bytes)[m_read_index++];
+            }
+
+            return 0;
+        }
+    };
+
+
+
+    class Binary_encoder
+    {
+    public:
+        Binary_encoder(Encoder& coder)
+            : m_encoder(&coder)
+        {}
+
+        void Encode(unsigned value, uint16_t one_probability)
+        {
+            // Note: First range is for one_probability, not zero.
+            m_encoder->Encode(
+                value ?
+                    Range{0, one_probability} :
+                    Range{one_probability, Stolen_0_range_coder::PROBABILITY_MAX - one_probability});
+        }
+
+    private:
+        Encoder* m_encoder;
+    };
+
+    class Binary_decoder
+    {
+    public:
+        Binary_decoder(Decoder& coder)
+            : m_decoder(&coder)
+        {}
+
+        unsigned Decode(unsigned one_probability)
+        {
+            auto symbol = m_decoder->Decode();
+            auto result = (symbol < one_probability);
+
+            m_decoder->Update(
+                result ?
+                    Range{0, one_probability} :
+                    Range{one_probability, Stolen_0_range_coder::PROBABILITY_MAX - one_probability});
+
+            return result;
+        }
+
+        uint32_t FlushAndGetBytesRead()
+        {
+            return m_decoder->FlushAndGetBytesRead();
+        }
+
+    private:
+        Decoder* m_decoder;
+    };
+}
+
 namespace Carryless_range_coder
 {
     using namespace Range_types;
@@ -573,7 +852,7 @@ namespace Range_coders
 namespace Range_models
 {
     using namespace Range_types;
-    using namespace Carryless_range_coder;
+    using namespace Stolen_0_range_coder;
 
     // Ideas from https://github.com/rygorous/gaffer_net/blob/master/main.cpp
 
@@ -1274,7 +1553,7 @@ namespace Range_models
 void range_tests()
 {
     using namespace Range_types;
-    using namespace Carryless_range_coder;
+    using namespace Stolen_0_range_coder;
     using namespace Range_models;
 
     {
