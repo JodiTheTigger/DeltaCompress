@@ -887,9 +887,68 @@ namespace Fabian
 
             // //////////////////////////////////////////////////////
 
+
+            Vec3i a =
+            {
+                base[0].position_x,
+                base[0].position_y,
+                base[0].position_z,
+            };
+
+            auto sub = [](const Vec3i lhs, const Vec3i& rhs) -> Vec3i
+            {
+                return
+                {
+                    lhs[0] - rhs[0],
+                    lhs[1] - rhs[1],
+                    lhs[2] - rhs[2]
+                };
+            };
+
+            auto mag_squared = [](const Vec3i& lhs) -> int
+            {
+                return
+                {
+                    lhs[0] * lhs[0] +
+                    lhs[1] * lhs[1] +
+                    lhs[2] * lhs[2]
+                };
+            };
+
+            Vec3i b =
+            {
+                target[0].position_x,
+                target[0].position_y,
+                target[0].position_z,
+            };
+
+            // //////////////////////////////////////////////////////
+
             for (unsigned i = 0; i < size; ++i)
             {
                 // //////////////////////////////////////////////////////
+
+                Vec3i x =
+                {
+                    base[i].position_x,
+                    base[i].position_y,
+                    base[i].position_z,
+                };
+
+                auto dist_a = mag_squared(sub(a, x));
+                auto dist_b = mag_squared(sub(b, x));
+                unsigned min_distance_squared = std::min(dist_a, dist_b);
+
+
+                static const unsigned DANGER_DISTANCE = 3328;
+                static const unsigned DANGER_DISTANCE_SQUARED
+                    = DANGER_DISTANCE * DANGER_DISTANCE;
+
+                auto close =
+                    min_distance_squared < DANGER_DISTANCE_SQUARED;
+
+                // //////////////////////////////////////////////////////
+
 
                 // start from current - history, count x times to see if changed.
 
@@ -937,7 +996,11 @@ namespace Fabian
                         1
                     );
 
-                auto close = close_to_cube_0_fabian(base[i]);
+                if (i == 0)
+                {
+                    close = close_to_cube_0_fabian(base[i]);
+                }
+
                 auto quat_lookup = last_quat_changed_too + 2*close;
                 auto interact_lookup =
                     base[i].interacting +
@@ -1264,6 +1327,9 @@ namespace Actually_trying
             // RAM: Distance from the line created by the cube when it moves
             // is used to determine if a point would have moved.
             // d^2 = |(x2-x1)x(x1-xpoint)|^2 / |(x2-x1)|^2
+            // RAM: Can't use that one as it assume an infinit line length.
+            // Find a better algorithm when you have time. For now, will
+            // take the smallest distance from either endpoint to cheat.
 
             Vec3i a =
             {
@@ -1282,25 +1348,25 @@ namespace Actually_trying
                 };
             };
 
-            auto squared = [](const Vec3i& lhs) -> Vec3i
+            auto mag_squared = [](const Vec3i& lhs) -> int
             {
                 return
                 {
-                    lhs[0] * lhs[0],
-                    lhs[1] * lhs[1],
+                    lhs[0] * lhs[0] +
+                    lhs[1] * lhs[1] +
                     lhs[2] * lhs[2]
                 };
             };
 
-            auto cross = [](const Vec3i& lhs, const Vec3i rhs) -> Vec3i
-            {
-                return
-                {
-                    lhs[1] * rhs[2] - lhs[2] * rhs[1],
-                    lhs[2] * rhs[0] - lhs[0] * rhs[2],
-                    lhs[0] * rhs[1] - lhs[1] * rhs[0]
-                };
-            };
+//            auto cross = [](const Vec3i& lhs, const Vec3i rhs) -> Vec3i
+//            {
+//                return
+//                {
+//                    lhs[1] * rhs[2] - lhs[2] * rhs[1],
+//                    lhs[2] * rhs[0] - lhs[0] * rhs[2],
+//                    lhs[0] * rhs[1] - lhs[1] * rhs[0]
+//                };
+//            };
 
             Vec3i b =
             {
@@ -1308,11 +1374,6 @@ namespace Actually_trying
                 target[0].position_y,
                 target[0].position_z,
             };
-
-            auto b_minus_a = sub(b, a);
-            auto b_minus_a_2 = squared(b_minus_a);
-            cross(b_minus_a_2, b_minus_a);
-
 
 #endif
 
@@ -1328,9 +1389,9 @@ namespace Actually_trying
             // 66%  3328
             // 95%  6656
             // Fabian uses 2048 per component.
-//            static const unsigned DANGER_DISTANCE = 3328;
-//            static const unsigned DANGER_DISTANCE_SQUARED
-//                = DANGER_DISTANCE * DANGER_DISTANCE;
+            static const unsigned DANGER_DISTANCE = 3328;
+            static const unsigned DANGER_DISTANCE_SQUARED
+                = DANGER_DISTANCE * DANGER_DISTANCE;
 
 //            auto close_to_cube_0 = [&base_first]
 //            (
@@ -1359,6 +1420,26 @@ namespace Actually_trying
 
             for (unsigned i = 1; i < size; ++i)
             {
+                // //////////////////////////////////////////////////////
+
+                Vec3i x =
+                {
+                    base[i].position_x,
+                    base[i].position_y,
+                    base[i].position_z,
+                };
+
+                auto dist_a = mag_squared(sub(a, x));
+                auto dist_b = mag_squared(sub(b, x));
+                unsigned min_distance_squared = std::min(dist_a, dist_b);
+
+                bool close =
+                    min_distance_squared < DANGER_DISTANCE_SQUARED;
+
+                if (close)
+                {
+                    close = false;
+                }
                 // //////////////////////////////////////////////////////
 
                 // start from current - history, count x times to see if changed.
