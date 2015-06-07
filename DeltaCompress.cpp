@@ -1310,34 +1310,34 @@ namespace Actually_trying
 
                 // start from current - history, count x times to see if changed.
 
-//                auto last_x_changed =
-//                    [&base, &target](unsigned current, unsigned x, unsigned history)
-//                    -> bool
-//                {
-//                    assert(history);
-//                    assert(x <= history);
+                auto last_x_changed =
+                    [&base, &target](unsigned current, unsigned x, unsigned history)
+                    -> bool
+                {
+                    assert(history);
+                    assert(x <= history);
 
-//                    if (current < history)
-//                    {
-//                        return false;
-//                    }
+                    if (current < history)
+                    {
+                        return false;
+                    }
 
-//                    auto start_index = current - history;
-//                    auto end_index = start_index + x;
-//                    for (unsigned j = start_index; j <= end_index; ++j)
-//                    {
-//                        if (!quat_equal(base[j], target[j]))
-//                        {
-//                            return true;
-//                        }
-//                        if (!pos_equal(base[j], target[j]))
-//                        {
-//                            return true;
-//                        }
-//                    }
+                    auto start_index = current - history;
+                    auto end_index = start_index + x;
+                    for (unsigned j = start_index; j <= end_index; ++j)
+                    {
+                        if (!quat_equal(base[j], target[j]))
+                        {
+                            return true;
+                        }
+                        if (!pos_equal(base[j], target[j]))
+                        {
+                            return true;
+                        }
+                    }
 
-//                    return false;
-//                };
+                    return false;
+                };
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
                 auto pos_changed = !pos_equal(base[i], target[i]);                
