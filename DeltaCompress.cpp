@@ -1196,20 +1196,6 @@ namespace Actually_trying
         // -122: 0.20
     }
 
-    // RAM: data stats interacting correlation.
-    unsigned g_i_changed = 0;
-    unsigned g_i_no_changed = 0;
-    unsigned g_i_changes_per_packet_min = 100000;
-    unsigned g_i_changes_per_packet_max = 0;
-    unsigned g_i_changes_per_packet_sum = 0;
-
-    unsigned g_i_interactive_change = 0;
-    unsigned g_i_interactive_no_change = 0;
-
-    unsigned g_i_changed_but_not_interacting = 0;
-
-
-
     auto encode
     (
         const Frame& base,
@@ -1368,62 +1354,6 @@ namespace Actually_trying
 
 //                return distance <= DANGER_DISTANCE_SQUARED;
 //            };
-
-            // //////////////////////////////////////////////////////
-
-            // Get stats
-            unsigned i_changed = 0;
-            for (unsigned i = 1; i < size; ++i)
-            {
-                auto pos_changed = !pos_equal(base[i], target[i]);
-                auto quat_changed = !quat_equal(base[i], target[i]);
-                auto changed = pos_changed | quat_changed;
-
-                if (base[i].interacting != target[i].interacting)
-                {
-                    i_changed++;
-                }
-
-                if (base[i].interacting)
-                {
-                    if (changed)
-                    {
-                        g_i_interactive_change++;
-                    }
-                    else
-                    {
-                        g_i_interactive_no_change++;
-                    }
-                }
-
-                if (changed)
-                {
-                    if (!base[i].interacting)
-                    {
-                        g_i_changed_but_not_interacting++;
-                    }
-                }
-            }
-
-            if (i_changed)
-            {
-                g_i_changed++;
-                g_i_changes_per_packet_sum += i_changed;
-                g_i_changes_per_packet_min = std::min
-                (
-                    g_i_changes_per_packet_min,
-                    i_changed
-                );
-                g_i_changes_per_packet_max = std::max
-                (
-                    g_i_changes_per_packet_max,
-                    i_changed
-                );
-            }
-            else
-            {
-                g_i_no_changed++;
-            }
 
             // //////////////////////////////////////////////////////
 
@@ -3344,41 +3274,26 @@ void range_compress(std::vector<Frame>& frames)
         "Actually_trying"
     );
 
-    unsigned p_total = packets - PacketDelta;
-    PRINT_INT(p_total);
-    PRINT_INT(Actually_trying::g_i_changed);
-    PRINT_INT(Actually_trying::g_i_no_changed);
-    PRINT_INT(Actually_trying::g_i_changes_per_packet_min);
-    PRINT_INT(Actually_trying::g_i_changes_per_packet_max);
-    auto i_changes_per_packet_average =
-        Actually_trying::g_i_changes_per_packet_sum /
-        (float) (p_total);
-    PRINT_FLOAT(i_changes_per_packet_average);
+    test
+    (
+        Sorted_position::encode,
+        Sorted_position::decode,
+        "Sorted_position"
+    );
 
-    PRINT_INT(Actually_trying::g_i_interactive_change);
-    PRINT_INT(Actually_trying::g_i_interactive_no_change);
-    PRINT_INT(Actually_trying::g_i_changed_but_not_interacting);
+    test
+    (
+        Naieve_rotor::encode,
+        Naieve_rotor::decode,
+        "Naieve_rotor"
+    );
 
-//    test
-//    (
-//        Sorted_position::encode,
-//        Sorted_position::decode,
-//        "Sorted_position"
-//    );
-
-//    test
-//    (
-//        Naieve_rotor::encode,
-//        Naieve_rotor::decode,
-//        "Naieve_rotor"
-//    );
-
-//    test
-//    (
-//        Naieve_gaffer::encode,
-//        Naieve_gaffer::decode,
-//        "Naieve_gaffer"
-//    );
+    test
+    (
+        Naieve_gaffer::encode,
+        Naieve_gaffer::decode,
+        "Naieve_gaffer"
+    );
 }
 
 int main(int, char**)
