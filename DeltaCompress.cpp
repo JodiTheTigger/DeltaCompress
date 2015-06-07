@@ -887,119 +887,24 @@ namespace Fabian
 
             // //////////////////////////////////////////////////////
 
-
-            Vec3i a =
-            {
-                base[0].position_x,
-                base[0].position_y,
-                base[0].position_z,
-            };
-
-            auto sub = [](const Vec3i lhs, const Vec3i& rhs) -> Vec3i
-            {
-                return
-                {
-                    lhs[0] - rhs[0],
-                    lhs[1] - rhs[1],
-                    lhs[2] - rhs[2]
-                };
-            };
-
-            auto mag_squared = [](const Vec3i& lhs) -> int
-            {
-                return
-                {
-                    lhs[0] * lhs[0] +
-                    lhs[1] * lhs[1] +
-                    lhs[2] * lhs[2]
-                };
-            };
-
-            Vec3i b =
-            {
-                target[0].position_x,
-                target[0].position_y,
-                target[0].position_z,
-            };
-
-            // //////////////////////////////////////////////////////
-
             for (unsigned i = 0; i < size; ++i)
             {
-                // //////////////////////////////////////////////////////
-
-                Vec3i x =
-                {
-                    base[i].position_x,
-                    base[i].position_y,
-                    base[i].position_z,
-                };
-
-                auto dist_a = mag_squared(sub(a, x));
-                auto dist_b = mag_squared(sub(b, x));
-                unsigned min_distance_squared = std::min(dist_a, dist_b);
-
-
-                static const unsigned DANGER_DISTANCE = 3328;
-                static const unsigned DANGER_DISTANCE_SQUARED
-                    = DANGER_DISTANCE * DANGER_DISTANCE;
-
-                auto close =
-                    min_distance_squared < DANGER_DISTANCE_SQUARED;
-
-                // //////////////////////////////////////////////////////
-
-
-                // start from current - history, count x times to see if changed.
-
-                auto last_x_changed =
-                    [&base, &target](unsigned current, unsigned x, unsigned history)
-                    -> bool
-                {
-                    assert(history);
-                    assert(x <= history);
-
-                    if (current < history)
-                    {
-                        return false;
-                    }
-
-                    auto start_index = current - history;
-                    auto end_index = start_index + x;
-                    for (unsigned j = start_index; j <= end_index; ++j)
-                    {
-                        if (!quat_equal(base[j], target[j]))
-                        {
-                            return true;
-                            break;
-                        }
-                        if (!pos_equal(base[j], target[j]))
-                        {
-                            return true;
-                            break;
-                        }
-                    }
-
-                    return false;
-                };
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
                 auto pos_changed = !pos_equal(base[i], target[i]);
 
                 // //////////////////////////////////////////////////////
 
-                auto last_quat_changed_too =
-                    last_x_changed
-                    (
-                        i,
-                        1,
-                        1
-                    );
-
-                if (i == 0)
+                auto last_quat_changed_too = 0;
+                if (i)
                 {
-                    close = close_to_cube_0_fabian(base[i]);
+                    last_quat_changed_too = !quat_equal(base[i-1], target[i-1]);
+                    last_quat_changed_too |= !pos_equal(base[i-1], target[i-1]);
                 }
+
+                // //////////////////////////////////////////////////////
+
+                auto close = close_to_cube_0_fabian(base[i]);
 
                 auto quat_lookup = last_quat_changed_too + 2*close;
                 auto interact_lookup =
@@ -1389,7 +1294,7 @@ namespace Actually_trying
             // 66%  3328
             // 95%  6656
             // Fabian uses 2048 per component.
-            static const unsigned DANGER_DISTANCE = 3328;
+            static const unsigned DANGER_DISTANCE = 2165;
             static const unsigned DANGER_DISTANCE_SQUARED
                 = DANGER_DISTANCE * DANGER_DISTANCE;
 
@@ -1433,13 +1338,9 @@ namespace Actually_trying
                 auto dist_b = mag_squared(sub(b, x));
                 unsigned min_distance_squared = std::min(dist_a, dist_b);
 
-                bool close =
+                auto close =
                     min_distance_squared < DANGER_DISTANCE_SQUARED;
 
-                if (close)
-                {
-                    close = false;
-                }
                 // //////////////////////////////////////////////////////
 
                 // start from current - history, count x times to see if changed.
@@ -1458,7 +1359,7 @@ namespace Actually_trying
 
                     auto start_index = current - history;
                     auto end_index = start_index + x;
-                    for (unsigned j = start_index; j <= end_index; ++j)
+                    for (unsigned j = start_index; j < end_index; ++j)
                     {
                         if (!quat_equal(base[j], target[j]))
                         {
@@ -1488,16 +1389,16 @@ namespace Actually_trying
                         Model::NEIGHBOUR_QUAT_CHECK
                     );
 
-                auto last_quat_changed_row_before =
-                    last_x_changed
-                    (
-                        i,
-                        5,
-                        33
-                    );
+//                auto last_quat_changed_row_before =
+//                    last_x_changed
+//                    (
+//                        i,
+//                        5,
+//                        33
+//                    );
 
-                last_quat_changed_too = 0;
-                last_quat_changed_row_before = 0;
+//                last_quat_changed_too = 0;
+//                last_quat_changed_row_before = 0;
 
 //                if (i > 0)
 //                {
@@ -1508,8 +1409,9 @@ namespace Actually_trying
 //                }
 
                 auto quat_index =
-                    last_quat_changed_too +
-                    2 * last_quat_changed_row_before;
+                    close |
+                    // (2 * (last_quat_changed_too | last_quat_changed_row_before));
+                    (2 * last_quat_changed_too);
 
                 if (do_changed)
                 {
@@ -3355,26 +3257,26 @@ void range_compress(std::vector<Frame>& frames)
         "Actually_trying"
     );
 
-    test
-    (
-        Sorted_position::encode,
-        Sorted_position::decode,
-        "Sorted_position"
-    );
+//    test
+//    (
+//        Sorted_position::encode,
+//        Sorted_position::decode,
+//        "Sorted_position"
+//    );
 
-    test
-    (
-        Naieve_rotor::encode,
-        Naieve_rotor::decode,
-        "Naieve_rotor"
-    );
+//    test
+//    (
+//        Naieve_rotor::encode,
+//        Naieve_rotor::decode,
+//        "Naieve_rotor"
+//    );
 
-    test
-    (
-        Naieve_gaffer::encode,
-        Naieve_gaffer::decode,
-        "Naieve_gaffer"
-    );
+//    test
+//    (
+//        Naieve_gaffer::encode,
+//        Naieve_gaffer::decode,
+//        "Naieve_gaffer"
+//    );
 }
 
 int main(int, char**)
