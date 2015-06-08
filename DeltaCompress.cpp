@@ -965,6 +965,7 @@ namespace Fabian
     }
 }
 
+unsigned g_d = 0;
 
 namespace Actually_trying
 {
@@ -1294,9 +1295,18 @@ namespace Actually_trying
             // 66%  3328
             // 95%  6656
             // Fabian uses 2048 per component.
-            static const unsigned DANGER_DISTANCE = 2165;
+            static const unsigned DANGER_DISTANCE = 5504;
             static const unsigned DANGER_DISTANCE_SQUARED
                 = DANGER_DISTANCE * DANGER_DISTANCE;
+
+            // So I calculated the width of the big box to be roughly 1000
+            // and the small box 250. So I added their corner to corner distances
+            // together and got 2165 (sqrt(3)*(1000+250 / 2 )). But that isn't the
+            // best distance to use. I brute forced found the min kbps and it
+            // was for a distance of 5504 (kbps 20.59 vs 21.33). I suspect that
+            // this has something to do with the fact that bits are flying
+            // around the big box within 5x the distance to it.
+            // RAM: TODO: Add an "in the air" metric and redo brute force.
 
 //            auto close_to_cube_0 = [&base_first]
 //            (
