@@ -1358,7 +1358,8 @@ namespace Actually_trying
             // 66%  3328
             // 95%  6656
             // Fabian uses 2048 per component.
-            static const unsigned DANGER_DISTANCE = 1761;
+            //static const unsigned DANGER_DISTANCE = 1761;
+            static const unsigned DANGER_DISTANCE = 1931;
             static const unsigned DANGER_DISTANCE_SQUARED
                 = DANGER_DISTANCE * DANGER_DISTANCE;
 
@@ -1375,6 +1376,8 @@ namespace Actually_trying
             // around the big box within 5x the distance to it.
             // So I added an "in air" metric and reran the brute, got a
             // distance of 1761 (20.27 vs 20.59)
+            // Redid with proper distance to a line got
+            // 1931 (20.20)
             // RAM: TODO: Proper distance to a line segment.
 
 //            auto close_to_cube_0 = [&base_first]
@@ -1420,7 +1423,7 @@ namespace Actually_trying
 
                 // RAM: Which one eh?
                 min_distance_squared = distance_to_point(a, b, x);
-                min_distance_squared = std::min(dist_a, dist_b);
+                //min_distance_squared = std::min(dist_a, dist_b);
 
                 auto close =
                     min_distance_squared < DANGER_DISTANCE_SQUARED;
