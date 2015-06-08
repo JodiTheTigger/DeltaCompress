@@ -1254,14 +1254,22 @@ namespace Actually_trying
                 };
             };
 
-            auto mag_squared = [](const Vec3i& lhs) -> int
+            auto dot = [](const Vec3i lhs, const Vec3i& rhs) -> int
             {
                 return
                 {
+                    lhs[0] * rhs[0] +
+                    lhs[1] * rhs[1] +
+                    lhs[2] * rhs[2]
+                };
+            };
+
+            auto mag_squared = [](const Vec3i lhs) -> unsigned
+            {
+                return
                     lhs[0] * lhs[0] +
                     lhs[1] * lhs[1] +
-                    lhs[2] * lhs[2]
-                };
+                    lhs[2] * lhs[2];
             };
 
 //            auto cross = [](const Vec3i& lhs, const Vec3i rhs) -> Vec3i
@@ -1282,6 +1290,61 @@ namespace Actually_trying
             };
 
 #endif
+
+            // //////////////////////////////////////////////////////
+
+            auto distance_to_point = [&sub, &dot]
+            (
+                const Vec3i segment_end_a,
+                const Vec3i segment_end_b,
+                const Vec3i point
+            )
+            -> unsigned
+            {
+                auto v = sub(segment_end_a, segment_end_b);
+                auto w = sub(point, segment_end_a);
+
+                auto distance_square = []
+                (
+                    const Vec3i& lhs,
+                    const Vec3i& rhs
+                )
+                -> unsigned
+                {
+                    return
+                        ((lhs[0] - rhs[0]) * (lhs[0] - rhs[0])) +
+                        ((lhs[1] - rhs[1]) * (lhs[1] - rhs[1])) +
+                        ((lhs[2] - rhs[2]) * (lhs[2] - rhs[2]));
+                };
+
+                auto c1 = dot(w, v);
+
+                if (c1 <= 0)
+                {
+                    return distance_square(point, segment_end_a);
+                }
+
+                auto c2 = dot(v, v);
+
+                if (c2 <= c1)
+                {
+                    return distance_square(point, segment_end_b);
+                }
+
+                auto b = c1 / c2;
+                Vec3i point_b =
+                {
+                    segment_end_a[0] + v[0] * b,
+                    segment_end_a[1] + v[1] * b,
+                    segment_end_a[2] + v[2] * b,
+                };
+
+                return distance_square(point, point_b);
+            };
+
+            //===================================================================
+
+
 
             // //////////////////////////////////////////////////////
 
@@ -1350,9 +1413,14 @@ namespace Actually_trying
                     base[i].position_z,
                 };
 
+                // RAM: TODO: Brute again to get optimum distance.
                 auto dist_a = mag_squared(sub(a, x));
                 auto dist_b = mag_squared(sub(b, x));
                 unsigned min_distance_squared = std::min(dist_a, dist_b);
+
+                // RAM: Which one eh?
+                min_distance_squared = distance_to_point(a, b, x);
+                min_distance_squared = std::min(dist_a, dist_b);
 
                 auto close =
                     min_distance_squared < DANGER_DISTANCE_SQUARED;
