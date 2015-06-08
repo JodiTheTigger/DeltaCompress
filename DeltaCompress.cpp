@@ -1230,13 +1230,6 @@ namespace Actually_trying
                 }
             }
 
-            // RAM: Distance from the line created by the cube when it moves
-            // is used to determine if a point would have moved.
-            // d^2 = |(x2-x1)x(x1-xpoint)|^2 / |(x2-x1)|^2
-            // RAM: Can't use that one as it assume an infinit line length.
-            // Find a better algorithm when you have time. For now, will
-            // take the smallest distance from either endpoint to cheat.
-
             Vec3i a =
             {
                 base[0].position_x,
@@ -1264,24 +1257,6 @@ namespace Actually_trying
                 };
             };
 
-            auto mag_squared = [](const Vec3i lhs) -> unsigned
-            {
-                return
-                    lhs[0] * lhs[0] +
-                    lhs[1] * lhs[1] +
-                    lhs[2] * lhs[2];
-            };
-
-//            auto cross = [](const Vec3i& lhs, const Vec3i rhs) -> Vec3i
-//            {
-//                return
-//                {
-//                    lhs[1] * rhs[2] - lhs[2] * rhs[1],
-//                    lhs[2] * rhs[0] - lhs[0] * rhs[2],
-//                    lhs[0] * rhs[1] - lhs[1] * rhs[0]
-//                };
-//            };
-
             Vec3i b =
             {
                 target[0].position_x,
@@ -1293,7 +1268,7 @@ namespace Actually_trying
 
             // //////////////////////////////////////////////////////
 
-            auto distance_to_point = [&sub, &dot]
+            auto distance_to_point_squared = [&sub, &dot]
             (
                 const Vec3i segment_end_a,
                 const Vec3i segment_end_b,
@@ -1378,30 +1353,6 @@ namespace Actually_trying
             // distance of 1761 (20.27 vs 20.59)
             // Redid with proper distance to a line got
             // 1931 (20.20)
-            // RAM: TODO: Proper distance to a line segment.
-
-//            auto close_to_cube_0 = [&base_first]
-//            (
-//                const DeltaData& data
-//            )
-//            -> bool
-//            {
-//                const auto delta = Vec3i
-//                {
-//                    data.position_x - base_first.position_x,
-//                    data.position_y - base_first.position_y,
-//                    data.position_z - base_first.position_z
-//                };
-
-//                auto distance = static_cast<unsigned>
-//                (
-//                    delta[0] * delta[0] +
-//                    delta[1] * delta[1] +
-//                    delta[2] * delta[2]
-//                );
-
-//                return distance <= DANGER_DISTANCE_SQUARED;
-//            };
 
             // //////////////////////////////////////////////////////
 
@@ -1416,14 +1367,7 @@ namespace Actually_trying
                     base[i].position_z,
                 };
 
-                // RAM: TODO: Brute again to get optimum distance.
-                auto dist_a = mag_squared(sub(a, x));
-                auto dist_b = mag_squared(sub(b, x));
-                unsigned min_distance_squared = std::min(dist_a, dist_b);
-
-                // RAM: Which one eh?
-                min_distance_squared = distance_to_point(a, b, x);
-                //min_distance_squared = std::min(dist_a, dist_b);
+                auto min_distance_squared = distance_to_point_squared(a, b, x);
 
                 auto close =
                     min_distance_squared < DANGER_DISTANCE_SQUARED;
