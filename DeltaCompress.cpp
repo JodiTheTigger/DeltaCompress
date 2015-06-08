@@ -972,8 +972,8 @@ namespace Actually_trying
     {
         // Lets work on changed first.
         static const unsigned NEIGHBOUR_QUAT_CHECK = 1;
-        std::array<Binary_two_speed, 2> quat_changed;
-        std::array<Binary_two_speed, 2> position_changed;
+        std::array<Binary_two_speed, 4> quat_changed;
+        std::array<Binary_two_speed, 8> position_changed;
         std::array<Binary_two_speed, 4> interactive;
 
 //        static const unsigned position_0_update = 16;
