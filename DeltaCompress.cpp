@@ -887,7 +887,7 @@ namespace Fabian
 
             // //////////////////////////////////////////////////////
 
-            for (unsigned i = 0; i < size; ++i)
+            for (unsigned i = 1; i < size; ++i)
             {
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
@@ -896,7 +896,7 @@ namespace Fabian
                 // //////////////////////////////////////////////////////
 
                 auto last_quat_changed_too = 0;
-                if (i)
+                if (i > 1)
                 {
                     last_quat_changed_too = !quat_equal(base[i-1], target[i-1]);
                     last_quat_changed_too |= !pos_equal(base[i-1], target[i-1]);
@@ -919,7 +919,7 @@ namespace Fabian
                         quat_changed
                     );
 
-                    model.pos_changed[pos_changed + 2*quat_lookup].Encode
+                    model.pos_changed[quat_changed + 2*quat_lookup].Encode
                     (
                         binary,
                         pos_changed
