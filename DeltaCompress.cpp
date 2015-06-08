@@ -887,26 +887,17 @@ namespace Fabian
 
             // //////////////////////////////////////////////////////
 
-            for (unsigned i = 1; i < size; ++i)
+            auto last_cube_changed = 0;
+            for (unsigned i = 0; i < size; ++i)
             {
-
                 auto quat_changed = !quat_equal(base[i], target[i]);
                 auto pos_changed = !pos_equal(base[i], target[i]);
 
                 // //////////////////////////////////////////////////////
 
-                auto last_quat_changed_too = 0;
-                if (i > 1)
-                {
-                    last_quat_changed_too = !quat_equal(base[i-1], target[i-1]);
-                    last_quat_changed_too |= !pos_equal(base[i-1], target[i-1]);
-                }
-
-                // //////////////////////////////////////////////////////
-
                 auto close = close_to_cube_0_fabian(base[i]);
 
-                auto quat_lookup = last_quat_changed_too + 2*close;
+                auto quat_lookup = last_cube_changed + 2*close;
                 auto interact_lookup =
                     base[i].interacting +
                     (2 * (quat_changed | pos_changed));
@@ -934,6 +925,9 @@ namespace Fabian
                 }
 
                 // //////////////////////////////////////////////////////
+
+                last_cube_changed = !quat_equal(base[i], target[i]);
+                last_cube_changed |= !pos_equal(base[i], target[i]);
             }
         }
 
@@ -3290,26 +3284,26 @@ void range_compress(std::vector<Frame>& frames)
         "Actually_trying"
     );
 
-//    test
-//    (
-//        Sorted_position::encode,
-//        Sorted_position::decode,
-//        "Sorted_position"
-//    );
+    test
+    (
+        Sorted_position::encode,
+        Sorted_position::decode,
+        "Sorted_position"
+    );
 
-//    test
-//    (
-//        Naieve_rotor::encode,
-//        Naieve_rotor::decode,
-//        "Naieve_rotor"
-//    );
+    test
+    (
+        Naieve_rotor::encode,
+        Naieve_rotor::decode,
+        "Naieve_rotor"
+    );
 
-//    test
-//    (
-//        Naieve_gaffer::encode,
-//        Naieve_gaffer::decode,
-//        "Naieve_gaffer"
-//    );
+    test
+    (
+        Naieve_gaffer::encode,
+        Naieve_gaffer::decode,
+        "Naieve_gaffer"
+    );
 }
 
 int main(int, char**)
