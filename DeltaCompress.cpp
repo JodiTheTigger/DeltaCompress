@@ -233,7 +233,8 @@ using Vec3f = std::array<float, 4>;
 
 // //////////////////////////////////////////////////////
 
-auto constexpr sub(const Vec3i& lhs, const Vec3i& rhs) -> Vec3i
+template<typename T>
+auto constexpr sub(const T& lhs, const T& rhs) -> T
 {
     return
     {
@@ -243,7 +244,8 @@ auto constexpr sub(const Vec3i& lhs, const Vec3i& rhs) -> Vec3i
     };
 };
 
-auto constexpr add(const Vec3i& lhs, const Vec3i& rhs) -> Vec3i
+template<typename T>
+auto constexpr add(const T& lhs, const T& rhs) -> T
 {
     return
     {
@@ -253,7 +255,8 @@ auto constexpr add(const Vec3i& lhs, const Vec3i& rhs) -> Vec3i
     };
 };
 
-auto constexpr div(const Vec3i& lhs, int denominator) -> Vec3i
+template<typename T>
+auto constexpr div(const T& lhs, int denominator) -> T
 {
     return
     {
@@ -263,7 +266,8 @@ auto constexpr div(const Vec3i& lhs, int denominator) -> Vec3i
     };
 };
 
-auto constexpr mul(const Vec3i& lhs, int multiple) -> Vec3i
+template<typename T>
+auto constexpr mul(const T& lhs, int multiple) -> T
 {
     return
     {
@@ -275,12 +279,16 @@ auto constexpr mul(const Vec3i& lhs, int multiple) -> Vec3i
 
 // //////////////////////////////////////////////////////
 
+struct Velocity_acceleration
+{
+    Vec3f velocity_per_frame;
+    Vec3f acceleration_per_frame;
+};
+
 struct Predictors
 {
-    Vec3i linear_velocity_per_frame;
-    Vec3i linear_acceleration_per_frame;
-    Vec3f angular_velocity_per_frame;
-    Vec3f angular_acceleration_per_frame;
+    Velocity_acceleration linear;
+    Velocity_acceleration angular;
 };
 
 typedef std::array<Predictors, Cubes> Frame_predicitons;
@@ -976,6 +984,65 @@ namespace Actually_trying
 //        std::array<Binary_model, 2> interactive;
     };
 
+    auto predict_velocity
+    (
+        const Predictors& prediction,
+        const DeltaData&,// base,
+        unsigned frame_delta
+    )
+    -> Vec3f
+    {
+        // p = p0 + v0t + at^2/2
+        // v = v0t + at^2/2
+        auto v0 =
+            mul(prediction.linear.acceleration_per_frame, frame_delta);
+
+        auto t2_2 = (frame_delta * frame_delta) / 2;
+        auto at2 = mul(prediction.linear.acceleration_per_frame, t2_2);
+
+        // RAM: TODO: Snap at 0 to stop going though floor.
+
+        return add(v0, at2);
+    }
+
+    auto predict
+    (
+        const Velocity_acceleration& old_prediction,
+        const Vec3f& delta,
+        unsigned frame_delta
+    )
+    -> Velocity_acceleration
+    {
+        auto v = div(delta, frame_delta);
+        auto v_delta = sub(v, old_prediction.velocity_per_frame);
+        auto a = div(v_delta, frame_delta);
+
+        return {v, a};
+    }
+
+    auto get_prediction
+    (
+        const Predictors& old_prediction,
+        const DeltaData& base,
+        const DeltaData& target,
+        unsigned frame_delta
+    )
+    -> Predictors
+    {
+        auto p0 = position(base);
+        auto p1 = position(target);
+        auto delta = sub(p1, p0);
+        auto v = div(delta, frame_delta);
+        auto v_delta = sub(v, old_prediction.linear.velocity_per_frame);
+        auto a = div(v_delta, frame_delta);
+
+        return
+        {
+            {v, a},
+            {0.0f, 0.0f},
+        };
+    }
+
     auto encode
     (
         const Frame& base,
@@ -1001,16 +1068,16 @@ namespace Actually_trying
 
             auto velocity_per_frame = div(position_delta, frameDelta);
 
-            target_predicitons[i].linear_velocity_per_frame =
+            target_predicitons[i].linear.velocity_per_frame =
                 velocity_per_frame;
 
             auto velocity_delta = sub
             (
                 velocity_per_frame,
-                base_predicitons[i].linear_velocity_per_frame
+                base_predicitons[i].linear.velocity_per_frame
             );
 
-            target_predicitons[i].linear_acceleration_per_frame =
+            target_predicitons[i].linear.acceleration_per_frame =
                 div(velocity_delta, frameDelta);
         }
 
@@ -1066,13 +1133,13 @@ namespace Actually_trying
                     // with those to encode error instead.
                     auto velocity_delta = mul
                     (
-                        base_predicitons[0].linear_acceleration_per_frame,
+                        base_predicitons[0].linear.acceleration_per_frame,
                         frameDelta
                     );
 
                     auto velocity = add
                     (
-                        base_predicitons[0].linear_velocity_per_frame,
+                        base_predicitons[0].linear.velocity_per_frame,
                         velocity_delta
                     );
 
@@ -1080,7 +1147,7 @@ namespace Actually_trying
 
                     auto delta_position_order_1 = mul
                     (
-                        base_predicitons[0].linear_velocity_per_frame,
+                        base_predicitons[0].linear.velocity_per_frame,
                         frameDelta
                     );
 
