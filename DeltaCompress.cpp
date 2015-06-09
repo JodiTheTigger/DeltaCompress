@@ -39,7 +39,7 @@ enum class Doing
     CHANGED_ONLY,
 };
 
-auto what_to_do = Doing::EVERYTHING;
+auto what_to_do = Doing::CHANGED_ONLY;
 
 // //////////////////////////////////////////////////////
 
@@ -233,12 +233,54 @@ using Vec3f = std::array<float, 4>;
 
 // //////////////////////////////////////////////////////
 
+auto constexpr sub(const Vec3i& lhs, const Vec3i& rhs) -> Vec3i
+{
+    return
+    {
+        lhs[0] - rhs[0],
+        lhs[1] - rhs[1],
+        lhs[2] - rhs[2]
+    };
+};
+
+auto constexpr add(const Vec3i& lhs, const Vec3i& rhs) -> Vec3i
+{
+    return
+    {
+        lhs[0] + rhs[0],
+        lhs[1] + rhs[1],
+        lhs[2] + rhs[2]
+    };
+};
+
+auto constexpr div(const Vec3i& lhs, int denominator) -> Vec3i
+{
+    return
+    {
+        lhs[0] / denominator,
+        lhs[1] / denominator,
+        lhs[2] / denominator
+    };
+};
+
+auto constexpr mul(const Vec3i& lhs, int multiple) -> Vec3i
+{
+    return
+    {
+        lhs[0] * multiple,
+        lhs[1] * multiple,
+        lhs[2] * multiple
+    };
+};
+
+// //////////////////////////////////////////////////////
+
 struct Predictors
 {
-    Vec3i linear_velocity;
-    Vec3i linear_acceleration;
-    Vec3f angular_velocity;
-    Vec3f angular_acceleration;
+    Vec3i linear_velocity_per_frame;
+    Vec3i linear_acceleration_per_frame;
+    Vec3f angular_velocity_per_frame;
+    Vec3f angular_acceleration_per_frame;
 };
 
 typedef std::array<Predictors, Cubes> Frame_predicitons;
@@ -937,15 +979,43 @@ namespace Actually_trying
     auto encode
     (
         const Frame& base,
-        const Frame_predicitons&,// base_predicitons,
+        const Frame_predicitons& base_predicitons,
         const Frame& target,
-        const Frame_predicitons&,// target_predicitons,
-        unsigned// frameDelta
+        Frame_predicitons& target_predicitons,
+        unsigned frameDelta
     )
     -> Range_types::Bytes
     {
         auto                size = base.size();
         Range_types::Bytes  data;
+
+        // //////////////////////////////////////////////////////
+
+        for (unsigned i = 0; i < size; ++i)
+        {
+            auto position_delta = sub
+            (
+                position(target[i]),
+                position(base[i])
+            );
+
+            auto velocity_per_frame = div(position_delta, frameDelta);
+
+            target_predicitons[i].linear_velocity_per_frame =
+                velocity_per_frame;
+
+            auto velocity_delta = sub
+            (
+                velocity_per_frame,
+                base_predicitons[i].linear_velocity_per_frame
+            );
+
+            target_predicitons[i].linear_acceleration_per_frame =
+                div(velocity_delta, frameDelta);
+        }
+
+        // //////////////////////////////////////////////////////
+
 
         Model model;
 
@@ -989,6 +1059,53 @@ namespace Actually_trying
                         binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_0);
                     }
                 }
+
+                {
+                    // Right, for fun, lets see how good the predictor is.
+                    // RAM: TODO: Log how many bits to encode normal pos delta
+                    // with those to encode error instead.
+                    auto velocity_delta = mul
+                    (
+                        base_predicitons[0].linear_acceleration_per_frame,
+                        frameDelta
+                    );
+
+                    auto velocity = add
+                    (
+                        base_predicitons[0].linear_velocity_per_frame,
+                        velocity_delta
+                    );
+
+                    auto delta_position_order_2 = mul(velocity, frameDelta);
+
+                    auto delta_position_order_1 = mul
+                    (
+                        base_predicitons[0].linear_velocity_per_frame,
+                        frameDelta
+                    );
+
+                    auto predicted_2 = add
+                    (
+                        position(base[0]),
+                        delta_position_order_2
+                    );
+
+                    auto predicted_1 = add
+                    (
+                        position(base[0]),
+                        delta_position_order_1
+                    );
+
+                    auto delta_position_actual =
+                        sub(position(target[0]), position(base[0]));
+
+                    auto error_2 = sub(predicted_2, position(target[0]));
+                    auto error_1 = sub(predicted_1, position(target[0]));
+
+                    error_1[0] = 1;
+                    error_2[0] = 1;
+                    delta_position_actual[0] = 1;
+                }
             }
 
             // //////////////////////////////////////////////////////
@@ -1004,16 +1121,6 @@ namespace Actually_trying
             )
             -> unsigned
             {
-                auto sub = [](const Vec3i lhs, const Vec3i& rhs) -> Vec3i
-                {
-                    return
-                    {
-                        lhs[0] - rhs[0],
-                        lhs[1] - rhs[1],
-                        lhs[2] - rhs[2]
-                    };
-                };
-
                 auto dot = [](const Vec3i lhs, const Vec3i& rhs) -> int
                 {
                     return
@@ -1290,7 +1397,7 @@ namespace Sorted_position
         const Frame& base,
         const Frame_predicitons&,// base_predicitons,
         const Frame& target,
-        const Frame_predicitons&,// target_predicitons,
+        Frame_predicitons&,// target_predicitons,
         unsigned frameDelta
     )
     -> Range_types::Bytes
@@ -1927,7 +2034,7 @@ namespace Naieve_rotor
         const Frame& base,
         const Frame_predicitons&,// base_predicitons,
         const Frame& target,
-        const Frame_predicitons&,// target_predicitons,
+        Frame_predicitons&,// target_predicitons,
         unsigned// frameDelta
     )
     -> Range_types::Bytes
@@ -3007,12 +3114,12 @@ void range_compress(std::vector<Frame>& frames)
         printf("\n==============================================\n");
     };
 
-//    test
-//    (
-//        Actually_trying::encode,
-//        Actually_trying::decode,
-//        "Actually_trying"
-//    );
+    test
+    (
+        Actually_trying::encode,
+        Actually_trying::decode,
+        "Actually_trying"
+    );
 
     // FFS: This model asserts on i == 6, frame == 38
 //    test
