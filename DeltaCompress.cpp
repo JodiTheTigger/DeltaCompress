@@ -194,7 +194,11 @@ static_assert(
     ((1 << MaxBitsXY) - 1) == XYRange,
     "MaxBitsXY doesn't match XYRange");
 
+// //////////////////////////////////////////////////////
+
 typedef std::array<DeltaData, Cubes> Frame;
+
+// //////////////////////////////////////////////////////
 
 inline bool operator==(const Frame& lhs, const Frame& rhs)
 {
@@ -226,6 +230,20 @@ inline bool operator!=(const Frame& lhs, const Frame& rhs)
 using Vec3i = std::array<int, 3>;
 using Vec4f = std::array<float, 4>;
 using Vec3f = std::array<float, 4>;
+
+// //////////////////////////////////////////////////////
+
+struct Predictors
+{
+    Vec3i linear_velocity;
+    Vec3i linear_acceleration;
+    Vec3f angular_velocity;
+    Vec3f angular_acceleration;
+};
+
+typedef std::array<Predictors, Cubes> Frame_predicitons;
+
+// //////////////////////////////////////////////////////
 
 struct Gaffer
 {
@@ -919,7 +937,9 @@ namespace Actually_trying
     auto encode
     (
         const Frame& base,
+        const Frame_predicitons&,// base_predicitons,
         const Frame& target,
+        const Frame_predicitons&,// target_predicitons,
         unsigned// frameDelta
     )
     -> Range_types::Bytes
@@ -1178,6 +1198,7 @@ namespace Actually_trying
     auto decode
     (
         const Frame& base,
+        const Frame_predicitons&,// base_predicitons,
         const Range_types::Bytes&, //data,
         unsigned// frameDelta
     )
@@ -1265,9 +1286,11 @@ namespace Sorted_position
     };
 
     auto encode
-    (
+    (            
         const Frame& base,
+        const Frame_predicitons&,// base_predicitons,
         const Frame& target,
+        const Frame_predicitons&,// target_predicitons,
         unsigned frameDelta
     )
     -> Range_types::Bytes
@@ -1572,6 +1595,7 @@ namespace Sorted_position
     auto decode
     (
         const Frame& base,
+        const Frame_predicitons&,// base_predicitons,
         const Range_types::Bytes& data,
         unsigned frameDelta
     )
@@ -1901,7 +1925,9 @@ namespace Naieve_rotor
     auto encode
     (
         const Frame& base,
+        const Frame_predicitons&,// base_predicitons,
         const Frame& target,
+        const Frame_predicitons&,// target_predicitons,
         unsigned// frameDelta
     )
     -> Range_types::Bytes
@@ -2084,6 +2110,7 @@ namespace Naieve_rotor
     auto decode
     (
         const Frame& base,
+        const Frame_predicitons&,// base_predicitons,
         const Range_types::Bytes& data,
         unsigned// frameDelta
     )
@@ -2569,10 +2596,15 @@ namespace Naieve_gaffer
         return ReturnSorted(result);
     }
 
-    auto encode(
+    auto encode
+    (
         const Frame& base,
+        const Frame_predicitons&,// base_predicitons,
         const Frame& target,
-        unsigned frameDelta) -> Range_types::Bytes
+        const Frame_predicitons&,// target_predicitons,
+        unsigned frameDelta
+    )
+    -> Range_types::Bytes
     {
         // for now use defaults for everything.
         Range_types::Bytes              data;
@@ -2714,10 +2746,14 @@ namespace Naieve_gaffer
         return data;
     }
 
-    auto decode(
+    auto decode
+    (
         const Frame& base,
+        const Frame_predicitons&,// base_predicitons,
         const Range_types::Bytes& data,
-        unsigned frameDelta) -> Frame
+        unsigned frameDelta
+    )
+    -> Frame
     {
         Frame target;
         Everything_model                model;
@@ -2920,11 +2956,15 @@ void range_compress(std::vector<Frame>& frames)
         unsigned max = 0;
         const bool do_decompress = do_position && do_quat && do_changed;
 
+        std::vector<Frame_predicitons> predicitons(Cubes);
+
         for (size_t i = PacketDelta; i < packets; ++i)
         {
             auto buffer = encoder(
                 frames[i-PacketDelta],
+                predicitons[i-PacketDelta],
                 frames[i],
+                predicitons[i],
                 PacketDelta);
 
             const unsigned size = buffer.size();
@@ -2939,6 +2979,7 @@ void range_compress(std::vector<Frame>& frames)
             {
                 auto back = decoder(
                     frames[i-PacketDelta],
+                    predicitons[i-PacketDelta],
                     buffer,
                     PacketDelta);
 
