@@ -323,6 +323,18 @@ inline constexpr bool operator!=(const Gaffer& lhs, const Gaffer& rhs)
 
 // //////////////////////////////////////////////////////
 
+auto constexpr position(const DeltaData& lhs) -> Vec3i
+{
+    return
+    {
+        lhs.position_x,
+        lhs.position_y,
+        lhs.position_z,
+    };
+}
+
+// //////////////////////////////////////////////////////
+
 auto constexpr mul(const Quat& lhs, float rhs) -> Quat
 {
     return
@@ -858,10 +870,7 @@ namespace Fabian
 
             // //////////////////////////////////////////////////////
 
-            // Got this from Fabian, but well DUH. If a cube is near
-            // cube 0, then of course it's more likely to change.
-
-            auto close_to_cube_0_fabian = [&base_first]
+            auto close_to_cube_0 = [&base_first]
             (
                 const DeltaData& data
             )
@@ -895,7 +904,7 @@ namespace Fabian
 
                 // //////////////////////////////////////////////////////
 
-                auto close = close_to_cube_0_fabian(base[i]);
+                auto close = close_to_cube_0(base[i]);
 
                 auto quat_lookup = last_cube_changed + 2*close;
                 auto interact_lookup =
@@ -1170,17 +1179,6 @@ namespace Actually_trying
         auto                size = base.size();
         Range_types::Bytes  data;
 
-//        const unsigned max_position_0 =
-//            1 +
-//            static_cast<unsigned>
-//            (
-//                MaxPositionChangePerSnapshot *
-//                frameDelta
-//            );
-
-//        const unsigned max_position_1 = 1 + (max_position_0 >> 1);
-//        const unsigned max_position_2 = 1 + (max_position_0 / 3);
-
         Model model;
 
         Correlations correlations;
@@ -1188,10 +1186,13 @@ namespace Actually_trying
         {
             Range_coders::Encoder           range(data);
             Range_coders::Binary_encoder    binary(range);
-            //const auto&                     base_first = base[0];
+            const auto&                     base_0 = base[0];
+
+            Vec3i pos_cube_0_base   = position(base[0]);
+            Vec3i pos_cube_0_target = position(target[0]);
 
             // //////////////////////////////////////////////////////
-#if 1
+
             {
                 // Treat Cube 0 different as it's play controlled.
                 // It's always interacting, so no need to encode that.
@@ -1206,63 +1207,30 @@ namespace Actually_trying
                 // Wait, what?
                 assert(target[0].interacting);
 
-                auto quat_changed = !quat_equal(base[0], target[0]);
-                auto pos_changed = !pos_equal(base[0], target[0]);
+                auto quat_changed = !quat_equal(base_0, target[0]);
+                auto pos_changed  = !pos_equal(base_0, target[0]);
 
                 if (do_changed)
                 {
                     binary.Encode(pos_changed, CUBE_0_POS_CHANGED);
 
-                    if (!pos_changed)
+                    if (pos_changed)
                     {
-                        binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_0);
+                        binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_1);
                     }
                     else
                     {
-                        binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_1);
+                        binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_0);
                     }
                 }
             }
 
-            Vec3i a =
-            {
-                base[0].position_x,
-                base[0].position_y,
-                base[0].position_z,
-            };
-
-            auto sub = [](const Vec3i lhs, const Vec3i& rhs) -> Vec3i
-            {
-                return
-                {
-                    lhs[0] - rhs[0],
-                    lhs[1] - rhs[1],
-                    lhs[2] - rhs[2]
-                };
-            };
-
-            auto dot = [](const Vec3i lhs, const Vec3i& rhs) -> int
-            {
-                return
-                {
-                    lhs[0] * rhs[0] +
-                    lhs[1] * rhs[1] +
-                    lhs[2] * rhs[2]
-                };
-            };
-
-            Vec3i b =
-            {
-                target[0].position_x,
-                target[0].position_y,
-                target[0].position_z,
-            };
-
-#endif
-
             // //////////////////////////////////////////////////////
 
-            auto distance_to_point_squared = [&sub, &dot]
+            // Got this from Fabian, but well DUH. If a cube is near
+            // cube 0, then of course it's more likely to change.
+
+            auto distance_to_point_squared = []
             (
                 const Vec3i segment_end_a,
                 const Vec3i segment_end_b,
@@ -1270,8 +1238,25 @@ namespace Actually_trying
             )
             -> unsigned
             {
-                auto v = sub(segment_end_a, segment_end_b);
-                auto w = sub(point, segment_end_a);
+                auto sub = [](const Vec3i lhs, const Vec3i& rhs) -> Vec3i
+                {
+                    return
+                    {
+                        lhs[0] - rhs[0],
+                        lhs[1] - rhs[1],
+                        lhs[2] - rhs[2]
+                    };
+                };
+
+                auto dot = [](const Vec3i lhs, const Vec3i& rhs) -> int
+                {
+                    return
+                    {
+                        lhs[0] * rhs[0] +
+                        lhs[1] * rhs[1] +
+                        lhs[2] * rhs[2]
+                    };
+                };
 
                 auto distance_square = []
                 (
@@ -1284,7 +1269,12 @@ namespace Actually_trying
                         ((lhs[0] - rhs[0]) * (lhs[0] - rhs[0])) +
                         ((lhs[1] - rhs[1]) * (lhs[1] - rhs[1])) +
                         ((lhs[2] - rhs[2]) * (lhs[2] - rhs[2]));
-                };
+                };                
+
+                // //////////////////////////////////////////////////////
+
+                auto v = sub(segment_end_a, segment_end_b);
+                auto w = sub(point, segment_end_a);
 
                 auto c1 = dot(w, v);
 
@@ -1311,29 +1301,7 @@ namespace Actually_trying
                 return distance_square(point, point_b);
             };
 
-            //===================================================================
-
-
-
             // //////////////////////////////////////////////////////
-
-            // Got this from Fabian, but well DUH. If a cube is near
-            // cube 0, then of course it's more likely to change.
-            // %changed pos/quat within distance
-            //
-            //  5%   768
-            // 33%  1536
-            // 50%  2304
-            // 66%  3328
-            // 95%  6656
-            // Fabian uses 2048 per component.
-            //static const unsigned DANGER_DISTANCE = 1761;
-            static const unsigned DANGER_DISTANCE = 1931;
-            static const unsigned DANGER_DISTANCE_SQUARED
-                = DANGER_DISTANCE * DANGER_DISTANCE;
-
-            // Z when at rest.
-            static const int IN_AIR_THREASHOLD = 103;
 
             // So I calculated the width of the big box to be roughly 1000
             // and the small box 250. So I added their corner to corner
@@ -1345,8 +1313,15 @@ namespace Actually_trying
             // around the big box within 5x the distance to it.
             // So I added an "in air" metric and reran the brute, got a
             // distance of 1761 (20.27 vs 20.59)
-            // Redid with proper distance to a line got
+            // Redid with proper distance to a line segment and got
             // 1931 (20.20)
+
+            static const unsigned DANGER_DISTANCE = 1931;
+            static const unsigned DANGER_DISTANCE_SQUARED
+                = DANGER_DISTANCE * DANGER_DISTANCE;
+
+            // Z when at rest.
+            static const int IN_AIR_THREASHOLD = 103;
 
             // //////////////////////////////////////////////////////
 
@@ -1354,14 +1329,9 @@ namespace Actually_trying
             {
                 // //////////////////////////////////////////////////////
 
-                Vec3i x =
-                {
-                    base[i].position_x,
-                    base[i].position_y,
-                    base[i].position_z,
-                };
+                Vec3i x = position(base[i]);
 
-                auto min_distance_squared = distance_to_point_squared(a, b, x);
+                auto min_distance_squared = distance_to_point_squared(pos_cube_0_base, pos_cube_0_target, x);
 
                 auto close =
                     min_distance_squared < DANGER_DISTANCE_SQUARED;
@@ -1401,6 +1371,8 @@ namespace Actually_trying
                     return false;
                 };
 
+                // //////////////////////////////////////////////////////
+
                 auto quat_changed = !quat_equal(base[i], target[i]);
                 auto pos_changed = !pos_equal(base[i], target[i]);                
 
@@ -1437,7 +1409,6 @@ namespace Actually_trying
 
                 auto quat_index =
                     (close | in_air) |
-                    // (2 * (last_quat_changed_too | last_quat_changed_row_before));
                     (2 * last_quat_changed_too);
 
                 if (do_changed)
