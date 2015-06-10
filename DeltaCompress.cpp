@@ -1007,11 +1007,20 @@ namespace Actually_trying
         auto pos_delta = add(v0, at2);
 
         // RAM: TODO: Snap at cube size / 2 to stop going though floor.
+        //            Doesn't work, cube allowed to sink into floor.
         // RAM: TODO: Apply damping if item on floor.
         // RAM: TODO: Add restition in the y axis if boucing on floor
         // RAM: TODO: Clamp V to max V per frame.
+        // RAM: TODO: angular!
 
         auto pos = add(base.position, pos_delta);
+
+
+//        auto w0 = v_and_a.angular_velocity_per_frame * frame_delta;
+//        auto wt2 = v_and_a.angular_acceleration_per_frame * t2_2;
+//        auto w_delta = w0 + wt2;
+
+
 
         // RAM: Harder than you think, items are allowed to go into the floor.
 //        if (pos[2] < zero_height)
@@ -1084,13 +1093,12 @@ namespace Actually_trying
                 const DeltaData& target,
                 const Predictors& v_and_a,
                 int zero_height,
-                unsigned frame_delta
+                unsigned frame_delta,
+                bool update_stats
             )
             -> Predictors
             {
                 // Right, for fun, lets see how good the predictor is.
-                // RAM: TODO: Log how many bits to encode normal pos delta
-                // with those to encode error instead.
                 auto b = Position_and_rotor
                 {
                     position(base),
@@ -1122,8 +1130,11 @@ namespace Actually_trying
                     + MinBits(Zig_zag(delta[1]))
                     + MinBits(Zig_zag(delta[2]));
 
-                g_bits_error += bits_error;
-                g_bits_delta += bits_delta;
+                if (update_stats)
+                {
+                    g_bits_error += bits_error;
+                    g_bits_delta += bits_delta;
+                }
 
                 return result;
             };
@@ -1170,7 +1181,8 @@ namespace Actually_trying
                         target[0],
                         predicitons[0],
                         379,
-                        frame_delta
+                        frame_delta,
+                        true
                     );
                 }
             }
@@ -1266,22 +1278,7 @@ namespace Actually_trying
             // //////////////////////////////////////////////////////
 
             for (unsigned i = 1; i < size; ++i)
-            {                
-                // //////////////////////////////////////////////////////
-
-                {
-                    // RAM: fun with predictions
-                    // magic number = guess at floor hight of the big cube.
-                    predicitons[i] = predict_position
-                    (
-                        base[i],
-                        target[i],
-                        predicitons[i],
-                        36,//IN_AIR_THREASHOLD,
-                        frame_delta
-                    );
-                }
-
+            {
                 // //////////////////////////////////////////////////////
 
                 Vec3i x = position(base[i]);
@@ -1329,7 +1326,23 @@ namespace Actually_trying
                 // //////////////////////////////////////////////////////
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
-                auto pos_changed = !pos_equal(base[i], target[i]);                
+                auto pos_changed = !pos_equal(base[i], target[i]);
+
+                // //////////////////////////////////////////////////////
+
+                {
+                    // RAM: fun with predictions
+                    // magic number = guess at floor hight of the big cube.
+                    predicitons[i] = predict_position
+                    (
+                        base[i],
+                        target[i],
+                        predicitons[i],
+                        36,//IN_AIR_THREASHOLD,
+                        frame_delta,
+                        pos_changed
+                    );
+                }
 
                 // //////////////////////////////////////////////////////
 
