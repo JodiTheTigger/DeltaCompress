@@ -1012,6 +1012,7 @@ namespace Actually_trying
         // RAM: TODO: Add restition in the y axis if boucing on floor
         // RAM: TODO: Clamp V to max V per frame.
         // RAM: TODO: angular!
+        // RAM: TODO: use floats, better precision == less error?
 
         auto pos = add(base.position, pos_delta);
 
