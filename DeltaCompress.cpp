@@ -383,6 +383,14 @@ inline constexpr bool operator!=(const Gaffer& lhs, const Gaffer& rhs)
 
 // //////////////////////////////////////////////////////
 
+struct Position_and_rotor
+{
+    Vec3i position;
+    Rotor rotor;
+};
+
+// //////////////////////////////////////////////////////
+
 auto constexpr position(const DeltaData& lhs) -> Vec3i
 {
     return
@@ -976,45 +984,54 @@ namespace Actually_trying
 //        std::array<Binary_model, 2> interactive;
     };
 
-    auto predict_velocity
+    auto predict
     (
-        const Predictors& prediction,
-        const DeltaData&,// base,
+        const Predictors& v_and_a,
+        const Position_and_rotor& base,
         unsigned frame_delta
     )
-    -> Vec3i
+    -> Position_and_rotor
     {
         // p = p0 + v0t + at^2/2
         // v = v0t + at^2/2
         auto v0 =
-            mul(prediction.linear_acceleration_per_frame, frame_delta);
+            mul(v_and_a.linear_acceleration_per_frame, frame_delta);
 
         auto t2_2 = (frame_delta * frame_delta) / 2;
-        auto at2 = mul(prediction.linear_acceleration_per_frame, t2_2);
+        auto at2 = mul(v_and_a.linear_acceleration_per_frame, t2_2);
+        auto v = add(v0, at2);
 
         // RAM: TODO: Snap at 0 to stop going though floor.
         // RAM: TODO: Apply damping if item on floor.
         // RAM: TODO: Add restition in the y axis if boucing on floor
 
-        return add(v0, at2);
+        auto pos_delta = mul(v, frame_delta);
+        auto pos = add(base.position, pos_delta);
+
+        // RAM: TODO: Predict the rotor too please.
+        return
+        {
+            pos,
+            base.rotor,
+        };
     }
 
-    auto get_prediction
+    auto update_prediciton
     (
-        const Predictors& old_prediction,
-        const DeltaData& base,
-        const DeltaData& target,
+        const Predictors& v_and_a,
+        const Position_and_rotor& base,
+        const Position_and_rotor& target,
         unsigned frame_delta
     )
     -> Predictors
     {
-        auto p0 = position(base);
-        auto p1 = position(target);
-        auto delta = sub(p1, p0);
-        auto v = div(delta, frame_delta);
-        auto v_delta = sub(v, old_prediction.linear_velocity_per_frame);
+        auto pos_delta = sub(target.position, base.position);
+        auto v = div(pos_delta, frame_delta);
+
+        auto v_delta = sub(v, v_and_a.linear_velocity_per_frame);
         auto a = div(v_delta, frame_delta);
 
+        // RAM: TODO: Predict the rotor too please.
         return
         {
             v,
@@ -1029,7 +1046,7 @@ namespace Actually_trying
         const Frame& base,
         const Frame_predicitons& base_predicitons,
         const Frame& target,
-        Frame_predicitons& target_predicitons,
+        Frame_predicitons&,// target_predicitons,
         unsigned frameDelta
     )
     -> Range_types::Bytes
@@ -1038,32 +1055,6 @@ namespace Actually_trying
         Range_types::Bytes  data;
 
         // //////////////////////////////////////////////////////
-
-        for (unsigned i = 0; i < size; ++i)
-        {
-            auto position_delta = sub
-            (
-                position(target[i]),
-                position(base[i])
-            );
-
-            auto velocity_per_frame = div(position_delta, frameDelta);
-
-            target_predicitons[i].linear_velocity_per_frame =
-                velocity_per_frame;
-
-            auto velocity_delta = sub
-            (
-                velocity_per_frame,
-                base_predicitons[i].linear_velocity_per_frame
-            );
-
-            target_predicitons[i].linear_acceleration_per_frame =
-                div(velocity_delta, frameDelta);
-        }
-
-        // //////////////////////////////////////////////////////
-
 
         Model model;
 
@@ -1112,6 +1103,19 @@ namespace Actually_trying
                     // Right, for fun, lets see how good the predictor is.
                     // RAM: TODO: Log how many bits to encode normal pos delta
                     // with those to encode error instead.
+//                    auto b = Position_and_rotor
+//                    {
+//                        position(base[0]),
+//                        {0,0,0}
+//                    };
+
+//                    auto t = Position_and_rotor
+//                    {
+//                        position(target[0]),
+//                        {0,0,0}
+//                    };
+
+
                     auto velocity_delta = mul
                     (
                         base_predicitons[0].linear_acceleration_per_frame,
