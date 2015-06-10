@@ -991,12 +991,14 @@ namespace Actually_trying
     (
         const Predictors& v_and_a,
         const Position_and_rotor& base,
+        int,// zero_height,
         unsigned frame_delta
     )
     -> Position_and_rotor
     {
         // p = p0 + v0t + at^2/2
-        // v = v0t + at^2/2
+        // p = p0 + t(v0 + at/2)
+        // v = v0 + at/2
         auto v0 =
             mul(v_and_a.linear_velocity_per_frame, frame_delta);
 
@@ -1004,11 +1006,18 @@ namespace Actually_trying
         auto at2 = mul(v_and_a.linear_acceleration_per_frame, t2_2);
         auto pos_delta = add(v0, at2);
 
-        // RAM: TODO: Snap at 0 to stop going though floor.
+        // RAM: TODO: Snap at cube size / 2 to stop going though floor.
         // RAM: TODO: Apply damping if item on floor.
         // RAM: TODO: Add restition in the y axis if boucing on floor
+        // RAM: TODO: Clamp V to max V per frame.
 
         auto pos = add(base.position, pos_delta);
+
+        // RAM: Harder than you think, items are allowed to go into the floor.
+//        if (pos[2] < zero_height)
+//        {
+//            pos[2] = zero_height;
+//        }
 
         // RAM: TODO: Predict the rotor too please.
         return
@@ -1069,6 +1078,58 @@ namespace Actually_trying
 
             // //////////////////////////////////////////////////////
 
+            auto predict_position = []
+            (
+                const DeltaData& base,
+                const DeltaData& target,
+                const Predictors& v_and_a,
+                int zero_height,
+                unsigned frame_delta
+            )
+            -> Predictors
+            {
+                // Right, for fun, lets see how good the predictor is.
+                // RAM: TODO: Log how many bits to encode normal pos delta
+                // with those to encode error instead.
+                auto b = Position_and_rotor
+                {
+                    position(base),
+                    {0,0,0}
+                };
+
+                auto t = Position_and_rotor
+                {
+                    position(target),
+                    {0,0,0}
+                };
+
+                auto predicition =
+                    predict(v_and_a, b, zero_height, frame_delta);
+
+                auto error = sub(predicition.position, t.position);
+                auto delta = sub(t.position, b.position);
+
+                auto result =
+                    update_prediciton(v_and_a, b, t, frame_delta);
+
+                auto bits_error =
+                    MinBits(Zig_zag(error[0]))
+                    + MinBits(Zig_zag(error[1]))
+                    + MinBits(Zig_zag(error[2]));
+
+                auto bits_delta =
+                    MinBits(Zig_zag(delta[0]))
+                    + MinBits(Zig_zag(delta[1]))
+                    + MinBits(Zig_zag(delta[2]));
+
+                g_bits_error += bits_error;
+                g_bits_delta += bits_delta;
+
+                return result;
+            };
+
+            // //////////////////////////////////////////////////////
+
             {
                 // Treat Cube 0 different as it's play controlled.
                 // It's always interacting, so no need to encode that.
@@ -1101,41 +1162,16 @@ namespace Actually_trying
                 }
 
                 {
-                    // Right, for fun, lets see how good the predictor is.
-                    // RAM: TODO: Log how many bits to encode normal pos delta
-                    // with those to encode error instead.
-                    auto b = Position_and_rotor
-                    {
-                        position(base[0]),
-                        {0,0,0}
-                    };
-
-                    auto t = Position_and_rotor
-                    {
-                        position(target[0]),
-                        {0,0,0}
-                    };
-
-                    auto predicition = predict(predicitons[0], b, frame_delta);
-
-                    auto error = sub(predicition.position, t.position);
-                    auto delta = sub(t.position, b.position);
-
-                    predicitons[0] =
-                        update_prediciton(predicitons[0], b, t, frame_delta);
-
-                    auto bits_error =
-                        MinBits(Zig_zag(error[0]))
-                        + MinBits(Zig_zag(error[1]))
-                        + MinBits(Zig_zag(error[2]));
-
-                    auto bits_delta =
-                        MinBits(Zig_zag(delta[0]))
-                        + MinBits(Zig_zag(delta[1]))
-                        + MinBits(Zig_zag(delta[2]));
-
-                    g_bits_error += bits_error;
-                    g_bits_delta += bits_delta;
+                    // RAM: fun with predictions
+                    // magic number = guess at floor hight of the big cube.
+                    predicitons[0] = predict_position
+                    (
+                        base[0],
+                        target[0],
+                        predicitons[0],
+                        379,
+                        frame_delta
+                    );
                 }
             }
 
@@ -1230,7 +1266,22 @@ namespace Actually_trying
             // //////////////////////////////////////////////////////
 
             for (unsigned i = 1; i < size; ++i)
-            {
+            {                
+                // //////////////////////////////////////////////////////
+
+                {
+                    // RAM: fun with predictions
+                    // magic number = guess at floor hight of the big cube.
+                    predicitons[i] = predict_position
+                    (
+                        base[i],
+                        target[i],
+                        predicitons[i],
+                        36,//IN_AIR_THREASHOLD,
+                        frame_delta
+                    );
+                }
+
                 // //////////////////////////////////////////////////////
 
                 Vec3i x = position(base[i]);
