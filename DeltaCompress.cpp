@@ -910,6 +910,9 @@ using Binary_model = Binary;
 
 namespace Actually_trying
 {
+    unsigned g_bits_error = 0;
+    unsigned g_bits_delta = 0;
+
     struct Model
     {
         // Lets work on changed first.
@@ -995,17 +998,16 @@ namespace Actually_trying
         // p = p0 + v0t + at^2/2
         // v = v0t + at^2/2
         auto v0 =
-            mul(v_and_a.linear_acceleration_per_frame, frame_delta);
+            mul(v_and_a.linear_velocity_per_frame, frame_delta);
 
         auto t2_2 = (frame_delta * frame_delta) / 2;
         auto at2 = mul(v_and_a.linear_acceleration_per_frame, t2_2);
-        auto v = add(v0, at2);
+        auto pos_delta = add(v0, at2);
 
         // RAM: TODO: Snap at 0 to stop going though floor.
         // RAM: TODO: Apply damping if item on floor.
         // RAM: TODO: Add restition in the y axis if boucing on floor
 
-        auto pos_delta = mul(v, frame_delta);
         auto pos = add(base.position, pos_delta);
 
         // RAM: TODO: Predict the rotor too please.
@@ -1046,7 +1048,7 @@ namespace Actually_trying
         const Frame& base,
         const Frame& target,
         Frame_predicitons& predicitons,
-        unsigned frameDelta
+        unsigned frame_delta
     )
     -> Range_types::Bytes
     {
@@ -1102,60 +1104,38 @@ namespace Actually_trying
                     // Right, for fun, lets see how good the predictor is.
                     // RAM: TODO: Log how many bits to encode normal pos delta
                     // with those to encode error instead.
-//                    auto b = Position_and_rotor
-//                    {
-//                        position(base[0]),
-//                        {0,0,0}
-//                    };
-
-//                    auto t = Position_and_rotor
-//                    {
-//                        position(target[0]),
-//                        {0,0,0}
-//                    };
-
-
-                    auto velocity_delta = mul
-                    (
-                        predicitons[0].linear_acceleration_per_frame,
-                        frameDelta
-                    );
-
-                    auto velocity = add
-                    (
-                        predicitons[0].linear_velocity_per_frame,
-                        velocity_delta
-                    );
-
-                    auto delta_position_order_2 = mul(velocity, frameDelta);
-
-                    auto delta_position_order_1 = mul
-                    (
-                        predicitons[0].linear_velocity_per_frame,
-                        frameDelta
-                    );
-
-                    auto predicted_2 = add
-                    (
+                    auto b = Position_and_rotor
+                    {
                         position(base[0]),
-                        delta_position_order_2
-                    );
+                        {0,0,0}
+                    };
 
-                    auto predicted_1 = add
-                    (
-                        position(base[0]),
-                        delta_position_order_1
-                    );
+                    auto t = Position_and_rotor
+                    {
+                        position(target[0]),
+                        {0,0,0}
+                    };
 
-                    auto delta_position_actual =
-                        sub(position(target[0]), position(base[0]));
+                    auto predicition = predict(predicitons[0], b, frame_delta);
 
-                    auto error_2 = sub(predicted_2, position(target[0]));
-                    auto error_1 = sub(predicted_1, position(target[0]));
+                    auto error = sub(predicition.position, t.position);
+                    auto delta = sub(t.position, b.position);
 
-                    error_1[0] = 1;
-                    error_2[0] = 1;
-                    delta_position_actual[0] = 1;
+                    predicitons[0] =
+                        update_prediciton(predicitons[0], b, t, frame_delta);
+
+                    auto bits_error =
+                        MinBits(Zig_zag(error[0]))
+                        + MinBits(Zig_zag(error[1]))
+                        + MinBits(Zig_zag(error[2]));
+
+                    auto bits_delta =
+                        MinBits(Zig_zag(delta[0]))
+                        + MinBits(Zig_zag(delta[1]))
+                        + MinBits(Zig_zag(delta[2]));
+
+                    g_bits_error += bits_error;
+                    g_bits_delta += bits_delta;
                 }
             }
 
@@ -3167,6 +3147,9 @@ void range_compress(std::vector<Frame>& frames)
         Actually_trying::decode,
         "Actually_trying"
     );
+
+    PRINT_INT(Actually_trying::g_bits_delta);
+    PRINT_INT(Actually_trying::g_bits_error);
 
     // FFS: This model asserts on i == 6, frame == 38
 //    test
