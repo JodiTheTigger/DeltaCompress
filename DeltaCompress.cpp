@@ -1044,9 +1044,8 @@ namespace Actually_trying
     auto encode
     (
         const Frame& base,
-        const Frame_predicitons& base_predicitons,
         const Frame& target,
-        Frame_predicitons&,// target_predicitons,
+        Frame_predicitons& predicitons,
         unsigned frameDelta
     )
     -> Range_types::Bytes
@@ -1118,13 +1117,13 @@ namespace Actually_trying
 
                     auto velocity_delta = mul
                     (
-                        base_predicitons[0].linear_acceleration_per_frame,
+                        predicitons[0].linear_acceleration_per_frame,
                         frameDelta
                     );
 
                     auto velocity = add
                     (
-                        base_predicitons[0].linear_velocity_per_frame,
+                        predicitons[0].linear_velocity_per_frame,
                         velocity_delta
                     );
 
@@ -1132,7 +1131,7 @@ namespace Actually_trying
 
                     auto delta_position_order_1 = mul
                     (
-                        base_predicitons[0].linear_velocity_per_frame,
+                        predicitons[0].linear_velocity_per_frame,
                         frameDelta
                     );
 
@@ -1445,11 +1444,10 @@ namespace Sorted_position
     };
 
     auto encode
-    (            
+    (
         const Frame& base,
-        const Frame_predicitons&,// base_predicitons,
         const Frame& target,
-        Frame_predicitons&,// target_predicitons,
+        Frame_predicitons&, // predicitons,
         unsigned frameDelta
     )
     -> Range_types::Bytes
@@ -2082,11 +2080,10 @@ namespace Naieve_rotor
     };
 
     auto encode
-    (
+    (            
         const Frame& base,
-        const Frame_predicitons&,// base_predicitons,
         const Frame& target,
-        Frame_predicitons&,// target_predicitons,
+        Frame_predicitons&, // predicitons,
         unsigned// frameDelta
     )
     -> Range_types::Bytes
@@ -2758,9 +2755,8 @@ namespace Naieve_gaffer
     auto encode
     (
         const Frame& base,
-        const Frame_predicitons&,// base_predicitons,
         const Frame& target,
-        const Frame_predicitons&,// target_predicitons,
+        Frame_predicitons&, // predicitons,
         unsigned frameDelta
     )
     -> Range_types::Bytes
@@ -3115,15 +3111,14 @@ void range_compress(std::vector<Frame>& frames)
         unsigned max = 0;
         const bool do_decompress = do_position && do_quat && do_changed;
 
-        std::vector<Frame_predicitons> predicitons(Cubes);
+        Frame_predicitons predicitons = {};
 
         for (size_t i = PacketDelta; i < packets; ++i)
         {
             auto buffer = encoder(
                 frames[i-PacketDelta],
-                predicitons[i-PacketDelta],
                 frames[i],
-                predicitons[i],
+                predicitons,
                 PacketDelta);
 
             const unsigned size = buffer.size();
@@ -3138,7 +3133,7 @@ void range_compress(std::vector<Frame>& frames)
             {
                 auto back = decoder(
                     frames[i-PacketDelta],
-                    predicitons[i-PacketDelta],
+                    predicitons,
                     buffer,
                     PacketDelta);
 
