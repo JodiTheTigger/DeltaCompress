@@ -275,10 +275,52 @@ auto constexpr mul(const Vec3i& lhs, int multiple) -> Vec3i
 
 // //////////////////////////////////////////////////////
 
+auto constexpr sub(const Vec3f& lhs, const Vec3f& rhs) -> Vec3f
+{
+    return
+    {
+        lhs[0] - rhs[0],
+        lhs[1] - rhs[1],
+        lhs[2] - rhs[2]
+    };
+};
+
+auto constexpr add(const Vec3f& lhs, const Vec3f& rhs) -> Vec3f
+{
+    return
+    {
+        lhs[0] + rhs[0],
+        lhs[1] + rhs[1],
+        lhs[2] + rhs[2]
+    };
+};
+
+auto constexpr div(const Vec3f& lhs, float denominator) -> Vec3f
+{
+    return
+    {
+        lhs[0] / denominator,
+        lhs[1] / denominator,
+        lhs[2] / denominator
+    };
+};
+
+auto constexpr mul(const Vec3f& lhs, float multiple) -> Vec3f
+{
+    return
+    {
+        lhs[0] * multiple,
+        lhs[1] * multiple,
+        lhs[2] * multiple
+    };
+};
+
+// //////////////////////////////////////////////////////
+
 struct Predictors
 {
-    Vec3i linear_velocity_per_frame;
-    Vec3i linear_acceleration_per_frame;
+    Vec3f linear_velocity_per_frame;
+    Vec3f linear_acceleration_per_frame;
     float angular_velocity_per_frame;
     float angular_acceleration_per_frame;
 };
@@ -1012,9 +1054,13 @@ namespace Actually_trying
         // RAM: TODO: Add restition in the y axis if boucing on floor
         // RAM: TODO: Clamp V to max V per frame.
         // RAM: TODO: angular!
-        // RAM: TODO: use floats, better precision == less error?
 
-        auto pos = add(base.position, pos_delta);
+        auto pos = Vec3i
+        {
+            static_cast<int>(std::round(base.position[0] + pos_delta[0])),
+            static_cast<int>(std::round(base.position[1] + pos_delta[1])),
+            static_cast<int>(std::round(base.position[2] + pos_delta[2]))
+        };
 
 
 //        auto w0 = v_and_a.angular_velocity_per_frame * frame_delta;
@@ -1046,8 +1092,14 @@ namespace Actually_trying
     )
     -> Predictors
     {
+        float frame_delta_f = static_cast<float>(frame_delta);
         auto pos_delta = sub(target.position, base.position);
-        auto v = div(pos_delta, frame_delta);
+        auto v = Vec3f
+        {
+            pos_delta[0] / frame_delta_f,
+            pos_delta[1] / frame_delta_f,
+            pos_delta[2] / frame_delta_f,
+        };
 
         auto v_delta = sub(v, v_and_a.linear_velocity_per_frame);
         auto a = div(v_delta, frame_delta);
