@@ -1040,20 +1040,20 @@ namespace Actually_trying
     {
         // p = p0 + v0t + at^2/2
         // p = p0 + t(v0 + at/2)
+        // p = p0 + tv
         // v = v0 + at/2
-        auto v0 =
-            mul(v_and_a.linear_velocity_per_frame, frame_delta);
+        auto at_2 =
+            mul(v_and_a.linear_acceleration_per_frame, frame_delta / 2.0f);
 
-        auto t2_2 = (frame_delta * frame_delta) / 2;
-        auto at2 = mul(v_and_a.linear_acceleration_per_frame, t2_2);
-        auto pos_delta = add(v0, at2);
+        auto v = add(v_and_a.linear_velocity_per_frame, at_2);
 
         // RAM: TODO: Snap at cube size / 2 to stop going though floor.
         //            Doesn't work, cube allowed to sink into floor.
         // RAM: TODO: Apply damping if item on floor.
         // RAM: TODO: Add restition in the y axis if boucing on floor
-        // RAM: TODO: Clamp V to max V per frame.
         // RAM: TODO: angular!
+
+        auto pos_delta = mul(v, frame_delta);
 
         auto pos = Vec3i
         {
