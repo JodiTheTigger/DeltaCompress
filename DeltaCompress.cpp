@@ -39,7 +39,7 @@ enum class Doing
     CHANGED_ONLY,
 };
 
-auto what_to_do = Doing::CHANGED_ONLY;
+auto what_to_do = Doing::EVERYTHING;
 
 // //////////////////////////////////////////////////////
 
@@ -894,6 +894,30 @@ auto to_gaffer
     auto r = to_quat(rotor);
     auto target_quat = mul(r, base_quat);
 
+    // RAM: quat/rotor hack testing.
+    // r*q0, should be the same as
+    // reflecting r via q0.
+    auto t2 = mul(mul(base_quat, r), base_quat);
+
+    // No, same numbers, wrong places.
+
+    // OR is it reflecting -r via q0?
+    auto rotor_negative = mul(rotor, -1);
+    auto r_neg = to_quat(rotor_negative);
+    auto t3 = mul(mul(base_quat, r_neg), base_quat);
+
+    // No, same as reflecting by r
+
+
+    // OR is it reflecting r/2 via q0?
+    auto rotor_2 = mul(rotor, 0.5);
+    auto r_2 = to_quat(rotor_2);
+    auto t4 = mul(mul(base_quat, r_2), base_quat);
+
+    t2 = {};
+    t3 = {};
+    t4 = {};
+
     return to_gaffer(target_quat);
 }
 
@@ -1061,6 +1085,12 @@ namespace Actually_trying
             static_cast<int>(std::round(base.position[1] + pos_delta[1])),
             static_cast<int>(std::round(base.position[2] + pos_delta[2]))
         };
+
+        // RAM: For angular, get delta, convert to rotor, divide by frame count
+        // to get angular velocity as a vector.
+        // Then again to get acceleration (unproven to be mathmatically valid,
+        // but try none the less).
+        // Then use that as predicitons. See if it works.
 
 
 //        auto w0 = v_and_a.angular_velocity_per_frame * frame_delta;
@@ -3258,15 +3288,15 @@ void range_compress(std::vector<Frame>& frames)
         printf("\n==============================================\n");
     };
 
-    test
-    (
-        Actually_trying::encode,
-        Actually_trying::decode,
-        "Actually_trying"
-    );
+//    test
+//    (
+//        Actually_trying::encode,
+//        Actually_trying::decode,
+//        "Actually_trying"
+//    );
 
-    PRINT_INT(Actually_trying::g_bits_delta);
-    PRINT_INT(Actually_trying::g_bits_error);
+//    PRINT_INT(Actually_trying::g_bits_delta);
+//    PRINT_INT(Actually_trying::g_bits_error);
 
     // FFS: This model asserts on i == 6, frame == 38
 //    test
