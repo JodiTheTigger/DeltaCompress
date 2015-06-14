@@ -317,18 +317,6 @@ auto constexpr mul(const Vec3f& lhs, float multiple) -> Vec3f
 
 // //////////////////////////////////////////////////////
 
-struct Predictors
-{
-    Vec3f linear_velocity_per_frame;
-    Vec3f linear_acceleration_per_frame;
-    float angular_velocity_per_frame;
-    float angular_acceleration_per_frame;
-};
-
-typedef std::array<Predictors, Cubes> Frame_predicitons;
-
-// //////////////////////////////////////////////////////
-
 struct Gaffer
 {
     unsigned orientation_largest;
@@ -425,11 +413,23 @@ inline constexpr bool operator!=(const Gaffer& lhs, const Gaffer& rhs)
 
 // //////////////////////////////////////////////////////
 
-struct Position_and_rotor
+struct Position_and_quat
 {
     Vec3i position;
-    Rotor rotor;
+    Quat quat;
 };
+
+// //////////////////////////////////////////////////////
+
+struct Predictors
+{
+    Vec3f linear_velocity_per_frame;
+    Vec3f linear_acceleration_per_frame;
+    Vec3f angular_velocity_per_frame;
+    Vec3f angular_acceleration_per_frame;
+};
+
+typedef std::array<Predictors, Cubes> Frame_predicitons;
 
 // //////////////////////////////////////////////////////
 
@@ -1056,11 +1056,11 @@ namespace Actually_trying
     auto predict
     (
         const Predictors& v_and_a,
-        const Position_and_rotor& base,
+        const Position_and_quat& base,
         int,// zero_height,
         unsigned frame_delta
     )
-    -> Position_and_rotor
+    -> Position_and_quat
     {
         // p = p0 + v0t + at^2/2
         // p = p0 + t(v0 + at/2)
@@ -1086,38 +1086,31 @@ namespace Actually_trying
             static_cast<int>(std::round(base.position[2] + pos_delta[2]))
         };
 
-        // RAM: For angular, get delta, convert to rotor, divide by frame count
-        // to get angular velocity as a vector.
-        // Then again to get acceleration (unproven to be mathmatically valid,
-        // but try none the less).
-        // Then use that as predicitons. See if it works.
+        // Not sure this is mathmatically correct. But I'll give it a shot.
+        auto wt_2 =
+            mul(v_and_a.angular_acceleration_per_frame, frame_delta / 2.0f);
 
+        auto w = add(v_and_a.angular_velocity_per_frame, wt_2);
 
-//        auto w0 = v_and_a.angular_velocity_per_frame * frame_delta;
-//        auto wt2 = v_and_a.angular_acceleration_per_frame * t2_2;
-//        auto w_delta = w0 + wt2;
+        auto w_delta = mul(w, frame_delta);
 
+        // Ok, need to convert to quat to do actual multiplications
+        auto r = to_quat({w_delta});
 
+        auto rotation = mul(r, base.quat);
 
-        // RAM: Harder than you think, items are allowed to go into the floor.
-//        if (pos[2] < zero_height)
-//        {
-//            pos[2] = zero_height;
-//        }
-
-        // RAM: TODO: Predict the rotor too please.
         return
         {
             pos,
-            base.rotor,
+            rotation,
         };
     }
 
     auto update_prediciton
     (
         const Predictors& v_and_a,
-        const Position_and_rotor& base,
-        const Position_and_rotor& target,
+        const Position_and_quat& base,
+        const Position_and_quat& target,
         unsigned frame_delta
     )
     -> Predictors
@@ -1139,8 +1132,8 @@ namespace Actually_trying
         {
             v,
             a,
-            0.0f,
-            0.0f,
+            {0.0f, 0.0f, 0.0f},
+            {0.0f, 0.0f, 0.0f}
         };
     }
 
@@ -1182,13 +1175,13 @@ namespace Actually_trying
             -> Predictors
             {
                 // Right, for fun, lets see how good the predictor is.
-                auto b = Position_and_rotor
+                auto b = Position_and_quat
                 {
                     position(base),
                     {0,0,0}
                 };
 
-                auto t = Position_and_rotor
+                auto t = Position_and_quat
                 {
                     position(target),
                     {0,0,0}
