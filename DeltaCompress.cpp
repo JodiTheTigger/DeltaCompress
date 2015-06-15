@@ -39,7 +39,7 @@ enum class Doing
     CHANGED_ONLY,
 };
 
-auto what_to_do = Doing::EVERYTHING;
+auto what_to_do = Doing::CHANGED_ONLY;
 
 // //////////////////////////////////////////////////////
 
@@ -894,30 +894,6 @@ auto to_gaffer
     auto r = to_quat(rotor);
     auto target_quat = mul(r, base_quat);
 
-    // RAM: quat/rotor hack testing.
-    // r*q0, should be the same as
-    // reflecting r via q0.
-    auto t2 = mul(mul(base_quat, r), base_quat);
-
-    // No, same numbers, wrong places.
-
-    // OR is it reflecting -r via q0?
-    auto rotor_negative = mul(rotor, -1);
-    auto r_neg = to_quat(rotor_negative);
-    auto t3 = mul(mul(base_quat, r_neg), base_quat);
-
-    // No, same as reflecting by r
-
-
-    // OR is it reflecting r/2 via q0?
-    auto rotor_2 = mul(rotor, 0.5);
-    auto r_2 = to_quat(rotor_2);
-    auto t4 = mul(mul(base_quat, r_2), base_quat);
-
-    t2 = {};
-    t3 = {};
-    t4 = {};
-
     return to_gaffer(target_quat);
 }
 
@@ -978,6 +954,9 @@ namespace Actually_trying
 {
     unsigned g_bits_error = 0;
     unsigned g_bits_delta = 0;
+
+    unsigned g_bits_quat_error = 0;
+    unsigned g_bits_quat_delta = 0;
 
     struct Model
     {
@@ -1127,13 +1106,43 @@ namespace Actually_trying
         auto v_delta = sub(v, v_and_a.linear_velocity_per_frame);
         auto a = div(v_delta, frame_delta);
 
-        // RAM: TODO: Predict the rotor too please.
+        auto angle_delta = Rotor{0.0f,0.0f,0.0f};
+        if
+        (
+            (base.quat[0] != target.quat[0])
+            || (base.quat[1] != target.quat[1])
+            || (base.quat[2] != target.quat[2])
+            || (base.quat[3] != target.quat[3])
+        )
+        {
+            // Hmm, seem we get stupid magnitudess due
+            // to rotating near itself (from q to -q roughly).
+            auto target_quat_neg = mul(target.quat, -1.0f);
+
+            // http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
+            auto r                  = mul(target.quat, conjugate(base.quat));
+            auto r_neg              = mul(target_quat_neg, conjugate(base.quat));
+            auto rotor              = to_rotor(r);
+            auto rotor_neg          = to_rotor(r_neg);
+            auto mag_squared        = magnitude_squared(rotor);
+            auto mag_squared_neg    = magnitude_squared(rotor_neg);
+
+            angle_delta =
+                (mag_squared < mag_squared_neg) ?
+                    rotor :
+                    rotor_neg;
+        }
+
+        auto w = div(angle_delta.vec, frame_delta);
+        auto w_delta = sub(w, v_and_a.angular_velocity_per_frame);
+        auto wa = div(w_delta, frame_delta);
+
         return
         {
             v,
             a,
-            {0.0f, 0.0f, 0.0f},
-            {0.0f, 0.0f, 0.0f}
+            w,
+            wa
         };
     }
 
@@ -1163,7 +1172,7 @@ namespace Actually_trying
 
             // //////////////////////////////////////////////////////
 
-            auto predict_position = []
+            auto predict_position_and_quat = []
             (
                 const DeltaData& base,
                 const DeltaData& target,
@@ -1174,17 +1183,22 @@ namespace Actually_trying
             )
             -> Predictors
             {
+                auto g_b = to_gaffer(base);
+                auto g_t = to_gaffer(target);
+                auto q_b = to_quat(g_b);
+                auto q_t = to_quat(g_t);
+
                 // Right, for fun, lets see how good the predictor is.
                 auto b = Position_and_quat
                 {
                     position(base),
-                    {0,0,0}
+                    q_b
                 };
 
                 auto t = Position_and_quat
                 {
                     position(target),
-                    {0,0,0}
+                    q_t
                 };
 
                 auto predicition =
@@ -1211,6 +1225,32 @@ namespace Actually_trying
                     g_bits_error += bits_error;
                     g_bits_delta += bits_delta;
                 }
+
+                // Shhh, lets try rotation as well.
+                auto predict_q = to_gaffer(predicition.quat);
+                auto q_error_large =
+                    target.orientation_largest - predict_q.orientation_largest;
+                auto q_error_pos = Vec3i
+                {
+                    target.orientation_a - predict_q.vec[0],
+                    target.orientation_b - predict_q.vec[1],
+                    target.orientation_c - predict_q.vec[2],
+                };
+
+                auto bits_quat_error =
+                    MinBits(Zig_zag(static_cast<int>(q_error_large)))
+                    + MinBits(Zig_zag(q_error_pos[0]))
+                    + MinBits(Zig_zag(q_error_pos[1]))
+                    + MinBits(Zig_zag(q_error_pos[2]));
+
+                auto bits_quat_delta =
+                    MinBits(target.orientation_largest)
+                    + MinBits(target.orientation_a)
+                    + MinBits(target.orientation_b)
+                    + MinBits(target.orientation_c);
+
+                g_bits_quat_error += bits_quat_error;
+                g_bits_quat_delta += bits_quat_delta;
 
                 return result;
             };
@@ -1251,7 +1291,7 @@ namespace Actually_trying
                 {
                     // RAM: fun with predictions
                     // magic number = guess at floor hight of the big cube.
-                    predicitons[0] = predict_position
+                    predicitons[0] = predict_position_and_quat
                     (
                         base[0],
                         target[0],
@@ -1409,7 +1449,7 @@ namespace Actually_trying
                 {
                     // RAM: fun with predictions
                     // magic number = guess at floor hight of the big cube.
-                    predicitons[i] = predict_position
+                    predicitons[i] = predict_position_and_quat
                     (
                         base[i],
                         target[i],
@@ -3281,15 +3321,17 @@ void range_compress(std::vector<Frame>& frames)
         printf("\n==============================================\n");
     };
 
-//    test
-//    (
-//        Actually_trying::encode,
-//        Actually_trying::decode,
-//        "Actually_trying"
-//    );
+    test
+    (
+        Actually_trying::encode,
+        Actually_trying::decode,
+        "Actually_trying"
+    );
 
-//    PRINT_INT(Actually_trying::g_bits_delta);
-//    PRINT_INT(Actually_trying::g_bits_error);
+    PRINT_INT(Actually_trying::g_bits_delta);
+    PRINT_INT(Actually_trying::g_bits_error);
+    PRINT_INT(Actually_trying::g_bits_quat_delta);
+    PRINT_INT(Actually_trying::g_bits_quat_error);
 
     // FFS: This model asserts on i == 6, frame == 38
 //    test
