@@ -1227,7 +1227,58 @@ namespace Actually_trying
                 }
 
                 // Shhh, lets try rotation as well.
+                // RAM: If the largest orientation doesn't match
+                // see if the next largest one does. Assert if it doesn't.
                 auto predict_q = to_gaffer(predicition.quat);
+
+                // Has the largest swapped?
+//                if
+//                (
+//                    target.orientation_largest !=
+//                    static_cast<int>(predict_q.orientation_largest)
+//                )
+//                {
+//                    // find the second largest value and swap it with the first.
+//                    auto max = 0;
+//                    unsigned index = 10;
+//                    for (auto i = 0 ; i < 3; ++i)
+//                    {
+//                        if (std::abs(predict_q.vec[i]) > std::abs(max))
+//                        {
+//                            index = i;
+//                            max = predict_q.vec[i];
+//                        }
+//                    }
+
+//                    int full_quat[4];
+
+//                    for (unsigned i = 0; i < 3; ++i)
+//                    {
+//                        if (i < predict_q.orientation_largest)
+//                        {
+//                            full_quat[i] = predict_q.vec[i];
+//                        }
+
+//                        if (i > predict_q.orientation_largest)
+//                        {
+//                            full_quat[i+1] = predict_q.vec[i];
+//                        }
+//                    }
+
+//                    full_quat[predict_q.orientation_largest] = max;
+
+//                    auto j = 0;
+//                    for (unsigned i = 0; i < 3; ++i)
+//                    {
+//                        if (i == index)
+//                        {
+//                            j++;
+//                        }
+
+//                        predict_q.vec[i] = full_quat[j++];
+//                    }
+//                }
+
                 auto q_error_large =
                     target.orientation_largest - predict_q.orientation_largest;
                 auto q_error_pos = Vec3i
