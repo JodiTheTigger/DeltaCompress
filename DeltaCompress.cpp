@@ -1065,7 +1065,7 @@ namespace Actually_trying
             static_cast<int>(std::round(base.position[2] + pos_delta[2]))
         };
 
-        // Not sure this is mathmatically correct. But I'll give it a shot.
+        // Yay, this seems to work!
         auto wt_2 =
             mul(v_and_a.angular_acceleration_per_frame, frame_delta / 2.0f);
 
@@ -1232,52 +1232,59 @@ namespace Actually_trying
                 auto predict_q = to_gaffer(predicition.quat);
 
                 // Has the largest swapped?
-//                if
-//                (
-//                    target.orientation_largest !=
-//                    static_cast<int>(predict_q.orientation_largest)
-//                )
-//                {
-//                    // find the second largest value and swap it with the first.
-//                    auto max = 0;
-//                    unsigned index = 10;
-//                    for (auto i = 0 ; i < 3; ++i)
-//                    {
-//                        if (std::abs(predict_q.vec[i]) > std::abs(max))
-//                        {
-//                            index = i;
-//                            max = predict_q.vec[i];
-//                        }
-//                    }
+                if
+                (
+                    target.orientation_largest !=
+                    static_cast<int>(predict_q.orientation_largest)
+                )
+                {
+                    // Due to errors, we cannot reliablly predict what the next
+                    // largest value is going to be. So just encode it with the
+                    // prediciton.
+                    auto max = 256;
+                    for (auto i = 0 ; i < 3; ++i)
+                    {
+                        if
+                        (
+                            std::abs(predict_q.vec[i] - 256)
+                            >
+                            std::abs(max - 256)
+                        )
+                        {
+                            max = predict_q.vec[i];
+                        }
+                    }
 
-//                    int full_quat[4];
+                    int full_quat[4];
 
-//                    for (unsigned i = 0; i < 3; ++i)
-//                    {
-//                        if (i < predict_q.orientation_largest)
-//                        {
-//                            full_quat[i] = predict_q.vec[i];
-//                        }
+                    {
+                        auto j = 0;
+                        for (unsigned i = 0; i < 3; ++i)
+                        {
+                            if (i == predict_q.orientation_largest)
+                            {
+                                j++;
+                            }
 
-//                        if (i > predict_q.orientation_largest)
-//                        {
-//                            full_quat[i+1] = predict_q.vec[i];
-//                        }
-//                    }
+                            full_quat[j++] = predict_q.vec[i];
+                        }
+                    }
 
-//                    full_quat[predict_q.orientation_largest] = max;
+                    full_quat[predict_q.orientation_largest] = max;
 
-//                    auto j = 0;
-//                    for (unsigned i = 0; i < 3; ++i)
-//                    {
-//                        if (i == index)
-//                        {
-//                            j++;
-//                        }
+                    {
+                        auto j = 0;
+                        for (unsigned i = 0; i < 3; ++i)
+                        {
+                            if (i == static_cast<unsigned>(target.orientation_largest))
+                            {
+                                j++;
+                            }
 
-//                        predict_q.vec[i] = full_quat[j++];
-//                    }
-//                }
+                            predict_q.vec[i] = full_quat[j++];
+                        }
+                    }
+                }
 
                 auto q_error_large =
                     target.orientation_largest - predict_q.orientation_largest;
