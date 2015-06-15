@@ -958,6 +958,13 @@ namespace Actually_trying
     unsigned g_bits_quat_error = 0;
     unsigned g_bits_quat_delta = 0;
 
+    unsigned g_bits_total_codes = 0;
+    unsigned g_bits_total_codes_error_quat = 0;
+    unsigned g_bits_total_codes_error_pos = 0;
+    unsigned g_bits_total_codes_largest_changed = 0;
+    unsigned g_bits_histo_pos[16] = {0};
+    unsigned g_bits_histo_quat[16] = {0};
+
     struct Model
     {
         // Lets work on changed first.
@@ -1309,6 +1316,38 @@ namespace Actually_trying
 
                 g_bits_quat_error += bits_quat_error;
                 g_bits_quat_delta += bits_quat_delta;
+
+                // Ok, more stats.
+                ++g_bits_total_codes;
+
+                auto pos_error = error[0] || error[1] || error[2];
+                auto quat_error =
+                    q_error_pos[0] || q_error_pos[1] || q_error_pos[2];
+
+                if (pos_error)
+                {
+                    ++g_bits_total_codes_error_pos;
+                    ++g_bits_histo_pos[MinBits(Zig_zag(error[0]))];
+                    ++g_bits_histo_pos[MinBits(Zig_zag(error[1]))];
+                    ++g_bits_histo_pos[MinBits(Zig_zag(error[2]))];
+                }
+
+                if (quat_error)
+                {
+                    ++g_bits_total_codes_error_quat;
+                    ++g_bits_histo_quat[MinBits(Zig_zag(q_error_pos[0]))];
+                    ++g_bits_histo_quat[MinBits(Zig_zag(q_error_pos[1]))];
+                    ++g_bits_histo_quat[MinBits(Zig_zag(q_error_pos[2]))];
+
+                    if
+                    (
+                        target.orientation_largest !=
+                        static_cast<int>(predict_q.orientation_largest)
+                    )
+                    {
+                        g_bits_total_codes_largest_changed += 2;
+                    }
+                }
 
                 return result;
             };
@@ -3390,6 +3429,46 @@ void range_compress(std::vector<Frame>& frames)
     PRINT_INT(Actually_trying::g_bits_error);
     PRINT_INT(Actually_trying::g_bits_quat_delta);
     PRINT_INT(Actually_trying::g_bits_quat_error);
+
+    PRINT_INT(Actually_trying::g_bits_total_codes);
+    PRINT_INT(Actually_trying::g_bits_total_codes_error_pos);
+    PRINT_INT(Actually_trying::g_bits_total_codes_error_quat);
+    PRINT_INT(Actually_trying::g_bits_total_codes_largest_changed);
+
+
+    PRINT_INT(Actually_trying::g_bits_histo_pos[0]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[1]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[2]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[3]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[4]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[5]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[6]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[7]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[8]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[9]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[10]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[11]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[12]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[13]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[14]);
+    PRINT_INT(Actually_trying::g_bits_histo_pos[15]);
+
+    PRINT_INT(Actually_trying::g_bits_histo_quat[0]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[1]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[2]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[3]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[4]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[5]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[6]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[7]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[8]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[9]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[10]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[11]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[12]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[13]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[14]);
+    PRINT_INT(Actually_trying::g_bits_histo_quat[15]);
 
     // FFS: This model asserts on i == 6, frame == 38
 //    test
