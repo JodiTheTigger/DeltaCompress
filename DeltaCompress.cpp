@@ -28,18 +28,7 @@
 
 bool do_tests       = false;
 bool do_compression = true;
-
-// //////////////////////////////////////////////////////
-
-enum class Doing
-{
-    EVERYTHING,
-    POSITION_ONLY,
-    QUAT_ONLY,
-    CHANGED_ONLY,
-};
-
-auto what_to_do = Doing::CHANGED_ONLY;
+bool do_decompress  = false;
 
 // //////////////////////////////////////////////////////
 
@@ -935,16 +924,6 @@ unsigned MinBits(unsigned value)
 
 // //////////////////////////////////////////////////////
 
-bool do_position =
-    (what_to_do == Doing::EVERYTHING) ||
-    (what_to_do == Doing::POSITION_ONLY);
-bool do_quat =
-    (what_to_do == Doing::EVERYTHING) || (what_to_do == Doing::QUAT_ONLY);
-bool do_changed =
-    (what_to_do == Doing::EVERYTHING) || (what_to_do == Doing::CHANGED_ONLY);
-
-// //////////////////////////////////////////////////////
-
 using namespace Range_models;
 
 //using Binary_model = Binary_two_speed;
@@ -1347,18 +1326,15 @@ namespace Actually_trying
                 auto quat_changed = !quat_equal(base_0, target[0]);
                 auto pos_changed  = !pos_equal(base_0, target[0]);
 
-                if (do_changed)
-                {
-                    binary.Encode(pos_changed, CUBE_0_POS_CHANGED);
+                binary.Encode(pos_changed, CUBE_0_POS_CHANGED);
 
-                    if (pos_changed)
-                    {
-                        binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_1);
-                    }
-                    else
-                    {
-                        binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_0);
-                    }
+                if (pos_changed)
+                {
+                    binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_1);
+                }
+                else
+                {
+                    binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_0);
                 }
             }
 
@@ -1480,14 +1456,11 @@ namespace Actually_trying
                     interacting_model |= 2;
                 }
 
-                if (do_changed)
-                {
-                    model.interactive[interacting_model].Encode
-                    (
-                        binary,
-                        target[i].interacting
-                    );
-                }
+                model.interactive[interacting_model].Encode
+                (
+                    binary,
+                    target[i].interacting
+                );
 
                 // //////////////////////////////////////////////////////
             }
@@ -1677,14 +1650,11 @@ namespace Sorted_position
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
 
-                if (do_changed)
-                {
-                    model.quat_changed[quat_lookup].Encode
-                    (
-                        binary,
-                        quat_changed
-                    );
-                }
+                model.quat_changed[quat_lookup].Encode
+                (
+                    binary,
+                    quat_changed
+                );
 
                 auto get_signs = [](const Vec3i& v) -> unsigned
                 {
@@ -1718,7 +1688,7 @@ namespace Sorted_position
                     };
                 };
 
-                if (quat_changed && do_quat)
+                if (quat_changed)
                 {
                     auto b = to_gaffer(base[i]);
                     auto t = to_gaffer(target[i]);
@@ -1751,121 +1721,115 @@ namespace Sorted_position
 
                 unsigned pos_lookup = quat_changed ? 1 : 0;
 
-                if (do_changed)
+                model.position_changed[pos_lookup].Encode
+                (
+                    binary,
+                    pos_changed
+                );
+
+                Vec3i delta
                 {
-                    model.position_changed[pos_lookup].Encode
-                    (
-                        binary,
-                        pos_changed
-                    );
+                    target[i].position_x - base[i].position_x,
+                    target[i].position_y - base[i].position_y,
+                    target[i].position_z - base[i].position_z
+                };
+
+                auto signs = get_signs(delta);
+                auto vec = strip_signs(delta);
+
+                model.position_signs.Encode(range, signs);
+
+                // Sort
+                int odd = -1;
+                {
+                    if ((vec[0] != vec[1]) && (vec[1] == vec[2]))
+                    {
+                        odd = 0u;
+                    }
+                    if ((vec[0] != vec[1]) && (vec[0] == vec[2]))
+                    {
+                        odd = 1u;
+                    }
+                    if ((vec[0] == vec[1]) && (vec[1] != vec[2]))
+                    {
+                        odd = 2u;
+                    }
                 }
 
-                if (pos_changed && do_position)
+                unsigned top = 0;
+                unsigned next = 0;
                 {
-                    Vec3i delta
+                    using std::swap;
+
+                    if  (
+                            (vec[1] > vec[0]) &&
+                            (vec[1] >= vec[2])
+                        )
                     {
-                        target[i].position_x - base[i].position_x,
-                        target[i].position_y - base[i].position_y,
-                        target[i].position_z - base[i].position_z
-                    };
-
-                    auto signs = get_signs(delta);
-                    auto vec = strip_signs(delta);
-
-                    model.position_signs.Encode(range, signs);
-
-                    // Sort
-                    int odd = -1;
-                    {
-                        if ((vec[0] != vec[1]) && (vec[1] == vec[2]))
-                        {
-                            odd = 0u;
-                        }
-                        if ((vec[0] != vec[1]) && (vec[0] == vec[2]))
-                        {
-                            odd = 1u;
-                        }
-                        if ((vec[0] == vec[1]) && (vec[1] != vec[2]))
-                        {
-                            odd = 2u;
-                        }
+                        swap(vec[0], vec[1]);
+                        top = 1;
                     }
-
-                    unsigned top = 0;
-                    unsigned next = 0;
+                    else
                     {
-                        using std::swap;
-
                         if  (
-                                (vec[1] > vec[0]) &&
-                                (vec[1] >= vec[2])
+                                (vec[2] > vec[0]) &&
+                                (vec[2] >= vec[1])
                             )
                         {
-                            swap(vec[0], vec[1]);
-                            top = 1;
-                        }
-                        else
-                        {
-                            if  (
-                                    (vec[2] > vec[0]) &&
-                                    (vec[2] >= vec[1])
-                                )
-                            {
-                                swap(vec[0], vec[2]);
-                                swap(vec[1], vec[2]);
-                                top = 2;
-                            }
-                        }
-
-                        assert(vec[0] >= vec[1]);
-                        assert(vec[0] >= vec[2]);
-
-                        if (vec[2] > vec[1])
-                        {
+                            swap(vec[0], vec[2]);
                             swap(vec[1], vec[2]);
-                            next = 1;
-                        }
-
-                        assert(vec[1] >= vec[2]);
-                    }
-
-                    // RAM: TODO: Use max magnitude to determine
-                    // truncation values. Also, truncate
-                    assert(vec[0] <= static_cast<int>(max_position_0));
-                    assert(vec[1] <= static_cast<int>(max_position_1));
-                    assert(vec[2] <= static_cast<int>(max_position_2));
-
-                    model.position_0.Encode(range, vec[0]);
-
-                    if (vec[0] > 0)
-                    {
-                        const auto x = static_cast<unsigned>(vec[0]);
-                        const auto trunc_x = std::min(x, max_position_1 - 1);
-
-                        model.position_1.Encode(range, vec[1], trunc_x);
-
-                        if (vec[1] > 0)
-                        {
-                            const auto y = static_cast<unsigned>(vec[1]);
-                            const auto trunc_y = std::min(y, max_position_2 - 1);
-
-                            model.position_2.Encode(range, vec[2], trunc_y);
+                            top = 2;
                         }
                     }
 
-                    bool all_same = (vec[0] == vec[1]) && (vec[1] == vec[2]);
+                    assert(vec[0] >= vec[1]);
+                    assert(vec[0] >= vec[2]);
 
-                    if (!all_same)
+                    if (vec[2] > vec[1])
                     {
-                        if (odd < 0)
-                        {
-                            model.largest_index.Encode(range, top);
-                            model.next_largest_index[top].Encode(binary, next);
-                        }
-                        else
-                        {
-                            model.different_index.Encode(range, odd);
-                        }
+                        swap(vec[1], vec[2]);
+                        next = 1;
+                    }
+
+                    assert(vec[1] >= vec[2]);
+                }
+
+                // RAM: TODO: Use max magnitude to determine
+                // truncation values. Also, truncate
+                assert(vec[0] <= static_cast<int>(max_position_0));
+                assert(vec[1] <= static_cast<int>(max_position_1));
+                assert(vec[2] <= static_cast<int>(max_position_2));
+
+                model.position_0.Encode(range, vec[0]);
+
+                if (vec[0] > 0)
+                {
+                    const auto x = static_cast<unsigned>(vec[0]);
+                    const auto trunc_x = std::min(x, max_position_1 - 1);
+
+                    model.position_1.Encode(range, vec[1], trunc_x);
+
+                    if (vec[1] > 0)
+                    {
+                        const auto y = static_cast<unsigned>(vec[1]);
+                        const auto trunc_y = std::min(y, max_position_2 - 1);
+
+                        model.position_2.Encode(range, vec[2], trunc_y);
+                    }
+                }
+
+                bool all_same = (vec[0] == vec[1]) && (vec[1] == vec[2]);
+
+                if (!all_same)
+                {
+                    if (odd < 0)
+                    {
+                        model.largest_index.Encode(range, top);
+                        model.next_largest_index[top].Encode(binary, next);
+                    }
+                    else
+                    {
+                        model.different_index.Encode(range, odd);
                     }
                 }
 
@@ -1878,14 +1842,11 @@ namespace Sorted_position
                     interactive_lookup = 1;
                 }
 
-                if (do_changed)
-                {
-                    model.interactive[interactive_lookup].Encode
-                    (
-                        binary,
-                        target[i].interacting
-                    );
-                }
+                model.interactive[interactive_lookup].Encode
+                (
+                    binary,
+                    target[i].interacting
+                );
             }
         }
 
@@ -2279,14 +2240,11 @@ namespace Naieve_rotor
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
 
-                if (do_changed)
-                {
-                    model.quat_changed[quat_lookup].Encode
-                    (
-                        binary,
-                        quat_changed
-                    );
-                }
+                model.quat_changed[quat_lookup].Encode
+                (
+                    binary,
+                    quat_changed
+                );
 
                 auto get_signs = [](const Vec3i& v) -> unsigned
                 {
@@ -2320,7 +2278,7 @@ namespace Naieve_rotor
                     };
                 };
 
-                if (quat_changed && do_quat)
+                if (quat_changed)
                 {
                     auto b = to_gaffer(base[i]);
                     auto t = to_gaffer(target[i]);
@@ -2353,16 +2311,13 @@ namespace Naieve_rotor
 
                 unsigned pos_lookup = quat_changed ? 1 : 0;
 
-                if (do_changed)
-                {
-                    model.position_changed[pos_lookup].Encode
-                    (
-                        binary,
-                        pos_changed
-                    );
-                }
+                model.position_changed[pos_lookup].Encode
+                (
+                    binary,
+                    pos_changed
+                );
 
-                if (pos_changed && do_position)
+                if (pos_changed)
                 {
                     Vec3i delta
                     {
@@ -2392,14 +2347,11 @@ namespace Naieve_rotor
                     interactive_lookup = 1;
                 }
 
-                if (do_changed)
-                {
-                    model.interactive[interactive_lookup].Encode
-                    (
-                        binary,
-                        target[i].interacting
-                    );
-                }
+                model.interactive[interactive_lookup].Encode
+                (
+                    binary,
+                    target[i].interacting
+                );
             }
         }
 
@@ -2942,16 +2894,13 @@ namespace Naieve_gaffer
                         :
                         0;
 
-                if (do_changed)
-                {
-                    model.quat_changed[last_quat_changed].Encode
-                    (
-                        binary,
-                        quant_changed
-                    );
-                }
+                model.quat_changed[last_quat_changed].Encode
+                (
+                    binary,
+                    quant_changed
+                );
 
-                if (quant_changed && do_quat)
+                if (quant_changed)
                 {
                     model.largest_index_quant_changed.Encode(
                         binary,
@@ -3002,16 +2951,13 @@ namespace Naieve_gaffer
                     (base[i].position_y != target[i].position_y) ||
                     (base[i].position_z != target[i].position_z);
 
-                if (do_changed)
-                {
-                    model.position_changed[quant_changed].Encode
-                    (
-                        binary,
-                        pos_changed
-                    );
-                }
+                model.position_changed[quant_changed].Encode
+                (
+                    binary,
+                    pos_changed
+                );
 
-                if (pos_changed && do_position)
+                if (pos_changed)
                 {
                     Vec3i delta
                     {
@@ -3032,12 +2978,9 @@ namespace Naieve_gaffer
                 interactive_index |= quant_changed << 1;
                 interactive_index |= pos_changed;
 
-                if (do_changed)
-                {
-                    model.interactive[interactive_index].Encode(
-                        binary,
-                        target[i].interacting);
-                }
+                model.interactive[interactive_index].Encode(
+                    binary,
+                    target[i].interacting);
             }
         }
 
@@ -3202,6 +3145,15 @@ struct Stats
     float kbps;
 };
 
+
+//enum class Doing
+//{
+//    EVERYTHING,
+//    POSITION_ONLY,
+//    QUAT_ONLY,
+//    CHANGED_ONLY,
+//};
+
 auto fabian_stats = std::vector<Stats>
 {
     {
@@ -3252,7 +3204,6 @@ void range_compress(std::vector<Frame>& frames)
         unsigned packetsCoded = 0;
         unsigned min = 10000000;
         unsigned max = 0;
-        const bool do_decompress = do_position && do_quat && do_changed;
 
         Frame_predicitons predicitons = {};
 
@@ -3294,12 +3245,12 @@ void range_compress(std::vector<Frame>& frames)
         printf("== Compression (%s) =======================\n\n", title);
 
         PRINT_INT(packetsCoded);
-        PRINT_COMPARISON_INT(bytes, fabian_stats[(int) what_to_do].packet_size);
+        PRINT_COMPARISON_INT(bytes, fabian_stats[0].packet_size);
         PRINT_FLOAT(bytesPerSecondAverage);
-        PRINT_COMPARISON_FLOAT(packetSizeAverge, fabian_stats[(int) what_to_do].bytes_per_frame);
-        PRINT_COMPARISON_INT(min, fabian_stats[(int) what_to_do].min);
-        PRINT_COMPARISON_INT(max, fabian_stats[(int) what_to_do].max);
-        PRINT_COMPARISON_FLOAT(kbps, fabian_stats[(int) what_to_do].kbps);
+        PRINT_COMPARISON_FLOAT(packetSizeAverge, fabian_stats[0].bytes_per_frame);
+        PRINT_COMPARISON_INT(min, fabian_stats[0].min);
+        PRINT_COMPARISON_INT(max, fabian_stats[0].max);
+        PRINT_COMPARISON_FLOAT(kbps, fabian_stats[0].kbps);
 
         printf("\n==============================================\n");
     };
