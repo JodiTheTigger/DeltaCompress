@@ -1090,7 +1090,7 @@ namespace Actually_trying
         {
             Range_coders::Encoder           range(data);
             Range_coders::Binary_encoder    binary(range);
-            const auto&                     base_0 = base[0];
+            //const auto&                     base_0 = base[0];
 
 //            Vec3i pos_cube_0_base   = position(base[0]);
 //            Vec3i pos_cube_0_target = position(target[0]);            
@@ -1304,39 +1304,60 @@ namespace Actually_trying
                             v & ((1 << 5) - 1)
                         );
                     }
+
+                    // //////////////////////////////////////////////////////
+
+                    auto quat_changed = !quat_equal(base[i], target[i]);
+                    auto pos_changed = !pos_equal(base[i], target[i]);
+
+                    // //////////////////////////////////////////////////////
+
+                    // Note: You CAN get no interaction even if the quat or pos
+                    // changes.
+                    unsigned interact_lookup = base[i].interacting;
+                    if (pos_changed | quat_changed)
+                    {
+                        interact_lookup |= 2;
+                    }
+
+                    model.interactive[interact_lookup].Encode
+                    (
+                        binary,
+                        target[i].interacting
+                    );
                 }
             }
 
 
 
-            {
-                // Treat Cube 0 different as it's play controlled.
-                // It's always interacting, so no need to encode that.
-                // Used fixed frequencies deduced from parsing the entire
-                // data set.
-                // Also it moves more than it rotates, so treat that
-                // as the base prediction element.
-                static const unsigned CUBE_0_POS_CHANGED = 61669;
-                static const unsigned CUBE_0_QUAT_CHANGED_POS_0 = 392;
-                static const unsigned CUBE_0_QUAT_CHANGED_POS_1 = 64526;
+//            {
+//                // Treat Cube 0 different as it's play controlled.
+//                // It's always interacting, so no need to encode that.
+//                // Used fixed frequencies deduced from parsing the entire
+//                // data set.
+//                // Also it moves more than it rotates, so treat that
+//                // as the base prediction element.
+//                static const unsigned CUBE_0_POS_CHANGED = 61669;
+//                static const unsigned CUBE_0_QUAT_CHANGED_POS_0 = 392;
+//                static const unsigned CUBE_0_QUAT_CHANGED_POS_1 = 64526;
 
-                // Wait, what?
-                assert(target[0].interacting);
+//                // Wait, what?
+//                assert(target[0].interacting);
 
-                auto quat_changed = !quat_equal(base_0, target[0]);
-                auto pos_changed  = !pos_equal(base_0, target[0]);
+//                auto quat_changed = !quat_equal(base_0, target[0]);
+//                auto pos_changed  = !pos_equal(base_0, target[0]);
 
-                binary.Encode(pos_changed, CUBE_0_POS_CHANGED);
+//                binary.Encode(pos_changed, CUBE_0_POS_CHANGED);
 
-                if (pos_changed)
-                {
-                    binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_1);
-                }
-                else
-                {
-                    binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_0);
-                }
-            }
+//                if (pos_changed)
+//                {
+//                    binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_1);
+//                }
+//                else
+//                {
+//                    binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_0);
+//                }
+//            }
 
             // //////////////////////////////////////////////////////
 
@@ -1428,42 +1449,42 @@ namespace Actually_trying
 
             // //////////////////////////////////////////////////////
 
-            for (unsigned i = 1; i < size; ++i)
-            {
-                // //////////////////////////////////////////////////////
+//            for (unsigned i = 1; i < size; ++i)
+//            {
+//                // //////////////////////////////////////////////////////
 
-//                Vec3i x = position(base[i]);
+////                Vec3i x = position(base[i]);
 
-//                auto min_distance_squared = distance_to_point_squared(pos_cube_0_base, pos_cube_0_target, x);
+////                auto min_distance_squared = distance_to_point_squared(pos_cube_0_base, pos_cube_0_target, x);
 
-//                auto close =
-//                    min_distance_squared < DANGER_DISTANCE_SQUARED;
+////                auto close =
+////                    min_distance_squared < DANGER_DISTANCE_SQUARED;
 
-//                auto in_air = base[i].position_z > IN_AIR_THREASHOLD;
+////                auto in_air = base[i].position_z > IN_AIR_THREASHOLD;
 
-                // //////////////////////////////////////////////////////
+//                // //////////////////////////////////////////////////////
 
-                auto quat_changed = !quat_equal(base[i], target[i]);
-                auto pos_changed = !pos_equal(base[i], target[i]);
+//                auto quat_changed = !quat_equal(base[i], target[i]);
+//                auto pos_changed = !pos_equal(base[i], target[i]);
 
-                // //////////////////////////////////////////////////////
+//                // //////////////////////////////////////////////////////
 
-                // Note: You CAN get no interaction even if the quat or pos
-                // changes.
-                unsigned interacting_model = base[i].interacting;
-                if (pos_changed | quat_changed)
-                {
-                    interacting_model |= 2;
-                }
+//                // Note: You CAN get no interaction even if the quat or pos
+//                // changes.
+//                unsigned interacting_model = base[i].interacting;
+//                if (pos_changed | quat_changed)
+//                {
+//                    interacting_model |= 2;
+//                }
 
-                model.interactive[interacting_model].Encode
-                (
-                    binary,
-                    target[i].interacting
-                );
+//                model.interactive[interacting_model].Encode
+//                (
+//                    binary,
+//                    target[i].interacting
+//                );
 
-                // //////////////////////////////////////////////////////
-            }
+//                // //////////////////////////////////////////////////////
+//            }
         }
 
         return data;
@@ -1472,22 +1493,96 @@ namespace Actually_trying
     auto decode
     (
         const Frame& base,
-        const Frame_predicitons&,// base_predicitons,
-        const Range_types::Bytes&, //data,
-        unsigned// frameDelta
+        const Frame_predicitons& predicitons,
+        const Range_types::Bytes& data,
+        unsigned frame_delta
     )
     -> Frame
     {
         auto    size = base.size();
-        Frame   target;
+        Frame   target;        
+
+        Model model =
+        {
+            {},
+            {},
+            {},
+            {4, 16},
+            {8, 16},
+            {32, 16},
+            {32, 16},
+        };
 
         {
-//            Range_coders::Decoder           range(data);
-//            Range_coders::Binary_decoder    binary(range);
+            Range_coders::Decoder           range(data);
+            Range_coders::Binary_decoder    binary(range);
 
             for (unsigned i = 0; i < size; ++i)
             {
+                auto g_b = to_gaffer(base[i]);
+                auto q_b = to_quat(g_b);
+
+                // Right, for fun, lets see how good the predictor is.
+                auto b = Position_and_quat
+                {
+                    position(base[i]),
+                    q_b
+                };
+
+                auto calculated = predict
+                (
+                    predicitons[i],
+                    b,
+                    379,
+                    frame_delta
+                );
+
+                auto calculated_quat = to_gaffer(calculated.quat);
+
+                auto has_error = model.has_error.Decode(binary);
+
+                if (has_error)
+                {
+                    auto has_error_quat_largest =
+                        model.has_quat_largest.Decode(binary);
+
+
+
+                    if (has_error_quat_largest)
+                    {
+
+                    }
+                }
+
+                target[i].orientation_largest =
+                    calculated_quat.orientation_largest;
+
+                target[i].orientation_a = calculated_quat.vec[0];
+                target[i].orientation_b = calculated_quat.vec[1];
+                target[i].orientation_c = calculated_quat.vec[2];
+
+                target[i].position_x = calculated.position[0];
+                target[i].position_y = calculated.position[1];
+                target[i].position_z = calculated.position[2];
+
                 // //////////////////////////////////////////////////////
+
+                auto quat_changed = !quat_equal(base[i], target[i]);
+                auto pos_changed = !pos_equal(base[i], target[i]);
+
+                // //////////////////////////////////////////////////////
+
+                unsigned interact_lookup = base[i].interacting;
+                if (pos_changed | quat_changed)
+                {
+                    interact_lookup |= 2;
+                }
+
+                target[i].interacting =
+                    model.interactive[(quat_changed | pos_changed)].Decode
+                    (
+                        binary
+                    );
             }
         }
 
