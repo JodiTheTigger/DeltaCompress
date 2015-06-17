@@ -956,9 +956,12 @@ namespace Actually_trying
     {
         // Ok, lets just get coding first before simplification
         Binary_two_speed has_error;
+        Binary_two_speed has_quat_largest;
         std::array<Binary_two_speed, 4> interactive;
 
         // If I get error, send both pos and quat errors.
+        // RAM: TODO: Try seperate models for pos and quat.
+        Periodic_update quat_largest;
         Periodic_update error_signs;
 
         // Worst case == 10 bits of error.
@@ -1098,7 +1101,9 @@ namespace Actually_trying
         {
             {},
             {},
-            {6, 16},
+            {},
+            {4, 16},
+            {8, 16},
             {32, 16},
             {32, 16},
         };
@@ -1109,57 +1114,58 @@ namespace Actually_trying
             const auto&                     base_0 = base[0];
 
 //            Vec3i pos_cube_0_base   = position(base[0]);
-//            Vec3i pos_cube_0_target = position(target[0]);
+//            Vec3i pos_cube_0_target = position(target[0]);            
 
             // //////////////////////////////////////////////////////
 
-            auto predict_position_and_quat = []
-            (
-                const DeltaData& base,
-                const DeltaData& target,
-                const Predictors& v_and_a,
-                int zero_height,
-                unsigned frame_delta
-            )
-            -> Predictors
+            for (unsigned i = 0; i < size; ++i)
             {
-                auto g_b = to_gaffer(base);
-                auto g_t = to_gaffer(target);
+                // Ok, get the predicted values, calculate the error
+                // and if the error is non-zero, then we have some encoding
+                // to do.
+                auto g_b = to_gaffer(base[i]);
+                auto g_t = to_gaffer(target[i]);
                 auto q_b = to_quat(g_b);
                 auto q_t = to_quat(g_t);
 
                 // Right, for fun, lets see how good the predictor is.
                 auto b = Position_and_quat
                 {
-                    position(base),
+                    position(base[i]),
                     q_b
                 };
 
                 auto t = Position_and_quat
                 {
-                    position(target),
+                    position(target[i]),
                     q_t
                 };
 
-                auto predicition =
-                    predict(v_and_a, b, zero_height, frame_delta);
-
-                //auto error = sub(predicition.position, t.position);
-
-                auto result =
-                    update_prediciton(v_and_a, b, t, frame_delta);
-
-                // Shhh, lets try rotation as well.
-                // RAM: If the largest orientation doesn't match
-                // see if the next largest one does. Assert if it doesn't.
-                auto predict_q = to_gaffer(predicition.quat);
-
-                // Has the largest swapped?
-                if
+                auto calculated = predict
                 (
-                    target.orientation_largest !=
-                    static_cast<int>(predict_q.orientation_largest)
-                )
+                    predicitons[i],
+                    b,
+                    379,
+                    frame_delta
+                );
+
+                auto calculated_quat = to_gaffer(calculated.quat);
+
+                // Update the predicitons for next time.
+                predicitons[i] = update_prediciton
+                (
+                    predicitons[i],
+                    b,
+                    t,
+                    frame_delta
+                );
+
+                auto error_pos = sub(position(target[i]), calculated.position);
+                auto error_quat_largest =
+                    calculated_quat.orientation_largest !=
+                        static_cast<unsigned>(target[i].orientation_largest);
+
+                if (error_quat_largest)
                 {
                     // Due to errors, we cannot reliablly predict what the next
                     // largest value is going to be. So just encode it with the
@@ -1169,12 +1175,12 @@ namespace Actually_trying
                     {
                         if
                         (
-                            std::abs(predict_q.vec[i] - 256)
+                            std::abs(calculated_quat.vec[i] - 256)
                             >
                             std::abs(max - 256)
                         )
                         {
-                            max = predict_q.vec[i];
+                            max = calculated_quat.vec[i];
                         }
                     }
 
@@ -1184,45 +1190,145 @@ namespace Actually_trying
                         auto j = 0;
                         for (unsigned i = 0; i < 3; ++i)
                         {
-                            if (i == predict_q.orientation_largest)
+                            if (i == calculated_quat.orientation_largest)
                             {
                                 j++;
                             }
 
-                            full_quat[j++] = predict_q.vec[i];
+                            full_quat[j++] = calculated_quat.vec[i];
                         }
                     }
 
-                    full_quat[predict_q.orientation_largest] = max;
+                    full_quat[calculated_quat.orientation_largest] = max;
 
                     {
                         auto j = 0;
                         for (unsigned i = 0; i < 3; ++i)
                         {
-                            if (i == static_cast<unsigned>(target.orientation_largest))
+                            if (i == static_cast<unsigned>(target[i].orientation_largest))
                             {
                                 j++;
                             }
 
-                            predict_q.vec[i] = full_quat[j++];
+                            calculated_quat.vec[i] = full_quat[j++];
                         }
                     }
                 }
-//                auto q_error_pos = Vec3i
-//                {
-//                    target.orientation_a - predict_q.vec[0],
-//                    target.orientation_b - predict_q.vec[1],
-//                    target.orientation_c - predict_q.vec[2],
-//                };
 
-//                auto pos_error = error[0] || error[1] || error[2];
-//                auto quat_error =
-//                    q_error_pos[0] || q_error_pos[1] || q_error_pos[2];
+                auto error_quat = Vec3i
+                {
+                    target[i].orientation_a - calculated_quat.vec[0],
+                    target[i].orientation_b - calculated_quat.vec[1],
+                    target[i].orientation_c - calculated_quat.vec[2],
+                };
 
-                return result;
-            };
+                auto has_error_pos =
+                    error_pos[0]
+                    || error_pos[1]
+                    || error_pos[2];
 
-            // //////////////////////////////////////////////////////
+                auto has_error_quat =
+                    error_quat[0]
+                        || error_quat[1]
+                        || error_quat[2];
+
+                auto has_error =
+                    has_error_pos
+                    || has_error_quat
+                    || error_quat_largest;
+
+                // Encode!
+                model.has_error.Encode(binary, has_error);
+
+                if (has_error)
+                {
+                    model.has_quat_largest.Encode(binary, error_quat_largest);
+
+                    if (error_quat_largest)
+                    {
+                        model.quat_largest.Encode
+                        (
+                            range,
+                            target[i].orientation_largest
+                        );
+                    }
+
+                    auto get_signs = [](const Vec3i& v) -> unsigned
+                    {
+                        unsigned result = 0;
+
+                        if (v[0] < 0)
+                        {
+                            result |= 1;
+                        }
+
+                        if (v[1] < 0)
+                        {
+                            result |= 2;
+                        }
+
+                        if (v[2] < 0)
+                        {
+                            result |= 4;
+                        }
+
+                        return result;
+                    };
+
+                    auto strip_signs = [](const Vec3i& v) -> Vec3i
+                    {
+                        return
+                        {
+                            std::abs(v[0]),
+                            std::abs(v[1]),
+                            std::abs(v[2]),
+                        };
+                    };
+
+                    auto signs_pos  = get_signs(error_pos);
+                    auto signs_quat = get_signs(error_quat);
+                    auto vec_pos    = strip_signs(error_pos);
+                    auto vec_quat   = strip_signs(error_quat);
+
+                    model.error_signs.Encode
+                    (
+                        range,
+                        signs_pos
+                    );
+
+                    model.error_signs.Encode
+                    (
+                        range,
+                        signs_quat
+                    );
+
+                    for (auto v: vec_pos)
+                    {
+                        assert(v < (1 << 10));
+
+                        model.error_high_5_bits.Encode(range, v >> 5);
+                        model.error_low_5_bits.Encode
+                        (
+                            range,
+                            v & ((1 << 5) - 1)
+                        );
+                    }
+
+                    for (auto v: vec_quat)
+                    {
+                        assert(v < (1 << 10));
+
+                        model.error_high_5_bits.Encode(range, v >> 5);
+                        model.error_low_5_bits.Encode
+                        (
+                            range,
+                            v & ((1 << 5) - 1)
+                        );
+                    }
+                }
+            }
+
+
 
             {
                 // Treat Cube 0 different as it's play controlled.
@@ -1253,19 +1359,6 @@ namespace Actually_trying
                     {
                         binary.Encode(quat_changed, CUBE_0_QUAT_CHANGED_POS_0);
                     }
-                }
-
-                {
-                    // RAM: fun with predictions
-                    // magic number = guess at floor hight of the big cube.
-                    predicitons[0] = predict_position_and_quat
-                    (
-                        base[0],
-                        target[0],
-                        predicitons[0],
-                        379,
-                        frame_delta
-                    );
                 }
             }
 
@@ -1376,21 +1469,6 @@ namespace Actually_trying
 
                 auto quat_changed = !quat_equal(base[i], target[i]);
                 auto pos_changed = !pos_equal(base[i], target[i]);
-
-                // //////////////////////////////////////////////////////
-
-                {
-                    // RAM: fun with predictions
-                    // magic number = guess at floor hight of the big cube.
-                    predicitons[i] = predict_position_and_quat
-                    (
-                        base[i],
-                        target[i],
-                        predicitons[i],
-                        36,//IN_AIR_THREASHOLD,
-                        frame_delta
-                    );
-                }
 
                 // //////////////////////////////////////////////////////
 
