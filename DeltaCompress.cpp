@@ -1062,6 +1062,69 @@ namespace Actually_trying
         };
     }
 
+    auto swap_orientation_largest
+    (
+        const Gaffer& quat,
+        unsigned new_largest
+    )
+    -> Gaffer
+    {
+        // Due to errors, we cannot reliablly predict what the next
+        // largest value is going to be. So just encode it with the
+        // prediciton.
+        auto max = 256;
+        for (auto i = 0 ; i < 3; ++i)
+        {
+            if
+            (
+                std::abs(quat.vec[i] - 256)
+                >
+                std::abs(max - 256)
+            )
+            {
+                max = quat.vec[i];
+            }
+        }
+
+        int full_quat[4];
+
+        {
+            auto j = 0;
+            for (unsigned i = 0; i < 3; ++i)
+            {
+                if (i == quat.orientation_largest)
+                {
+                    j++;
+                }
+
+                full_quat[j++] = quat.vec[i];
+            }
+        }
+
+        full_quat[quat.orientation_largest] = max;
+
+        auto result = Gaffer
+        {
+            new_largest,
+            {0, 0, 0}
+        };
+
+        {
+            auto j = 0;
+            for (unsigned i = 0; i < 3; ++i)
+            {
+                if (i == new_largest)
+                {
+                    j++;
+                }
+
+                result.vec[i] = full_quat[j++];
+            }
+        }
+
+        return result;
+    }
+
     auto encode
     (
         const Frame& base,
@@ -1146,52 +1209,15 @@ namespace Actually_trying
 
                 if (error_quat_largest)
                 {
-                    // Due to errors, we cannot reliablly predict what the next
-                    // largest value is going to be. So just encode it with the
-                    // prediciton.
-                    auto max = 256;
-                    for (auto i = 0 ; i < 3; ++i)
-                    {
-                        if
+                    calculated_quat =
+                        swap_orientation_largest
                         (
-                            std::abs(calculated_quat.vec[i] - 256)
-                            >
-                            std::abs(max - 256)
-                        )
-                        {
-                            max = calculated_quat.vec[i];
-                        }
-                    }
-
-                    int full_quat[4];
-
-                    {
-                        auto j = 0;
-                        for (unsigned i = 0; i < 3; ++i)
-                        {
-                            if (i == calculated_quat.orientation_largest)
-                            {
-                                j++;
-                            }
-
-                            full_quat[j++] = calculated_quat.vec[i];
-                        }
-                    }
-
-                    full_quat[calculated_quat.orientation_largest] = max;
-
-                    {
-                        auto j = 0;
-                        for (unsigned i = 0; i < 3; ++i)
-                        {
-                            if (i == static_cast<unsigned>(target[i].orientation_largest))
-                            {
-                                j++;
-                            }
-
-                            calculated_quat.vec[i] = full_quat[j++];
-                        }
-                    }
+                            calculated_quat,
+                            static_cast<unsigned>
+                            (
+                                target[i].orientation_largest
+                            )
+                        );
                 }
 
                 auto error_quat = Vec3i
@@ -1546,12 +1572,49 @@ namespace Actually_trying
                     auto has_error_quat_largest =
                         model.has_quat_largest.Decode(binary);
 
-
-
                     if (has_error_quat_largest)
                     {
+                        auto largest = model.quat_largest.Decode(range);
 
+                        calculated_quat =
+                            swap_orientation_largest(calculated_quat, largest);
                     }
+
+                    // Get the errors and add them to things.
+                    auto signs_pos  = model.error_signs.Decode(range);
+                    auto signs_quat = model.error_signs.Decode(range);
+
+                    auto decode_vec = [&model, &range]() -> Vec3i
+                    {
+                        Vec3i result;
+
+                        for (auto& v: result)
+                        {
+                            auto p = model.error_high_5_bits.Decode(range) << 5;
+                            p += model.error_low_5_bits.Decode(range);
+                            v = p;
+                        }
+
+                        return result;
+                    };
+
+                    auto add_signs = [](unsigned signs, const Vec3i& v) -> Vec3i
+                    {
+                        return
+                        {
+                            (signs & 1) ? -v[0] : v[0],
+                            (signs & 2) ? -v[1] : v[1],
+                            (signs & 4) ? -v[2] : v[2],
+                        };
+                    };
+
+                    auto vec_pos  = decode_vec();
+                    auto vec_quat = decode_vec();
+                    auto error_pos  = add_signs(signs_pos, vec_pos);
+                    auto error_quat = add_signs(signs_quat, vec_quat);
+
+                    calculated.position = add(calculated.position, error_pos);
+                    calculated_quat.vec = add(calculated_quat.vec, error_quat);
                 }
 
                 target[i].orientation_largest =
