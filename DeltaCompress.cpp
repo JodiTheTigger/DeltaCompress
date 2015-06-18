@@ -28,7 +28,7 @@
 
 bool do_tests       = false;
 bool do_compression = true;
-bool do_decompress  = false;
+bool do_decompress  = true;
 
 // //////////////////////////////////////////////////////
 
@@ -1330,28 +1330,28 @@ namespace Actually_trying
                             v & ((1 << 5) - 1)
                         );
                     }
-
-                    // //////////////////////////////////////////////////////
-
-                    auto quat_changed = !quat_equal(base[i], target[i]);
-                    auto pos_changed = !pos_equal(base[i], target[i]);
-
-                    // //////////////////////////////////////////////////////
-
-                    // Note: You CAN get no interaction even if the quat or pos
-                    // changes.
-                    unsigned interact_lookup = base[i].interacting;
-                    if (pos_changed | quat_changed)
-                    {
-                        interact_lookup |= 2;
-                    }
-
-                    model.interactive[interact_lookup].Encode
-                    (
-                        binary,
-                        target[i].interacting
-                    );
                 }
+
+                // //////////////////////////////////////////////////////
+
+                auto quat_changed = !quat_equal(base[i], target[i]);
+                auto pos_changed = !pos_equal(base[i], target[i]);
+
+                // //////////////////////////////////////////////////////
+
+                // Note: You CAN get no interaction even if the quat or pos
+                // changes.
+                unsigned interact_lookup = base[i].interacting;
+                if (pos_changed | quat_changed)
+                {
+                    interact_lookup |= 2;
+                }
+
+                model.interactive[interact_lookup].Encode
+                (
+                    binary,
+                    target[i].interacting
+                );
             }
 
 
@@ -1519,7 +1519,7 @@ namespace Actually_trying
     auto decode
     (
         const Frame& base,
-        const Frame_predicitons& predicitons,
+        Frame_predicitons& predicitons,
         const Range_types::Bytes& data,
         unsigned frame_delta
     )
@@ -1627,6 +1627,26 @@ namespace Actually_trying
                 target[i].position_x = calculated.position[0];
                 target[i].position_y = calculated.position[1];
                 target[i].position_z = calculated.position[2];
+
+                // //////////////////////////////////////////////////////
+
+                auto g_t = to_gaffer(target[i]);
+                auto q_t = to_quat(g_t);
+
+                auto t = Position_and_quat
+                {
+                    position(target[i]),
+                    q_t
+                };
+
+                // Update the predicitons for next time.
+                predicitons[i] = update_prediciton
+                (
+                    predicitons[i],
+                    b,
+                    t,
+                    frame_delta
+                );
 
                 // //////////////////////////////////////////////////////
 
@@ -3363,14 +3383,15 @@ void range_compress(std::vector<Frame>& frames)
         unsigned min = 10000000;
         unsigned max = 0;
 
-        Frame_predicitons predicitons = {};
+        Frame_predicitons predict_server = {};
+        Frame_predicitons predict_client = {};
 
         for (size_t i = PacketDelta; i < packets; ++i)
         {
             auto buffer = encoder(
                 frames[i-PacketDelta],
                 frames[i],
-                predicitons,
+                predict_server,
                 PacketDelta);
 
             const unsigned size = buffer.size();
@@ -3385,7 +3406,7 @@ void range_compress(std::vector<Frame>& frames)
             {
                 auto back = decoder(
                     frames[i-PacketDelta],
-                    predicitons,
+                    predict_client,
                     buffer,
                     PacketDelta);
 
@@ -3428,19 +3449,19 @@ void range_compress(std::vector<Frame>& frames)
 //        "Sorted_position"
 //    );
 
-    test
-    (
-        Naieve_rotor::encode,
-        Naieve_rotor::decode,
-        "Naieve_rotor"
-    );
+//    test
+//    (
+//        Naieve_rotor::encode,
+//        Naieve_rotor::decode,
+//        "Naieve_rotor"
+//    );
 
-    test
-    (
-        Naieve_gaffer::encode,
-        Naieve_gaffer::decode,
-        "Naieve_gaffer"
-    );
+//    test
+//    (
+//        Naieve_gaffer::encode,
+//        Naieve_gaffer::decode,
+//        "Naieve_gaffer"
+//    );
 }
 
 int main(int, char**)
