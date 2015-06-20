@@ -934,18 +934,18 @@ namespace Actually_trying
     struct Model
     {
         // Ok, lets just get coding first before simplification
-        Binary_two_speed has_error;
-        Binary_two_speed has_quat_largest;
-        std::array<Binary_two_speed, 4> interactive;
+        Binary_two_speed has_error                      = {1, 7};
+        Binary_two_speed has_quat_largest               = {1, 7};
+        std::array<Binary_two_speed, 4> interactive     = {};
 
         // If I get error, send both pos and quat errors.
         // RAM: TODO: Try seperate models for pos and quat.
-        Periodic_update quat_largest;
-        Periodic_update error_signs;
+        Periodic_update quat_largest                    = {4, 16};
+        Periodic_update error_signs                     = {8, 16};
 
         // Worst case == 10 bits of error.
-        Periodic_update error_low_5_bits;
-        Periodic_update error_high_5_bits;
+        Periodic_update error_low_5_bits                = {32, 16};
+        Periodic_update error_high_5_bits               = {32, 16};
     };
 
     auto predict
@@ -1139,16 +1139,7 @@ namespace Actually_trying
 
         // //////////////////////////////////////////////////////
 
-        Model model =
-        {
-            {},
-            {},
-            {},
-            {4, 16},
-            {8, 16},
-            {32, 16},
-            {32, 16},
-        };
+        Model model;
 
         {
             Range_coders::Encoder           range(data);
@@ -1528,16 +1519,7 @@ namespace Actually_trying
         auto    size = base.size();
         Frame   target;        
 
-        Model model =
-        {
-            {},
-            {},
-            {},
-            {4, 16},
-            {8, 16},
-            {32, 16},
-            {32, 16},
-        };
+        Model model;
 
         {
             Range_coders::Decoder           range(data);
