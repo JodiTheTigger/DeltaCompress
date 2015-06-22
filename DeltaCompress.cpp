@@ -1155,18 +1155,6 @@ namespace Naive_error
                     auto vec_pos    = strip_signs(error_pos);
                     auto vec_quat   = strip_signs(error_quat);
 
-                    model.error_signs.Encode
-                    (
-                        range,
-                        signs_pos
-                    );
-
-                    model.error_signs.Encode
-                    (
-                        range,
-                        signs_quat
-                    );
-
                     for (auto v: vec_pos)
                     {
                         assert(v < (1 << 10));
@@ -1188,6 +1176,34 @@ namespace Naive_error
                         (
                             range,
                             v & ((1 << 5) - 1)
+                        );
+                    }
+
+                    if
+                    (
+                        vec_pos[0]
+                        || vec_pos[1]
+                        || vec_pos[2]
+                    )
+                    {
+                        model.error_signs.Encode
+                        (
+                            range,
+                            signs_pos
+                        );
+                    }
+
+                    if
+                    (
+                        vec_quat[0]
+                        || vec_quat[1]
+                        || vec_quat[2]
+                    )
+                    {
+                        model.error_signs.Encode
+                        (
+                            range,
+                            signs_quat
                         );
                     }
                 }
@@ -1274,9 +1290,6 @@ namespace Naive_error
                     }
 
                     // Get the errors and add them to things.
-                    auto signs_pos  = model.error_signs.Decode(range);
-                    auto signs_quat = model.error_signs.Decode(range);
-
                     auto decode_vec = [&model, &range]() -> Vec3i
                     {
                         Vec3i result;
@@ -1301,8 +1314,31 @@ namespace Naive_error
                         };
                     };
 
-                    auto vec_pos  = decode_vec();
-                    auto vec_quat = decode_vec();
+                    auto vec_pos        = decode_vec();
+                    auto vec_quat       = decode_vec();
+                    unsigned signs_pos  = 0;
+                    unsigned signs_quat = 0;
+
+                    if
+                    (
+                        vec_pos[0]
+                        || vec_pos[1]
+                        || vec_pos[2]
+                    )
+                    {
+                        signs_pos = model.error_signs.Decode(range);
+                    }
+
+                    if
+                    (
+                        vec_quat[0]
+                        || vec_quat[1]
+                        || vec_quat[2]
+                    )
+                    {
+                        signs_quat = model.error_signs.Decode(range);
+                    }
+
                     auto error_pos  = add_signs(signs_pos, vec_pos);
                     auto error_quat = add_signs(signs_quat, vec_quat);
 
