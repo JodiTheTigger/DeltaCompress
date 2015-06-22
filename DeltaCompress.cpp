@@ -1644,7 +1644,7 @@ namespace Actually_trying
                 }
 
                 target[i].interacting =
-                    model.interactive[(quat_changed | pos_changed)].Decode
+                    model.interactive[interact_lookup].Decode
                     (
                         binary
                     );
