@@ -803,7 +803,7 @@ inline constexpr auto bit_mask(unsigned bits) -> unsigned
 
 using namespace Range_models;
 
-namespace Actually_trying
+namespace Naive_error
 {
     struct Model
     {
@@ -813,9 +813,8 @@ namespace Actually_trying
         std::array<Binary_two_speed, 4> interactive     = {};
 
         // If I get error, send both pos and quat errors.
-        // RAM: TODO: Try seperate models for pos and quat.
-        Periodic_update quat_largest                    = {4, 16};
-        Periodic_update error_signs                     = {8, 16};
+        Periodic_update quat_largest                    = {4, 1};
+        Periodic_update error_signs                     = {8, 4};
 
         // Worst case == 10 bits of error.
         Periodic_update error_low_5_bits                = {32, 16};
@@ -1436,9 +1435,9 @@ void range_compress(std::vector<Frame>& frames)
 
     test
     (
-        Actually_trying::encode,
-        Actually_trying::decode,
-        "Actually_trying"
+        Naive_error::encode,
+        Naive_error::decode,
+        "Naive_error"
     );
 }
 
