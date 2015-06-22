@@ -1122,20 +1122,9 @@ namespace Naive_error
                     {
                         unsigned result = 0;
 
-                        if (v[0] < 0)
-                        {
-                            result |= 1;
-                        }
-
-                        if (v[1] < 0)
-                        {
-                            result |= 2;
-                        }
-
-                        if (v[2] < 0)
-                        {
-                            result |= 4;
-                        }
+                        if (v[0] < 0) { result |= 1; }
+                        if (v[1] < 0) { result |= 2; }
+                        if (v[2] < 0) { result |= 4; }
 
                         return result;
                     };
@@ -1179,12 +1168,7 @@ namespace Naive_error
                         );
                     }
 
-                    if
-                    (
-                        vec_pos[0]
-                        || vec_pos[1]
-                        || vec_pos[2]
-                    )
+                    if (vec_pos[0] || vec_pos[1] || vec_pos[2])
                     {
                         model.error_signs.Encode
                         (
@@ -1193,12 +1177,7 @@ namespace Naive_error
                         );
                     }
 
-                    if
-                    (
-                        vec_quat[0]
-                        || vec_quat[1]
-                        || vec_quat[2]
-                    )
+                    if (vec_quat[0] || vec_quat[1] || vec_quat[2])
                     {
                         model.error_signs.Encode
                         (
@@ -1319,22 +1298,12 @@ namespace Naive_error
                     unsigned signs_pos  = 0;
                     unsigned signs_quat = 0;
 
-                    if
-                    (
-                        vec_pos[0]
-                        || vec_pos[1]
-                        || vec_pos[2]
-                    )
+                    if (vec_pos[0] || vec_pos[1] || vec_pos[2])
                     {
                         signs_pos = model.error_signs.Decode(range);
                     }
 
-                    if
-                    (
-                        vec_quat[0]
-                        || vec_quat[1]
-                        || vec_quat[2]
-                    )
+                    if (vec_quat[0] || vec_quat[1] || vec_quat[2])
                     {
                         signs_quat = model.error_signs.Decode(range);
                     }
