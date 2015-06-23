@@ -136,7 +136,7 @@ static_assert(Cubes < ((1 << CubeBits) - 1), "CubeBits is too small.");
 // NOTE: All quanternion values are positive even though they are stored
 //       as ints.
 
-//static const unsigned RotationMaxBits = 9;
+static const unsigned RotationMaxBits = 9;
 //static const unsigned RotationIndexMaxBits = 2;
 
 // I found a maximum speed of 32 meters per-second is a nice power of two
@@ -165,6 +165,9 @@ static const int        XYRange           = MaxXYInclusize - MinXYInclusize;
 
 static const unsigned   MaxBitsZ          = 14;
 static const unsigned   MaxBitsXY         = 18;
+
+static const unsigned   MaxBitsAll        =
+    std::max(MaxBitsZ, std::max(MaxBitsXY, RotationMaxBits));
 
 //static const unsigned   MaxSnapshotsPerSecond = 60;
 
@@ -1386,10 +1389,6 @@ namespace Sorted_error
         Periodic_update quat_largest                    = {4, 1};
         Periodic_update error_signs                     = {8, 4};
 
-        // Worst case == 10 bits of error.
-        Periodic_update error_low_5_bits                = {32, 16};
-        Periodic_update error_high_5_bits               = {32, 16};
-
         // Send the vec values sorted from higest to lowest.
         // Need to store the order of everything. There are !6 combinations
         // (720) But if the bytes reduce to 0 then we know the rest are 0.
@@ -1399,6 +1398,21 @@ namespace Sorted_error
         {{
              {6, 1}, {5, 1}, {4, 1}, {3, 1}, {2, 1}
         }};
+
+        Binary_two_speed first_vec_big                  = {1, 7};
+
+        std::array<Periodic_update, 6> error_low_sorted =
+        {{
+            {32, 16}, {32, 16}, {32, 16}, {32, 16}, {32, 16}, {32, 16},
+        }};
+
+        // Use the same one for all, I only really expect the first sorted
+        // vallue to be larger than 5 bits.
+        Periodic_update error_high_sorted               =
+        {
+            // 32 should really be (1 << ((MaxBitsAll + 1) - 5u)).
+            32, 16
+        };
     };
 
     using Sort_list = std::array<unsigned, 6>;
@@ -1411,7 +1425,7 @@ namespace Sorted_error
     // RAM: TODO: Better name, cmon.
     auto sort(Sort_list to_sort) -> Sort_result
     {
-        Sort_result result;
+        Sort_result result = {};
 
         static const auto size  = to_sort.size();
 
@@ -1433,6 +1447,11 @@ namespace Sorted_error
 
             using std::swap;
             swap(to_sort[j], to_sort[j+largest_index]);
+
+            if (!largest_value)
+            {
+                break;
+            }
         }
 
         result.values = to_sort;
@@ -1784,7 +1803,6 @@ namespace Sorted_error
                     auto vec_pos    = strip_signs(error_pos);
                     auto vec_quat   = strip_signs(error_quat);
 
-                    // RAM: Hack test sorting and unsorting.
                     Sort_list to_sort =
                     {
                         static_cast<unsigned>(vec_pos[0]),
@@ -1796,33 +1814,39 @@ namespace Sorted_error
                         static_cast<unsigned>(vec_quat[2])
                     };
 
-                    auto fred = sort(to_sort);
-                    auto bob = unsort(fred);
+                    auto sorted = sort(to_sort);
 
-                    assert(to_sort == bob);
-
-                    for (auto v: vec_pos)
+                    const auto size = sorted.indicies.size();
+                    for (unsigned j = 0; j < (size - 1); ++j)
                     {
-                        assert(v < (1 << 10));
-
-                        model.error_high_5_bits.Encode(range, v >> 5);
-                        model.error_low_5_bits.Encode
-                        (
-                            range,
-                            v & ((1 << 5) - 1)
-                        );
+                        model.vec_largest[j].Encode(range, sorted.indicies[j]);
                     }
 
-                    for (auto v: vec_quat)
-                    {
-                        assert(v < (1 << 10));
+                    // First value is special case, need to know how many bits.
+                    auto bits_for_first = MinBits(sorted.values[0]);
+                    auto encode_big = bits_for_first > 5;
+                    model.first_vec_big.Encode(binary, encode_big);
 
-                        model.error_high_5_bits.Encode(range, v >> 5);
-                        model.error_low_5_bits.Encode
-                        (
-                            range,
-                            v & ((1 << 5) - 1)
-                        );
+                    for (unsigned j = 0; j < size; ++j)
+                    {
+                        const auto value = sorted.values[j];
+                        const auto large = value >> 5;
+                        const auto small = value & ((1 << 5) - 1);
+
+                        if (encode_big)
+                        {
+                            model.error_high_sorted.Encode(range, large);
+
+                            auto bits = MinBits(value);
+                            encode_big = bits > 5;
+                        }
+
+                        model.error_low_sorted[j].Encode(range, small);
+
+                        if (!value)
+                        {
+                            break;
+                        }
                     }
 
                     if (vec_pos[0] || vec_pos[1] || vec_pos[2])
@@ -1925,19 +1949,52 @@ namespace Sorted_error
                             swap_orientation_largest(calculated_quat, largest);
                     }
 
-                    // Get the errors and add them to things.
-                    auto decode_vec = [&model, &range]() -> Vec3i
-                    {
-                        Vec3i result;
+                    Sort_result sorted = {};
 
-                        for (auto& v: result)
+                    const auto size = sorted.indicies.size();
+                    for (unsigned j = 0; j < (size - 1); ++j)
+                    {
+                        sorted.indicies[j] = model.vec_largest[j].Decode(range);
+                    }
+
+                    auto decode_big = model.first_vec_big.Decode(binary);
+
+                    for (unsigned j = 0; j < size; ++j)
+                    {
+                        unsigned decoded = 0;
+                        if (decode_big)
                         {
-                            auto p = model.error_high_5_bits.Decode(range) << 5;
-                            p += model.error_low_5_bits.Decode(range);
-                            v = p;
+                            decoded = model.error_high_sorted.Decode(range);
+                            decoded <<= 5;
                         }
 
-                        return result;
+                        decoded |= model.error_low_sorted[j].Decode(range);
+
+                        sorted.values[j] = decoded;
+
+                        if (!sorted.values[j])
+                        {
+                            break;
+                        }
+
+                        auto bits = MinBits(decoded);
+                        decode_big = bits > 5;
+                    }
+
+                    auto unsorted = unsort(sorted);
+
+                    Vec3i vec_pos =
+                    {
+                        static_cast<int>(unsorted[0]),
+                        static_cast<int>(unsorted[1]),
+                        static_cast<int>(unsorted[2]),
+                    };
+
+                    Vec3i vec_quat =
+                    {
+                        static_cast<int>(unsorted[3]),
+                        static_cast<int>(unsorted[4]),
+                        static_cast<int>(unsorted[5]),
                     };
 
                     auto add_signs = [](unsigned signs, const Vec3i& v) -> Vec3i
@@ -1950,8 +2007,6 @@ namespace Sorted_error
                         };
                     };
 
-                    auto vec_pos        = decode_vec();
-                    auto vec_quat       = decode_vec();
                     unsigned signs_pos  = 0;
                     unsigned signs_quat = 0;
 
