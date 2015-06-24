@@ -1029,6 +1029,292 @@ namespace Range_models
             m_updates = 0;
         }
     };
+
+    class Exp_update
+    {
+    public:
+        typedef std::vector<unsigned>  Freqencies;
+        typedef std::vector<Range>     Ranges;
+
+        Exp_update
+        (
+            unsigned size
+        )
+            : m_r()
+            , m_size(size)
+        {
+            m_r.reserve(size);
+
+            const unsigned number = PROBABILITY_RANGE / size;
+
+            unsigned total = 0;
+            for (unsigned i = 0; i < size; ++i)
+            {
+                m_r.push_back
+                ({
+                    total,
+                    number
+                });
+
+                total += number;
+            }
+
+            Recalculate_ranges(total);
+        }
+
+        Exp_update
+        (
+            Freqencies frequencies
+        )
+            : m_r()
+            , m_size(frequencies.size())
+        {
+            m_r.reserve(m_size);
+
+            unsigned total = 0;
+            for (const auto f : frequencies)
+            {
+                assert(f);
+
+                m_r.push_back
+                ({
+                    total,
+                    f
+                });
+
+                total += f;
+            }
+
+            Recalculate_ranges(total);
+        }
+
+        void Encode(Encoder& coder, unsigned value)
+        {
+            assert(value < m_size);
+
+            coder.Encode(m_r[value]);
+
+            Adapt(value);
+        }
+
+        void Encode(Encoder& coder, unsigned value, unsigned max_value)
+        {
+            assert(value < m_size);
+            assert(max_value < m_size);
+
+            // Hmm, encoding one bit bad give me issues.
+            max_value = std::max(max_value, 2u);
+
+            // Multiply the ranges instead of the value
+            // so the frequencies still get updated correctly.
+            auto old_range  = m_r[value];
+            auto last_range = m_r[max_value];
+            float max_cf = last_range.min + last_range.count;
+            float multiplier = PROBABILITY_RANGE / max_cf;
+
+            // Man, rounding errors and off my one are my bane.
+            unsigned next_min = 0;
+            if (value < max_value)
+            {
+                next_min =
+                    static_cast<uint32_t>
+                    (
+                        std::round(m_r[value + 1].min * multiplier)
+                    );
+            }
+            else
+            {
+                next_min = PROBABILITY_RANGE;
+            }
+
+            auto new_min =
+                static_cast<uint32_t>(std::round(old_range.min * multiplier));
+
+            auto new_range = Range
+            {
+                new_min,
+                next_min - new_min,
+            };
+
+            coder.Encode(new_range);
+
+            Adapt(value);
+        }
+
+        unsigned Decode(Decoder& coder)
+        {
+            auto range = coder.Decode();
+            unsigned result = 0;
+
+            const auto size = m_size;
+            while ((m_r[result].min <= range) && (result < size))
+            {
+                ++result;
+            }
+
+            --result;
+
+            coder.Update(m_r[result]);
+            Adapt(result);
+
+            return result;
+        }
+
+        unsigned Decode(Decoder& coder, unsigned max_value)
+        {
+            assert(max_value < m_size);
+
+            // Hmm, encoding one bit bad give me issues.
+            max_value = std::max(max_value, 2u);
+
+            auto range = coder.Decode();
+            unsigned result = 0;
+
+            auto last_range = m_r[max_value];
+            float max_cf = last_range.min + last_range.count;
+            float multiplier = PROBABILITY_RANGE / max_cf;
+
+            const auto size = m_size;
+
+            while (result < size)
+            {
+                auto new_min =
+                    static_cast<uint32_t>
+                    (
+                        std::round(m_r[result].min * multiplier)
+                    );
+
+                if (new_min > range)
+                {
+                    break;
+                }
+
+                ++result;
+            }
+
+            --result;
+
+            unsigned next_min = 0;
+            if (result < max_value)
+            {
+                next_min =
+                    static_cast<uint32_t>
+                    (
+                        std::round(m_r[result + 1].min * multiplier)
+                    );
+            }
+            else
+            {
+                next_min = PROBABILITY_RANGE;
+            }
+
+            auto new_min =
+                static_cast<uint32_t>(std::round(m_r[result].min * multiplier));
+
+            auto new_range = Range
+            {
+                new_min,
+                next_min - new_min,
+            };
+
+            coder.Update(new_range);
+            Adapt(result);
+
+            return result;
+        }
+
+    private:
+        Ranges      m_r;
+
+        const unsigned m_size       = 0;
+        const unsigned m_speed      = 3;
+
+        void Adapt(unsigned value)
+        {
+            unsigned total = 0;
+            const unsigned spread = m_size - 1;
+            for (unsigned i = 0; i < m_size; ++i)
+            {
+                if (value == i)
+                {
+                    m_r[i].count +=
+                    (
+                        ((PROBABILITY_RANGE - m_r[i].count) >> m_speed)
+                        / spread
+                    )
+                    * spread;
+                }
+                else
+                {
+                    m_r[i].count -=
+                    (
+                        (m_r[i].count >> m_speed)
+                        / spread
+                    )
+                    * spread;
+                }
+
+                assert(m_r[i].min < PROBABILITY_RANGE);
+
+                m_r[i].min = total;
+                total += m_r[i].count;
+            }
+
+            Recalculate_ranges(total);
+        }
+
+        void Recalculate_ranges(unsigned total)
+        {
+            if (total == PROBABILITY_RANGE)
+            {
+                // yay, nothing to do!
+                return;
+            }
+
+            if (total > PROBABILITY_RANGE)
+            {
+                unsigned sub = 1 + ((total - PROBABILITY_RANGE) / m_size);
+
+                total = 0;
+                for (auto& r : m_r)
+                {
+                    r.count -= sub;
+                    r.min = total;
+                    total += r.count;
+                }
+            }
+
+            const auto size     = m_size;
+            auto multiple       = PROBABILITY_RANGE / total;
+            auto reminder       = PROBABILITY_RANGE % total;
+            auto global_adjust  = reminder / size;
+            auto reminder_count = reminder % size;
+            unsigned last_min   = 0;
+
+            for (unsigned i = 0; i < reminder_count; ++i)
+            {
+                m_r[i].min      = last_min;
+                m_r[i].count    = 1 + (global_adjust + m_r[i].count * multiple);
+
+                assert(m_r[i].min < PROBABILITY_RANGE);
+
+                last_min += m_r[i].count;
+            }
+
+            for (unsigned i = reminder_count; i < size; ++i)
+            {
+                m_r[i].min      = last_min;
+                m_r[i].count    = 0 + (global_adjust + m_r[i].count * multiple);
+
+                assert(m_r[i].min < PROBABILITY_RANGE);
+
+                last_min += m_r[i].count;
+            }
+
+            assert(last_min == PROBABILITY_RANGE);
+        }
+    };
+
 } // Namespace models
 
 void range_tests()
@@ -1226,6 +1512,35 @@ void range_tests()
                 assert(read == data.size());
             }
         };
+
+        // RAM: Why the copy paste?
+
+        for (const auto& range_set : range_data)
+        {
+            Exp_update::Freqencies
+                    frequencies{1,1,1,1};
+            Exp_update::Freqencies
+                    overflow{65536,44,100000,34567};
+
+            Range_test(
+                4,
+                range_set,
+                Exp_update(frequencies),
+                Exp_update(frequencies));
+
+            Range_test(
+                4,
+                range_set,
+                Exp_update(overflow),
+                Exp_update(overflow));
+
+            Range_test(
+                8,
+                range_set,
+                Exp_update(8),
+                Exp_update(8),
+                3);
+        }
 
         for (const auto& range_set : range_data)
         {
