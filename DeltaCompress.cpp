@@ -809,6 +809,9 @@ using namespace Range_models;
 
 namespace Naive_error
 {
+    // Found emperically.
+    static const constexpr int LOWEST_POINT = 38;
+
     struct Model
     {
         // Ok, lets just get coding first before simplification
@@ -857,6 +860,15 @@ namespace Naive_error
             static_cast<int>(std::round(base.position[1] + pos_delta[1])),
             static_cast<int>(std::round(base.position[2] + pos_delta[2]))
         };
+
+        // reflect z about lowest point.
+        // RAM: TODO: Diff between cube 0 and the rest,
+        // this is based on the rest. Use zero_height.
+        // Also investigate restitution.
+        if (pos[2] < LOWEST_POINT)
+        {
+            pos[2] = LOWEST_POINT + (LOWEST_POINT - pos[2]);
+        }
 
         // Yay, this seems to work!
         auto wt_2 =
