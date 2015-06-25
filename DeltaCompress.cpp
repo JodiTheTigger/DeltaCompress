@@ -817,7 +817,7 @@ namespace Naive_error
         std::array<Binary_two_speed, 4> interactive     = {};
 
         // If I get error, send both pos and quat errors.
-        Exp_update      quat_largest                    = {4, 7};
+        Exp_update      quat_largest                    = {4, 8};
         Exp_update      error_signs                     = {8, 7};
 
         // Worst case == 10 bits of error.
