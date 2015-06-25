@@ -810,8 +810,10 @@ using namespace Range_models;
 namespace Naive_error
 {
     // Found emperically.
-    static const constexpr int LOWEST_POINT = 38;
-    static const constexpr float RESTITUTION = 0.869;
+    // Changing restitution for cube 0 makes no difference.
+    static const constexpr int LOWEST_POINT         = 38;
+    static const constexpr int LOWEST_POINT_CUBE_0  = 367;
+    static const constexpr float RESTITUTION        = 0.869;
 
     struct Model
     {
@@ -833,7 +835,7 @@ namespace Naive_error
     (
         const Predictors& v_and_a,
         const Position_and_quat& base,
-        int,// zero_height,
+        int zero_height,
         unsigned frame_delta
     )
     -> Position_and_quat
@@ -847,10 +849,7 @@ namespace Naive_error
 
         auto v = add(v_and_a.linear_velocity_per_frame, at_2);
 
-        // RAM: TODO: Snap at cube size / 2 to stop going though floor.
-        //            Doesn't work, cube allowed to sink into floor.
         // RAM: TODO: Apply damping if item on floor.
-        // RAM: TODO: Add restition in the y axis if boucing on floor
         // RAM: TODO: angular!
 
         auto pos_delta = mul(v, frame_delta);
@@ -863,11 +862,9 @@ namespace Naive_error
         };
 
         // reflect z about lowest point.
-        // RAM: TODO: Diff between cube 0 and the rest,
-        // this is based on the rest. Use zero_height.
-        if (pos[2] < LOWEST_POINT)
+        if (pos[2] < zero_height)
         {
-            pos[2] = LOWEST_POINT + RESTITUTION*(LOWEST_POINT - pos[2]);
+            pos[2] = zero_height + RESTITUTION * (zero_height - pos[2]);
         }
 
         // Yay, this seems to work!
@@ -1059,11 +1056,13 @@ namespace Naive_error
                     q_t
                 };
 
+                auto zero_height = i ? LOWEST_POINT : LOWEST_POINT_CUBE_0;
+
                 auto calculated = predict
                 (
                     predicitons[i],
                     b,
-                    379,
+                    zero_height,
                     frame_delta
                 );
 
@@ -1259,11 +1258,13 @@ namespace Naive_error
                     q_b
                 };
 
+                auto zero_height = i ? LOWEST_POINT : LOWEST_POINT_CUBE_0;
+
                 auto calculated = predict
                 (
                     predicitons[i],
                     b,
-                    379,
+                    zero_height,
                     frame_delta
                 );
 
