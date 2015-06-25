@@ -171,6 +171,7 @@ static const unsigned   MaxBitsAll        =
 
 //static const unsigned   MaxSnapshotsPerSecond = 60;
 
+// Currently gets stuck when the delta is larger than 26 packets.
 static const unsigned   PacketDelta           = 6;
 
 // This one is important
