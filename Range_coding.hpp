@@ -1033,15 +1033,19 @@ namespace Range_models
     class Exp_update
     {
     public:
+        static const constexpr unsigned DEFAULT_SPEED = 3;
+
         typedef std::vector<unsigned>  Freqencies;
         typedef std::vector<Range>     Ranges;
 
         Exp_update
         (
-            unsigned size
+            unsigned size,
+            unsigned speed = DEFAULT_SPEED
         )
             : m_r()
             , m_size(size)
+            , m_speed(speed)
         {
             m_r.reserve(size);
 
@@ -1064,10 +1068,12 @@ namespace Range_models
 
         Exp_update
         (
-            Freqencies frequencies
+            Freqencies frequencies,
+            unsigned speed = DEFAULT_SPEED
         )
             : m_r()
             , m_size(frequencies.size())
+            , m_speed(speed)
         {
             m_r.reserve(m_size);
 
@@ -1265,23 +1271,23 @@ namespace Range_models
 
         void Recalculate_ranges(unsigned total)
         {
-            if (total == PROBABILITY_RANGE)
-            {
-                // yay, nothing to do!
-                return;
-            }
-
-            if (total > PROBABILITY_RANGE)
+            while (total > PROBABILITY_RANGE)
             {
                 unsigned sub = 1 + ((total - PROBABILITY_RANGE) / m_size);
 
                 total = 0;
                 for (auto& r : m_r)
                 {
-                    r.count -= sub;
+                    r.count -= std::min(sub, r.count - 1);
                     r.min = total;
                     total += r.count;
                 }
+            }
+
+            if (total == PROBABILITY_RANGE)
+            {
+                // yay, nothing to do!
+                return;
             }
 
             const auto size     = m_size;
