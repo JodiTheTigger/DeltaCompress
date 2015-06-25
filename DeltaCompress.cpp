@@ -811,6 +811,7 @@ namespace Naive_error
 {
     // Found emperically.
     static const constexpr int LOWEST_POINT = 38;
+    static const constexpr float RESTITUTION = 0.869;
 
     struct Model
     {
@@ -864,10 +865,9 @@ namespace Naive_error
         // reflect z about lowest point.
         // RAM: TODO: Diff between cube 0 and the rest,
         // this is based on the rest. Use zero_height.
-        // Also investigate restitution.
         if (pos[2] < LOWEST_POINT)
         {
-            pos[2] = LOWEST_POINT + (LOWEST_POINT - pos[2]);
+            pos[2] = LOWEST_POINT + RESTITUTION*(LOWEST_POINT - pos[2]);
         }
 
         // Yay, this seems to work!
