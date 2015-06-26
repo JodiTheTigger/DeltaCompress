@@ -1511,15 +1511,15 @@ void range_compress(std::vector<Frame>& frames)
         end(g_errors),
         [](const Error_distance& lhs, const Error_distance& rhs)
         {
-            return lhs.distance_squared < rhs.distance_squared;
+            return lhs.error > rhs.error;
         }
     );
 
-    for (unsigned i = 0; i < 40; ++i)
+    for (unsigned i = 0; i < 2000; ++i)
     {
         printf
         (
-            "Error: %d\tDistance: %f\n",
+            "%d,%f\n",
             g_errors[i].error,
             std::sqrt(g_errors[i].distance_squared)
         );
