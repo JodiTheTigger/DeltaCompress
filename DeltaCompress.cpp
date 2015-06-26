@@ -1137,28 +1137,20 @@ namespace Naive_error
                 {
                     if (has_error_pos)
                     {
-                        // RAM: TODO: distance from line drawn by cube 0 please.
-                        // you've done it before.
-                        auto d = sub(position(base[i]), position(base[0]));
-                        g_errors.push_back
-                        ({
-                            static_cast<unsigned>
-                            (
-                                d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
-                            ),
-                            static_cast<unsigned>
-                            (
-                                std::max
-                                (
-                                    std::abs(error_pos[0]),
-                                    std::max
-                                    (
-                                        std::abs(error_pos[1]),
-                                        std::abs(error_pos[2])
-                                    )
-                                )
-                            )
-                        });
+                        unsigned value = static_cast<unsigned>
+                        (
+                            // d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
+                            base[i].position_z * base[i].position_z
+                        );
+
+                        for (auto e : error_pos)
+                        {
+                            g_errors.push_back
+                            ({
+                                 value,
+                                 static_cast<unsigned>(std::abs(e))
+                            });
+                        }
                     }
                 }
 
@@ -1515,7 +1507,7 @@ void range_compress(std::vector<Frame>& frames)
         }
     );
 
-    for (unsigned i = 0; i < 2000; ++i)
+    for (unsigned i = 0; i < g_errors.size(); ++i)
     {
         printf
         (
