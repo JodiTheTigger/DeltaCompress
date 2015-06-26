@@ -806,6 +806,13 @@ inline constexpr auto bit_mask(unsigned bits) -> unsigned
 // //////////////////////////////////////////////////////
 
 using namespace Range_models;
+struct Error_distance
+{
+    unsigned distance_squared;
+    unsigned error;
+};
+
+std::vector<Error_distance> g_errors;
 
 namespace Naive_error
 {
@@ -1124,6 +1131,36 @@ namespace Naive_error
                     has_error_pos
                     || has_error_quat
                     || error_quat_largest;
+
+                // RAM: Store all the erros.
+                if (i)
+                {
+                    if (has_error_pos)
+                    {
+                        // RAM: TODO: distance from line drawn by cube 0 please.
+                        // you've done it before.
+                        auto d = sub(position(base[i]), position(base[0]));
+                        g_errors.push_back
+                        ({
+                            static_cast<unsigned>
+                            (
+                                d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
+                            ),
+                            static_cast<unsigned>
+                            (
+                                std::max
+                                (
+                                    std::abs(error_pos[0]),
+                                    std::max
+                                    (
+                                        std::abs(error_pos[1]),
+                                        std::abs(error_pos[2])
+                                    )
+                                )
+                            )
+                        });
+                    }
+                }
 
                 // Encode!
                 model.has_error.Encode(binary, has_error);
@@ -1467,6 +1504,26 @@ void range_compress(std::vector<Frame>& frames)
         Naive_error::decode,
         "Naive_error"
     );
+
+    std::sort
+    (
+        begin(g_errors),
+        end(g_errors),
+        [](const Error_distance& lhs, const Error_distance& rhs)
+        {
+            return lhs.distance_squared < rhs.distance_squared;
+        }
+    );
+
+    for (unsigned i = 0; i < 40; ++i)
+    {
+        printf
+        (
+            "Error: %d\tDistance: %f\n",
+            g_errors[i].error,
+            std::sqrt(g_errors[i].distance_squared)
+        );
+    }
 }
 
 int main(int, char**)
