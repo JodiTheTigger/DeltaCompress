@@ -808,7 +808,8 @@ inline constexpr auto bit_mask(unsigned bits) -> unsigned
 using namespace Range_models;
 struct Error_distance
 {
-    unsigned distance_squared;
+    unsigned distance_floor;
+    unsigned distance_squared_cube_0;
     unsigned error;
 };
 
@@ -1140,17 +1141,24 @@ namespace Naive_error
                 {
                     if (has_error_pos)
                     {
-                        unsigned value = static_cast<unsigned>
+                        unsigned value_floor = static_cast<unsigned>
                         (
-                            // d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
-                            base[i].position_z * base[i].position_z
+                            std::abs(base[i].position_z)
+                        );
+
+                        auto d = sub(position(base[i]), position(base[0]));
+
+                        unsigned value_cube_0 = static_cast<unsigned>
+                        (
+                            d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
                         );
 
                         for (auto e : error_pos)
                         {
                             g_errors.push_back
                             ({
-                                 value,
+                                 value_floor,
+                                 value_cube_0,
                                  static_cast<unsigned>(std::abs(e))
                             });
                         }
@@ -1514,9 +1522,10 @@ void range_compress(std::vector<Frame>& frames)
     {
         printf
         (
-            "%d,%f\n",
+            "%d,%f,%d\n",
             g_errors[i].error,
-            std::sqrt(g_errors[i].distance_squared)
+            std::sqrt(g_errors[i].distance_squared_cube_0),
+            g_errors[i].distance_floor
         );
     }
 }
