@@ -1133,6 +1133,9 @@ namespace Naive_error
                     || error_quat_largest;
 
                 // RAM: Store all the erros.
+                // Notes:seems better to hold errors in 4 bits instead of 5
+                // and that high errors occur within 1500 of the ground
+                // (check gnuplot for actualy number.)
                 if (i)
                 {
                     if (has_error_pos)
