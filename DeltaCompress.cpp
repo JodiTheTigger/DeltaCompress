@@ -266,6 +266,11 @@ auto constexpr mul(const Vec3i& lhs, int multiple) -> Vec3i
     };
 };
 
+auto constexpr dot(const Vec3i& lhs, const Vec3i rhs) -> int
+{
+    return (lhs[0] * rhs[0]) + (lhs[1] * rhs[1]) + (lhs[2] * rhs[2]);
+}
+
 // //////////////////////////////////////////////////////
 
 auto constexpr sub(const Vec3f& lhs, const Vec3f& rhs) -> Vec3f
@@ -1026,6 +1031,59 @@ namespace Naive_error
 
         return result;
     }
+
+    // //////////////////////////////////////////////////////
+
+    auto distance_to_point
+    (
+        const Vec3i segment_end_a,
+        const Vec3i segment_end_b,
+        const Vec3i point
+    )
+    -> unsigned
+    {
+        auto v = sub(segment_end_a, segment_end_b);
+        auto w = sub(point, segment_end_a);
+
+        auto distance_square = []
+        (
+            const Vec3i& lhs,
+            const Vec3i& rhs
+        )
+        -> unsigned
+        {
+            return
+                ((lhs[0] - rhs[0]) * (lhs[0] - rhs[0])) +
+                ((lhs[1] - rhs[1]) * (lhs[1] - rhs[1])) +
+                ((lhs[2] - rhs[2]) * (lhs[2] - rhs[2]));
+        };
+
+        auto c1 = dot(w, v);
+
+        if (c1 <= 0)
+        {
+            return distance_square(point, segment_end_a);
+        }
+
+        auto c2 = dot(v, v);
+
+        if (c2 <= c1)
+        {
+            return distance_square(point, segment_end_b);
+        }
+
+        auto b = c1 / c2;
+        Vec3i point_b =
+        {
+            segment_end_a[0] + v[0] * b,
+            segment_end_a[1] + v[1] * b,
+            segment_end_a[2] + v[2] * b,
+        };
+
+        return distance_square(point, point_b);
+    };
+
+//===================================================================
 
     auto encode
     (
