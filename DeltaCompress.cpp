@@ -1740,9 +1740,10 @@ void range_compress(std::vector<Frame>& frames)
     {
         printf
         (
-            "%d,%f,%d\n",
+            "%d,%f,%f,%d\n",
             g_errors[i].error,
             std::sqrt(g_errors[i].distance_squared_cube_0),
+            std::sqrt(g_errors[i].shortest_distance_between_movements),
             g_errors[i].distance_floor
         );
     }
