@@ -313,6 +313,15 @@ auto constexpr mul(const Vec3f& lhs, float multiple) -> Vec3f
     };
 };
 
+// RAM: NEEDED?
+auto constexpr dot(const Vec3f& lhs, const Vec3f& rhs) -> float
+{
+    return
+        lhs[0] * rhs[0] +
+        lhs[1] * rhs[1] +
+        lhs[2] * rhs[2];
+};
+
 // //////////////////////////////////////////////////////
 
 struct Gaffer
@@ -815,6 +824,7 @@ struct Error_distance
 {
     unsigned distance_floor;
     unsigned distance_squared_cube_0;
+    float    shortest_distance_between_movements;
     unsigned error;
 };
 
@@ -1081,9 +1091,151 @@ namespace Naive_error
         };
 
         return distance_square(point, point_b);
+    }
+
+    //===================================================================
+
+    struct Segment
+    {
+        Vec3i a;
+        Vec3i b;
     };
 
-//===================================================================
+    auto shorted_distance_between_segments_squared
+    (
+        const Segment& s1,
+        const Segment& s2
+    )
+    -> float
+    {
+        static const constexpr float SMALL_NUM = 0.00001f;
+
+        auto v1             = sub(s1.b, s1.a);
+        auto v2             = sub(s2.b, s2.a);
+        auto dot_v1_v2      = dot(v1,v2);
+
+        // always >= 0
+        auto dot_v1         = dot(v1,v1);
+        auto dot_v2         = dot(v2,v2);
+        auto common_length  = dot_v1*dot_v2 - dot_v1_v2*dot_v1_v2;
+
+        auto v12            = sub(s1.a, s2.a);
+        auto dot_v1_v12     = dot(v1,v12);
+        auto dot_v2_v12     = dot(v2,v12);
+
+        float   v1_common_closest_length;
+        float   v1_common_length = common_length;
+        float   v2_common_closest_length;
+        float   v2_common_length = common_length;
+
+        if (common_length > SMALL_NUM)
+        {
+            // What's the distance to the closest point between the segments
+            // assuming they are infinite lines.
+            v1_common_closest_length =
+                (dot_v1_v2 * dot_v2_v12 - dot_v2    * dot_v1_v12);
+
+            v2_common_closest_length =
+                (dot_v1    * dot_v2_v12 - dot_v1_v2 * dot_v1_v12);
+
+            if (v1_common_closest_length < 0.0)
+            {
+                v1_common_closest_length = 0.0;
+                v2_common_closest_length = dot_v2_v12;
+                v2_common_length = dot_v2;
+            }
+            else
+            {
+                if (v1_common_closest_length > v1_common_length)
+                {
+                    v1_common_closest_length = v1_common_length;
+                    v2_common_closest_length = dot_v2_v12 + dot_v1_v2;
+                    v2_common_length = dot_v2;
+                }
+            }
+        }
+        else
+        {
+            // Lines are parallel-ish. Just choose a point.
+            v1_common_closest_length = 0.0;
+            v1_common_length = 1.0;
+            v2_common_closest_length = dot_v2_v12;
+            v2_common_length = dot_v2;
+        }
+
+        if (v2_common_closest_length < 0.0)
+        {
+            v2_common_closest_length = 0.0;
+
+            // recalculate v1_common_closest_length
+            if (-dot_v1_v12 < 0.0)
+            {
+                v1_common_closest_length = 0.0;
+            }
+            else
+            {
+                if (-dot_v1_v12 > dot_v1)
+                {
+                    v1_common_closest_length = v1_common_length;
+                }
+                else
+                {
+                    v1_common_closest_length = -dot_v1_v12;
+                    v1_common_length = dot_v1;
+                }
+            }
+        }
+        else
+        {
+            if (v2_common_closest_length > v2_common_length)
+            {
+                v2_common_closest_length = v2_common_length;
+
+                // recalculate v1_common_closest_length
+                if ((-dot_v1_v12 + dot_v1_v2) < 0.0)
+                {
+                    v1_common_closest_length = 0;
+                }
+                else
+                {
+                    if ((-dot_v1_v12 + dot_v1_v2) > dot_v1)
+                    {
+                        v1_common_closest_length = v1_common_length;
+                    }
+                    else
+                    {
+                        v1_common_closest_length = (-dot_v1_v12 +  dot_v1_v2);
+                        v1_common_length = dot_v1;
+                    }
+                }
+            }
+        }
+
+        auto v1_closest_ratio =
+            (std::abs(v1_common_closest_length) < SMALL_NUM ?
+                 0.0 :
+                 v1_common_closest_length / v1_common_length);
+
+        auto v2_closest_ratio =
+            (std::abs(v2_common_closest_length) < SMALL_NUM ?
+                 0.0 :
+                 v2_common_closest_length / v2_common_length);
+
+        auto v_closest_between_a_b =
+            add
+            (
+                v12,
+                sub
+                (
+                    mul(v1, v1_closest_ratio),
+                    mul(v2, v2_closest_ratio)
+                )
+            );
+
+        return dot(v_closest_between_a_b, v_closest_between_a_b);
+    }
+
+    //===================================================================
 
     auto encode
     (
@@ -1211,12 +1363,20 @@ namespace Naive_error
                             d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
                         );
 
+                        auto shortest_distance =
+                            shorted_distance_between_segments_squared
+                            (
+                                Segment{position(target[i]), position(base[i])},
+                                Segment{position(target[0]), position(base[0])}
+                            );
+
                         for (auto e : error_pos)
                         {
                             g_errors.push_back
                             ({
                                  value_floor,
                                  value_cube_0,
+                                 shortest_distance,
                                  static_cast<unsigned>(std::abs(e))
                             });
                         }
