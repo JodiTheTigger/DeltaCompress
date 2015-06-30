@@ -1604,7 +1604,7 @@ namespace Range_models
 
             assert(min_bits < m_max_value_bits);
 
-            m_bits.Encode(coder, min_bits);
+            m_bits.Encode(coder, min_bits);            
 
             if (min_bits)
             {
@@ -1614,12 +1614,15 @@ namespace Range_models
                 --min_bits;
 
                 // Send the bits, no probabilities.
-                while (min_bits)
+                while (min_bits--)
                 {
-                    Binary_bitstream::Encode(coder, value & 1);
+                    const auto mask = (1 << min_bits);
 
-                    value       >>= 1;
-                    min_bits    >>= 1;
+                    Binary_bitstream::Encode
+                    (
+                        coder,
+                        value & mask
+                    );
                 }
             }
         }
@@ -1765,6 +1768,7 @@ void range_tests()
             }
         };
 
+        Binary_test(tests, Binary_bitstream(), Binary_bitstream());
         Binary_test(tests, Binary(5), Binary(5));
         Binary_test(tests, Binary(1), Binary(1));
         Binary_test(tests, Binary(2), Binary(2));
@@ -1788,9 +1792,9 @@ void range_tests()
     {
         auto range_data =
         {
-            Bytes{0,1,2,6,4,5,3,7,4,3,4,3,3,3,3,0,1,2,0,0,0,3,3,3,3,3,2},
-            Bytes{0,0,0,0,0,0,0,0,0,4,4,4,4,4,4,4,2,2,4,4,4,4,4,0,0,0,0},
-            Bytes{0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7,0,1,2},
+            Bytes{0,1,2,6,4,5,3,7, 4,3,4,3,3,3,3,0, 1,2,0,0,0,3,3,3, 3,3,2},
+            Bytes{0,0,0,0,0,0,0,0, 0,4,4,4,4,4,4,4, 2,2,4,4,4,4,4,0, 0,0,0},
+            Bytes{0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 0,1,2},
         };
 
         auto Range_test = []
@@ -1840,12 +1844,10 @@ void range_tests()
             {
                 Decoder test_decoder(data);
 
-                auto t2 = 0;
                 for (unsigned t : tests)
                 {
                     auto value = model_out.Decode(test_decoder, max_value);
                     assert(value == (t % max_value));
-                    ++t2;
                 }
 
                 auto read = test_decoder.FlushAndGetBytesRead();
@@ -1947,11 +1949,13 @@ void range_tests()
         {
             Bytes data;
 
-            Encoder test_encoder(data);
-
-            for (auto t : tests)
             {
-                model_in.Encode(test_encoder, t % mod);
+                Encoder test_encoder(data);
+
+                for (auto t : tests)
+                {
+                    model_in.Encode(test_encoder, t % mod);
+                }
             }
 
             Decoder test_decoder(data);
@@ -1968,6 +1972,14 @@ void range_tests()
 
         for (const auto& range_set : range_data)
         {
+            Range_test2
+            (
+                1,
+                range_set,
+                Binary_bitstream(),
+                Binary_bitstream()
+            );
+
             Range_test2
             (
                 8,
