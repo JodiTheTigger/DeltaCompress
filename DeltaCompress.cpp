@@ -26,7 +26,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests       = true;
+bool do_tests       = false;
 bool do_compression = true;
 bool do_decompress  = true;
 
@@ -541,6 +541,50 @@ Quat constexpr to_quat(const Rotor& r)
     };
 }
 
+// RAM: NOTE: Compairing this with converting to rotor
+//            and dividing by 2, the intermediate value is
+//            out by 2*. Investigate!
+// multiplying rotor by 'a' reduces to:
+// r^2 = (a*q1/(1+q0))^2 + (a*q2/(1+q0))^2 + (a*q3/(1+q0))^2
+// 1 - r^2 / 1 + r^2 =
+// (1 - ((a*q1/(1+q0))^2 + (a*q2/(1+q0))^2 + (a*q3/(1+q0))^2)) /
+// (1 + ((a*q1/(1+q0))^2 + (a*q2/(1+q0))^2 + (a*q3/(1+q0))^2))
+// =
+// (via wolfram alpha's simplifier)
+// -a^2(q1^2 + q2^2 + q3^2) + q0^2 + 2q0 + 1 /
+//  a^2(q1^2 + q2^2 + q3^2) + q0^2 + 2q0 + 1
+//
+// 2r0 / 1 + r^2 =
+// (2 * (q1 / (1+q0))) /
+// (1 + ((a*q1/(1+q0))^2 + (a*q2/(1+q0))^2 + (a*q3/(1+q0))^2))
+//
+// (via wolfram alpha's simplifier)
+// 2(q0 + 1)q1 /
+// a^2(q1^2 + q2^2 + q3^2) + q0^2 + 2q0 + 1
+//
+// Can generalise to (x=1,2,3):
+// 2(q0 + 1)qx /
+// a^2(q1^2 + q2^2 + q3^2) + q0^2 + 2q0 + 1
+//
+// Which leads us to our function:
+auto quat_dt(const Quat& q, float dt) -> Quat
+{
+    auto imaginary_squared    = q[1]*q[1] + q[2]*q[2] + q[3]*q[3];
+    auto tail                 = q[0]*q[0] + 2*q[0] + 1;
+    auto a_squared            = dt * dt;
+    auto a_squared_i_squared  = a_squared * imaginary_squared;
+    auto D                    = a_squared_i_squared + tail;
+    auto b                    = 2*(q[0] + 1);
+
+    return
+    {
+        -a_squared_i_squared + tail / D,
+        (q[1] * b)                  / D,
+        (q[2] * b)                  / D,
+        (q[3] * b)                  / D
+    };
+}
+
 // //////////////////////////////////////////////////////
 // Converting between quantised quats and back again is really pissy.
 // //////////////////////////////////////////////////////
@@ -965,6 +1009,41 @@ namespace Naive_error
                 (mag_squared < mag_squared_neg) ?
                     rotor :
                     rotor_neg;
+
+            // RAM: quat_dt testing.
+//            {
+//                auto a = to_rotor(r);
+//                auto b = to_quat(a);
+
+//                // RAM: Testing
+//                assert(std::abs(b[0] - r[0]) < 0.000000001f);
+//                assert(std::abs(b[1] - r[1]) < 0.000000001f);
+//                assert(std::abs(b[2] - r[2]) < 0.000000001f);
+//                assert(std::abs(b[3] - r[3]) < 0.000000001f);
+
+//                auto am = div(a.vec, 2.0f);
+//                auto bm = to_quat({am});
+//                auto cm = to_rotor(bm);
+//                auto c  = div(cm.vec, 0.5f);
+//                auto d  = to_quat({c});
+
+//                assert(std::abs(d[0] - r[0]) < 0.000000001f);
+//                assert(std::abs(d[1] - r[1]) < 0.000000001f);
+//                assert(std::abs(d[2] - r[2]) < 0.000000001f);
+//                assert(std::abs(d[3] - r[3]) < 0.000000001f);
+
+
+//                {
+//                    // RAM: Testing
+//                    auto dt = quat_dt(r, 0.5f);
+//                    auto back = quat_dt(dt, 2.0f);
+
+//                    assert(std::abs(back[0] - r[0]) < 0.000000001f);
+//                    assert(std::abs(back[1] - r[1]) < 0.000000001f);
+//                    assert(std::abs(back[2] - r[2]) < 0.000000001f);
+//                    assert(std::abs(back[3] - r[3]) < 0.000000001f);
+//                }
+//            }
         }
 
         auto w = div(angle_delta.vec, frame_delta);
