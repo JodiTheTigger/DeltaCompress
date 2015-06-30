@@ -433,6 +433,48 @@ namespace Range_models
         }
     };
 
+    class Binary_bitstream
+    {
+    public:
+        static const constexpr unsigned HALF_RANGE = PROBABILITY_RANGE / 2;
+
+        void Encode(Binary_encoder& coder, unsigned value)
+        {
+            coder.Encode(value, HALF_RANGE);
+        }
+
+        void Encode(Encoder& coder, unsigned value)
+        {
+            coder.Encode
+            (
+                value ?
+                    Range{0, HALF_RANGE} :
+                    Range{HALF_RANGE, HALF_RANGE}
+            );
+        }
+
+        unsigned Decode(Binary_decoder& coder)
+        {
+            auto result = coder.Decode(HALF_RANGE);
+            return result;
+        }
+
+        unsigned Decode(Decoder& coder)
+        {
+            auto symbol = coder.Decode();
+            auto result = (symbol < HALF_RANGE);
+
+            coder.Update
+            (
+                result ?
+                    Range{0, HALF_RANGE} :
+                    Range{HALF_RANGE, HALF_RANGE}
+            );
+
+            return result;
+        }
+    };
+
     template<class BINARY_MODEL, unsigned BITS>
     class Binary_tree
     {
