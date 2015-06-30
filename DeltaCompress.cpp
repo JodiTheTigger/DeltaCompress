@@ -829,6 +829,7 @@ struct Error_distance
 };
 
 std::vector<Error_distance> g_errors;
+std::vector<Error_distance> g_errors_quat;
 
 namespace Naive_error
 {
@@ -1381,6 +1382,39 @@ namespace Naive_error
                             });
                         }
                     }
+
+                    if (has_error_quat)
+                    {
+                        unsigned value_floor = static_cast<unsigned>
+                        (
+                            std::abs(base[i].position_z)
+                        );
+
+                        auto d = sub(position(base[i]), position(base[0]));
+
+                        unsigned value_cube_0 = static_cast<unsigned>
+                        (
+                            d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
+                        );
+
+                        auto shortest_distance =
+                            shorted_distance_between_segments_squared
+                            (
+                                Segment{position(target[i]), position(base[i])},
+                                Segment{position(target[0]), position(base[0])}
+                            );
+
+                        for (auto e : error_quat)
+                        {
+                            g_errors_quat.push_back
+                            ({
+                                 value_floor,
+                                 value_cube_0,
+                                 shortest_distance,
+                                 static_cast<unsigned>(std::abs(e))
+                            });
+                        }
+                    }
                 }
 
                 // Encode!
@@ -1736,15 +1770,27 @@ void range_compress(std::vector<Frame>& frames)
         }
     );
 
+//    for (unsigned i = 0; i < g_errors.size(); ++i)
+//    {
+//        printf
+//        (
+//            "%d,%f,%f,%d\n",
+//            g_errors[i].error,
+//            std::sqrt(g_errors[i].distance_squared_cube_0),
+//            std::sqrt(g_errors[i].shortest_distance_between_movements),
+//            g_errors[i].distance_floor
+//        );
+//    }
+
     for (unsigned i = 0; i < g_errors.size(); ++i)
     {
         printf
         (
             "%d,%f,%f,%d\n",
-            g_errors[i].error,
-            std::sqrt(g_errors[i].distance_squared_cube_0),
-            std::sqrt(g_errors[i].shortest_distance_between_movements),
-            g_errors[i].distance_floor
+            g_errors_quat[i].error,
+            std::sqrt(g_errors_quat[i].distance_squared_cube_0),
+            std::sqrt(g_errors_quat[i].shortest_distance_between_movements),
+            g_errors_quat[i].distance_floor
         );
     }
 }
