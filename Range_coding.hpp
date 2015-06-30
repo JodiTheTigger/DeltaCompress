@@ -438,12 +438,12 @@ namespace Range_models
     public:
         static const constexpr unsigned HALF_RANGE = PROBABILITY_RANGE / 2;
 
-        void Encode(Binary_encoder& coder, unsigned value)
+        static void Encode(Binary_encoder& coder, unsigned value)
         {
             coder.Encode(value, HALF_RANGE);
         }
 
-        void Encode(Encoder& coder, unsigned value)
+        static void Encode(Encoder& coder, unsigned value)
         {
             coder.Encode
             (
@@ -453,13 +453,13 @@ namespace Range_models
             );
         }
 
-        unsigned Decode(Binary_decoder& coder)
+        static unsigned Decode(Binary_decoder& coder)
         {
             auto result = coder.Decode(HALF_RANGE);
             return result;
         }
 
-        unsigned Decode(Decoder& coder)
+        static unsigned Decode(Decoder& coder)
         {
             auto symbol = coder.Decode();
             auto result = (symbol < HALF_RANGE);
@@ -1616,20 +1616,7 @@ namespace Range_models
                 // Send the bits, no probabilities.
                 while (min_bits)
                 {
-                    if (value & 1)
-                    {
-                        coder.Encode
-                        (
-                            {0, PROBABILITY_RANGE / 2}
-                        );
-                    }
-                    else
-                    {
-                        coder.Encode
-                        (
-                            {PROBABILITY_RANGE / 2, PROBABILITY_RANGE / 2}
-                        );
-                    }
+                    Binary_bitstream::Encode(coder, value & 1);
 
                     value       >>= 1;
                     min_bits    >>= 1;
@@ -1654,24 +1641,7 @@ namespace Range_models
                 {
                     result <<= 1;
 
-                    auto range = coder.Decode();
-
-                    if (range < (PROBABILITY_RANGE / 2))
-                    {
-                        result |= 1;
-
-                        coder.Update
-                        (
-                            {0, PROBABILITY_RANGE / 2}
-                        );
-                    }
-                    else
-                    {
-                        coder.Update
-                        (
-                            {PROBABILITY_RANGE / 2, PROBABILITY_RANGE / 2}
-                        );
-                    }
+                    result |= Binary_bitstream::Decode(coder);
 
                     --min_bits;
                 }
