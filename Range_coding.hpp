@@ -739,6 +739,226 @@ namespace Range_models
         }
     };
 
+    class No_update
+    {
+    public:
+        typedef std::vector<unsigned>  Freqencies;
+        typedef std::vector<Range>     Ranges;
+
+        No_update
+        (
+            unsigned size
+        )
+            : m_r(size)
+            , m_size(size)
+        {
+            Freqencies f;
+            f.reserve(size);
+
+            unsigned total;
+            for (unsigned i = 0; i < size; ++i)
+            {
+                f.push_back(1);
+                ++total;
+            }
+
+            Recalculate_ranges(f, total);
+        }
+
+        No_update
+        (
+            Freqencies frequencies
+        )
+            : m_r(frequencies.size())
+            , m_size(frequencies.size())
+        {
+            unsigned total;
+            for (const auto f : frequencies)
+            {
+                assert(f);
+
+                total += f;
+            }
+
+            Recalculate_ranges(frequencies, total);
+        }
+
+        void Encode(Encoder& coder, unsigned value)
+        {
+            assert(value < m_size);
+
+            coder.Encode(m_r[value]);
+        }
+
+        void Encode(Encoder& coder, unsigned value, unsigned max_value)
+        {
+            assert(value < m_size);
+            assert(max_value < m_size);
+
+            // Hmm, encoding one bit bad give me issues.
+            max_value = std::max(max_value, 2u);
+
+            // Multiply the ranges instead of the value
+            // so the frequencies still get updated correctly.
+            auto old_range  = m_r[value];
+            auto last_range = m_r[max_value];
+            float max_cf = last_range.min + last_range.count;
+            float multiplier = PROBABILITY_RANGE / max_cf;
+
+            // Man, rounding errors and off my one are my bane.
+            unsigned next_min = 0;
+            if (value < max_value)
+            {
+                next_min =
+                    static_cast<uint32_t>
+                    (
+                        std::round(m_r[value + 1].min * multiplier)
+                    );
+            }
+            else
+            {
+                next_min = PROBABILITY_RANGE;
+            }
+
+            auto new_min =
+                static_cast<uint32_t>(std::round(old_range.min * multiplier));
+
+            auto new_range = Range
+            {
+                new_min,
+                next_min - new_min,
+            };
+
+            coder.Encode(new_range);
+        }
+
+        unsigned Decode(Decoder& coder)
+        {
+            auto range = coder.Decode();
+            unsigned result = 0;
+
+            const auto size = m_size;
+            while ((m_r[result].min <= range) && (result < size))
+            {
+                ++result;
+            }
+
+            --result;
+
+            coder.Update(m_r[result]);
+
+            return result;
+        }
+
+        unsigned Decode(Decoder& coder, unsigned max_value)
+        {
+            assert(max_value < m_size);
+
+            // Hmm, encoding one bit bad give me issues.
+            max_value = std::max(max_value, 2u);
+
+            auto range = coder.Decode();
+            unsigned result = 0;
+
+            auto last_range = m_r[max_value];
+            float max_cf = last_range.min + last_range.count;
+            float multiplier = PROBABILITY_RANGE / max_cf;
+
+            const auto size = m_size;
+
+            while (result < size)
+            {
+                auto new_min =
+                    static_cast<uint32_t>
+                    (
+                        std::round(m_r[result].min * multiplier)
+                    );
+
+                if (new_min > range)
+                {
+                    break;
+                }
+
+                ++result;
+            }
+
+            --result;
+
+            unsigned next_min = 0;
+            if (result < max_value)
+            {
+                next_min =
+                    static_cast<uint32_t>
+                    (
+                        std::round(m_r[result + 1].min * multiplier)
+                    );
+            }
+            else
+            {
+                next_min = PROBABILITY_RANGE;
+            }
+
+            auto new_min =
+                static_cast<uint32_t>(std::round(m_r[result].min * multiplier));
+
+            auto new_range = Range
+            {
+                new_min,
+                next_min - new_min,
+            };
+
+            coder.Update(new_range);
+
+            return result;
+        }
+
+    private:
+        Ranges      m_r;
+
+        const unsigned m_size = 0;
+
+        void Recalculate_ranges(Freqencies frequencies, unsigned total)
+        {
+            if (total > PROBABILITY_RANGE)
+            {
+                // Dunno how to do this nice for now. Brute it.
+                total = 0;
+                for (auto& f : frequencies)
+                {
+                    f >>= 1;
+                    ++f;
+
+                    total += f;
+                }
+            }
+
+            const auto size     = m_size;
+            auto multiple       = PROBABILITY_RANGE / total;
+            auto reminder       = PROBABILITY_RANGE % total;
+            auto global_adjust  = reminder / size;
+            auto reminder_count = reminder % size;
+            unsigned last_min   = 0;
+
+            for (unsigned i = 0; i < reminder_count; ++i)
+            {
+                m_r[i].min   = last_min;
+                m_r[i].count = 1 + (global_adjust + frequencies[i] * multiple);
+
+                last_min += m_r[i].count;
+            }
+
+            for (unsigned i = reminder_count; i < size; ++i)
+            {
+                m_r[i].min   = last_min;
+                m_r[i].count = 0 + (global_adjust + frequencies[i] * multiple);
+
+                last_min += m_r[i].count;
+            }
+
+            assert(last_min == PROBABILITY_RANGE);
+        }
+    };
+
     class Periodic_update_with_kernel
     {
     public:
