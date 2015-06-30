@@ -755,7 +755,7 @@ namespace Range_models
             Freqencies f;
             f.reserve(size);
 
-            unsigned total;
+            unsigned total = 0;
             for (unsigned i = 0; i < size; ++i)
             {
                 f.push_back(1);
@@ -772,7 +772,7 @@ namespace Range_models
             : m_r(frequencies.size())
             , m_size(frequencies.size())
         {
-            unsigned total;
+            unsigned total = 0;
             for (const auto f : frequencies)
             {
                 assert(f);
@@ -1543,6 +1543,7 @@ namespace Range_models
 
     class Unsigned_golomb_range
     {
+    public:
         Unsigned_golomb_range(unsigned max_value_bits)
             : m_bits(max_value_bits)
             , m_max_value_bits(max_value_bits)
@@ -1561,31 +1562,36 @@ namespace Range_models
 
             assert(min_bits < m_max_value_bits);
 
-            unsigned mask = (1 << min_bits) - 1;
-
-            value &= mask;
-
             m_bits.Encode(coder, min_bits);
 
-            // Send the bits, no probabilities.
-            while (min_bits)
+            if (min_bits)
             {
-                if (value & 1)
-                {
-                    coder.Encode
-                    (
-                        {0, PROBABILITY_RANGE / 2}
-                    );
-                }
-                else
-                {
-                    coder.Encode
-                    (
-                        {PROBABILITY_RANGE / 2, PROBABILITY_RANGE / 2}
-                    );
-                }
+                // No need to send the top bit
+                // as we can assume it's set due
+                // to min_bits.
+                --min_bits;
 
-                min_bits >>= 1;
+                // Send the bits, no probabilities.
+                while (min_bits)
+                {
+                    if (value & 1)
+                    {
+                        coder.Encode
+                        (
+                            {0, PROBABILITY_RANGE / 2}
+                        );
+                    }
+                    else
+                    {
+                        coder.Encode
+                        (
+                            {PROBABILITY_RANGE / 2, PROBABILITY_RANGE / 2}
+                        );
+                    }
+
+                    value       >>= 1;
+                    min_bits    >>= 1;
+                }
             }
         }
 
@@ -1595,28 +1601,38 @@ namespace Range_models
 
             unsigned result = 0;
 
-            while (min_bits)
+            if (min_bits)
             {
-                auto range = coder.Decode();
+                // top bit is always set.
+                result |= 1;
 
-                if (range < (PROBABILITY_RANGE / 2))
+                --min_bits;
+
+                while (min_bits)
                 {
-                    result |= 1;
+                    result <<= 1;
 
-                    coder.Update
-                    (
-                        {0, PROBABILITY_RANGE / 2}
-                    );
-                }
-                else
-                {
-                    coder.Update
-                    (
-                        {PROBABILITY_RANGE / 2, PROBABILITY_RANGE / 2}
-                    );
-                }
+                    auto range = coder.Decode();
 
-                result <<= 1;
+                    if (range < (PROBABILITY_RANGE / 2))
+                    {
+                        result |= 1;
+
+                        coder.Update
+                        (
+                            {0, PROBABILITY_RANGE / 2}
+                        );
+                    }
+                    else
+                    {
+                        coder.Update
+                        (
+                            {PROBABILITY_RANGE / 2, PROBABILITY_RANGE / 2}
+                        );
+                    }
+
+                    --min_bits;
+                }
             }
 
             return result;
@@ -1906,6 +1922,47 @@ void range_tests()
                 Periodic_update(8,8),
                 Periodic_update(8,8),
                 3);
+        }
+
+
+        auto Range_test2 = []
+        (
+            auto mod,
+            auto tests,
+            auto model_in,
+            auto model_out
+        )
+        {
+            Bytes data;
+
+            Encoder test_encoder(data);
+
+            for (auto t : tests)
+            {
+                model_in.Encode(test_encoder, t % mod);
+            }
+
+            Decoder test_decoder(data);
+
+            for (unsigned t : tests)
+            {
+                auto value = model_out.Decode(test_decoder);
+                assert(value == (t % mod));
+            }
+
+            auto read = test_decoder.FlushAndGetBytesRead();
+            assert(read == data.size());
+        };
+
+        for (const auto& range_set : range_data)
+        {
+            Range_test2
+            (
+                8,
+                range_set,
+                Unsigned_golomb_range(8),
+                Unsigned_golomb_range(8)
+            );
         }
     }
 }
