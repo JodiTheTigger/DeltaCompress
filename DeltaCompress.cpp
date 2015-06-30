@@ -1760,6 +1760,12 @@ void range_compress(std::vector<Frame>& frames)
         "Naive_error"
     );
 
+    // RAM: NOTES: For position, 6 frames error doesn't go above 145
+    //      but for quats it gets as high as 450 (close and near to cube 0)
+    //      also distance between segments and distance between point and
+    //      cube 0 are pretty much the same looking distrubtuion, so just
+    //      using the point to segment distance.
+
     std::sort
     (
         begin(g_errors),
