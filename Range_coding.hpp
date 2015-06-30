@@ -1541,6 +1541,92 @@ namespace Range_models
         }
     };
 
+    class Unsigned_golomb_range
+    {
+        Unsigned_golomb_range(unsigned max_value_bits)
+            : m_bits(max_value_bits)
+            , m_max_value_bits(max_value_bits)
+        {
+        }
+
+        void Encode(Encoder& coder, unsigned value)
+        {
+            // Enocde how many bits we are sending
+            unsigned min_bits = 0;
+
+            while ((1u << min_bits) <= value)
+            {
+                ++min_bits;
+            }
+
+            assert(min_bits < m_max_value_bits);
+
+            unsigned mask = (1 << min_bits) - 1;
+
+            value &= mask;
+
+            m_bits.Encode(coder, min_bits);
+
+            // Send the bits, no probabilities.
+            while (min_bits)
+            {
+                if (value & 1)
+                {
+                    coder.Encode
+                    (
+                        {0, PROBABILITY_RANGE / 2}
+                    );
+                }
+                else
+                {
+                    coder.Encode
+                    (
+                        {PROBABILITY_RANGE / 2, PROBABILITY_RANGE / 2}
+                    );
+                }
+
+                min_bits >>= 1;
+            }
+        }
+
+        unsigned Decode(Decoder& coder)
+        {
+            auto min_bits = m_bits.Decode(coder);
+
+            unsigned result = 0;
+
+            while (min_bits)
+            {
+                auto range = coder.Decode();
+
+                if (range < (PROBABILITY_RANGE / 2))
+                {
+                    result |= 1;
+
+                    coder.Update
+                    (
+                        {0, PROBABILITY_RANGE / 2}
+                    );
+                }
+                else
+                {
+                    coder.Update
+                    (
+                        {PROBABILITY_RANGE / 2, PROBABILITY_RANGE / 2}
+                    );
+                }
+
+                result <<= 1;
+            }
+
+            return result;
+        }
+
+    private:
+        Exp_update m_bits = {4};
+        unsigned m_max_value_bits;
+    };
+
 } // Namespace models
 
 void range_tests()
