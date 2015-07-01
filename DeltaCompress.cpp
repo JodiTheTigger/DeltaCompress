@@ -899,6 +899,9 @@ namespace Naive_error
         // Worst case == 10 bits of error.
         Periodic_update error_low_5_bits                = {32, 2};
         Exp_update error_high_5_bits                    = {32, 2};
+
+        // Lets try just encoding using Golomb
+        Unsigned_golomb_range error_bits                = {10};
     };
 
     auto predict
@@ -1538,6 +1541,20 @@ namespace Naive_error
                     auto vec_pos    = strip_signs(error_pos);
                     auto vec_quat   = strip_signs(error_quat);
 
+//                    for (auto v: vec_pos)
+//                    {
+//                        assert(v < (1 << 10));
+
+//                        model.error_bits.Encode(range, v);
+//                    }
+
+//                    for (auto v: vec_quat)
+//                    {
+//                        assert(v < (1 << 10));
+
+//                        model.error_bits.Encode(range, v);
+//                    }
+
                     for (auto v: vec_pos)
                     {
                         assert(v < (1 << 10));
@@ -1671,6 +1688,9 @@ namespace Naive_error
 
                         for (auto& v: result)
                         {
+
+//                            v = model.error_bits.Decode(range);
+
                             auto p = model.error_high_5_bits.Decode(range) << 5;
                             p += model.error_low_5_bits.Decode(range);
                             v = p;
@@ -1845,15 +1865,15 @@ void range_compress(std::vector<Frame>& frames)
     //      cube 0 are pretty much the same looking distrubtuion, so just
     //      using the point to segment distance.
 
-    std::sort
-    (
-        begin(g_errors),
-        end(g_errors),
-        [](const Error_distance& lhs, const Error_distance& rhs)
-        {
-            return lhs.error > rhs.error;
-        }
-    );
+//    std::sort
+//    (
+//        begin(g_errors),
+//        end(g_errors),
+//        [](const Error_distance& lhs, const Error_distance& rhs)
+//        {
+//            return lhs.error > rhs.error;
+//        }
+//    );
 
 //    for (unsigned i = 0; i < g_errors.size(); ++i)
 //    {
@@ -1867,17 +1887,17 @@ void range_compress(std::vector<Frame>& frames)
 //        );
 //    }
 
-    for (unsigned i = 0; i < g_errors.size(); ++i)
-    {
-        printf
-        (
-            "%d,%f,%f,%d\n",
-            g_errors_quat[i].error,
-            std::sqrt(g_errors_quat[i].distance_squared_cube_0),
-            std::sqrt(g_errors_quat[i].shortest_distance_between_movements),
-            g_errors_quat[i].distance_floor
-        );
-    }
+//    for (unsigned i = 0; i < g_errors.size(); ++i)
+//    {
+//        printf
+//        (
+//            "%d,%f,%f,%d\n",
+//            g_errors_quat[i].error,
+//            std::sqrt(g_errors_quat[i].distance_squared_cube_0),
+//            std::sqrt(g_errors_quat[i].shortest_distance_between_movements),
+//            g_errors_quat[i].distance_floor
+//        );
+//    }
 }
 
 int main(int, char**)
