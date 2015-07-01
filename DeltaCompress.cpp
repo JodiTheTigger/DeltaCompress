@@ -1541,43 +1541,43 @@ namespace Naive_error
                     auto vec_pos    = strip_signs(error_pos);
                     auto vec_quat   = strip_signs(error_quat);
 
-//                    for (auto v: vec_pos)
-//                    {
-//                        assert(v < (1 << 10));
-
-//                        model.error_bits.Encode(range, v);
-//                    }
-
-//                    for (auto v: vec_quat)
-//                    {
-//                        assert(v < (1 << 10));
-
-//                        model.error_bits.Encode(range, v);
-//                    }
-
                     for (auto v: vec_pos)
                     {
                         assert(v < (1 << 10));
 
-                        model.error_high_5_bits.Encode(range, v >> 5);
-                        model.error_low_5_bits.Encode
-                        (
-                            range,
-                            v & ((1 << 5) - 1)
-                        );
+                        model.error_bits.Encode(range, v);
                     }
 
                     for (auto v: vec_quat)
                     {
                         assert(v < (1 << 10));
 
-                        model.error_high_5_bits.Encode(range, v >> 5);
-                        model.error_low_5_bits.Encode
-                        (
-                            range,
-                            v & ((1 << 5) - 1)
-                        );
+                        model.error_bits.Encode(range, v);
                     }
+
+//                    for (auto v: vec_pos)
+//                    {
+//                        assert(v < (1 << 10));
+
+//                        model.error_high_5_bits.Encode(range, v >> 5);
+//                        model.error_low_5_bits.Encode
+//                        (
+//                            range,
+//                            v & ((1 << 5) - 1)
+//                        );
+//                    }
+
+//                    for (auto v: vec_quat)
+//                    {
+//                        assert(v < (1 << 10));
+
+//                        model.error_high_5_bits.Encode(range, v >> 5);
+//                        model.error_low_5_bits.Encode
+//                        (
+//                            range,
+//                            v & ((1 << 5) - 1)
+//                        );
+//                    }
 
                     if (vec_pos[0] || vec_pos[1] || vec_pos[2])
                     {
@@ -1689,11 +1689,11 @@ namespace Naive_error
                         for (auto& v: result)
                         {
 
-//                            v = model.error_bits.Decode(range);
+                            v = model.error_bits.Decode(range);
 
-                            auto p = model.error_high_5_bits.Decode(range) << 5;
-                            p += model.error_low_5_bits.Decode(range);
-                            v = p;
+//                            auto p = model.error_high_5_bits.Decode(range) << 5;
+//                            p += model.error_low_5_bits.Decode(range);
+//                            v = p;
                         }
 
                         return result;
