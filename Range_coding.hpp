@@ -1586,8 +1586,8 @@ namespace Range_models
     class Unsigned_golomb_range
     {
     public:
-        Unsigned_golomb_range(unsigned max_value_bits)
-            : m_bits(max_value_bits)
+        Unsigned_golomb_range(unsigned max_value_bits, unsigned speed = 5)
+            : m_bits(max_value_bits, speed)
             , m_max_value_bits(max_value_bits)
         {
         }

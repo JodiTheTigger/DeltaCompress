@@ -899,9 +899,8 @@ namespace Naive_error
         Exp_update      quat_largest                    = {4, 8};
         Exp_update      error_signs                     = {8, 7};
 
-        // Worst case == 10 bits of error.
-        Periodic_update error_low_5_bits                = {32, 2};
-        Exp_update error_high_5_bits                    = {32, 2};
+        // This seems to do the trick.
+        Unsigned_golomb_range error_bits                = {10, 5};
     };
 
     auto predict
@@ -1583,23 +1582,42 @@ namespace Naive_error
                     auto vec_pos    = strip_signs(error_pos);
                     auto vec_quat   = strip_signs(error_quat);
 
-                    auto encode_vec_hi_low = [&model, &range](const Vec3i& vec)
+                    auto encode_error_bits = [&model, &range](const Vec3i& vec)
                     {
                         for (auto v: vec)
                         {
                             assert(v < (1 << 10));
 
-                            model.error_high_5_bits.Encode(range, v >> 5);
-                            model.error_low_5_bits.Encode
-                            (
-                                range,
-                                v & ((1 << 5) - 1)
-                            );
+                            model.error_bits.Encode(range,v);
                         }
                     };
 
-                    encode_vec_hi_low(vec_pos);
-                    encode_vec_hi_low(vec_quat);
+                    encode_error_bits(vec_pos);
+                    encode_error_bits(vec_quat);
+
+//                    for (auto v: vec_pos)
+//                    {
+//                        assert(v < (1 << 10));
+
+//                        model.error_high_5_bits.Encode(range, v >> 5);
+//                        model.error_low_5_bits.Encode
+//                        (
+//                            range,
+//                            v & ((1 << 5) - 1)
+//                        );
+//                    }
+
+//                    for (auto v: vec_quat)
+//                    {
+//                        assert(v < (1 << 10));
+
+//                        model.error_high_5_bits.Encode(range, v >> 5);
+//                        model.error_low_5_bits.Encode
+//                        (
+//                            range,
+//                            v & ((1 << 5) - 1)
+//                        );
+//                    }
 
                     if (vec_pos[0] || vec_pos[1] || vec_pos[2])
                     {
@@ -1710,9 +1728,7 @@ namespace Naive_error
 
                         for (auto& v: result)
                         {
-                            auto p = model.error_high_5_bits.Decode(range) << 5;
-                            p += model.error_low_5_bits.Decode(range);
-                            v = p;
+                            v = model.error_bits.Decode(range);
                         }
 
                         return result;
