@@ -867,6 +867,7 @@ using namespace Range_models;
 struct Error_distance
 {
     unsigned distance_floor;
+    unsigned distance_floor_calc;
     unsigned distance_squared_cube_0;
     float    shortest_distance_between_movements;
     unsigned velocity_bits;
@@ -1439,6 +1440,10 @@ namespace Naive_error
                         (
                             std::abs(base[i].position_z)
                         );
+                        unsigned value_floor_calc = static_cast<unsigned>
+                        (
+                            std::abs(calculated.position[2])
+                        );
 
                         auto d = sub(position(base[i]), position(base[0]));
 
@@ -1460,6 +1465,7 @@ namespace Naive_error
                             g_errors.push_back
                             ({
                                 value_floor,
+                                value_floor_calc,
                                 value_cube_0,
                                 shortest_distance,
                                 MinBits
@@ -1492,6 +1498,10 @@ namespace Naive_error
                         (
                             std::abs(base[i].position_z)
                         );
+                        unsigned value_floor_calc = static_cast<unsigned>
+                        (
+                            std::abs(calculated.position[2])
+                        );
 
                         auto d = sub(position(base[i]), position(base[0]));
 
@@ -1514,6 +1524,7 @@ namespace Naive_error
                             ({
                                 value_floor,
                                 value_cube_0,
+                                value_floor_calc,
                                 shortest_distance,
                                 MinBits
                                 (
@@ -1903,6 +1914,16 @@ void range_compress(std::vector<Frame>& frames)
     //      For quat errors, worst errors seem to happen when the angular
     //      velocity is near zero. range seems to be up to 0.12 / frame
     //      this is component velocity, not vector magnitude.
+    //
+    //      Revisited error when close to ground, but for predicted
+    //      Z as opposed to base Z. Have 3 peaks. No errors under 23 (well, duh)
+    //      Put peaks then toughs at 150. A second peak around 180 to 334, then
+    //      the worsrt peak (but not as dense) at 900, before dropping off at
+    //      1600 and stabilising to errors under 20. probably related to
+    //      cube 0 as well.
+    //
+    //      For distance to bottom I'll use base distance from floor and
+    //      anything under 700 for a simple 2 context model.
 
 //    std::sort
 //    (
@@ -1914,20 +1935,21 @@ void range_compress(std::vector<Frame>& frames)
 //        }
 //    );
 
-//    for (unsigned i = 0; i < g_errors.size(); ++i)
-//    {
-//        printf
-//        (
-//            "%d,%f,%f,%d,%f,%f,%d\n",
-//            g_errors[i].error,
-//            std::sqrt(g_errors[i].distance_squared_cube_0),
-//            std::sqrt(g_errors[i].shortest_distance_between_movements),
-//            g_errors[i].velocity_bits,
-//            g_errors[i].velocity,
-//            g_errors[i].angular_v,
-//            g_errors[i].distance_floor
-//        );
-//    }
+    for (unsigned i = 0; i < g_errors.size(); ++i)
+    {
+        printf
+        (
+            "%d,%f,%f,%d,%f,%f,%d,%d\n",
+            g_errors[i].error,
+            std::sqrt(g_errors[i].distance_squared_cube_0),
+            std::sqrt(g_errors[i].shortest_distance_between_movements),
+            g_errors[i].velocity_bits,
+            g_errors[i].velocity,
+            g_errors[i].angular_v,
+            g_errors[i].distance_floor,
+            g_errors[i].distance_floor_calc
+        );
+    }
 
 //    for (unsigned i = 0; i < g_errors_quat.size(); ++i)
 //    {
