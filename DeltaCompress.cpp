@@ -878,7 +878,8 @@ struct Error_distance
 
 std::vector<Error_distance> g_errors;
 std::vector<Error_distance> g_errors_quat;
-
+// RAM: Tried 700, did worse. Tune!
+unsigned g_floor = 1;
 namespace Naive_error
 {
     // Found emperically.
@@ -902,6 +903,7 @@ namespace Naive_error
 
         // This seems to do the trick.
         Unsigned_golomb_range error_bits                = {10, 5};
+        Unsigned_golomb_range error_bits_floor          = {10, 5};
     };
 
     auto predict
@@ -1602,9 +1604,27 @@ namespace Naive_error
                             model.error_bits.Encode(range,v);
                         }
                     };
+                    auto encode_error_bits_floor =
+                        [&model, &range](const Vec3i& vec)
+                    {
+                        for (auto v: vec)
+                        {
+                            assert(v < (1 << 10));
 
-                    encode_error_bits(vec_pos);
-                    encode_error_bits(vec_quat);
+                            model.error_bits_floor.Encode(range,v);
+                        }
+                    };
+
+                    if (base[i].position_z < g_floor)
+                    {
+                        encode_error_bits_floor(vec_pos);
+                        encode_error_bits_floor(vec_quat);
+                    }
+                    else
+                    {
+                        encode_error_bits(vec_pos);
+                        encode_error_bits(vec_quat);
+                    }
 
 //                    for (auto v: vec_pos)
 //                    {
@@ -1744,6 +1764,20 @@ namespace Naive_error
 
                         return result;
                     };
+                    auto decode_vec_floor = [&model, &range]() -> Vec3i
+                    {
+                        Vec3i result;
+
+                        for (auto& v: result)
+                        {
+                            v = model.error_bits_floor.Decode(range);
+                        }
+
+                        return result;
+                    };
+
+                    Vec3i vec_pos;
+                    Vec3i vec_quat;
 
                     auto add_signs = [](unsigned signs, const Vec3i& v) -> Vec3i
                     {
@@ -1755,8 +1789,17 @@ namespace Naive_error
                         };
                     };
 
-                    auto vec_pos        = decode_vec();
-                    auto vec_quat       = decode_vec();
+                    if (base[i].position_z < g_floor)
+                    {
+                        vec_pos        = decode_vec_floor();
+                        vec_quat       = decode_vec_floor();
+                    }
+                    else
+                    {
+                        vec_pos        = decode_vec();
+                        vec_quat       = decode_vec();
+                    }
+
                     unsigned signs_pos  = 0;
                     unsigned signs_quat = 0;
 
@@ -1935,21 +1978,21 @@ void range_compress(std::vector<Frame>& frames)
 //        }
 //    );
 
-    for (unsigned i = 0; i < g_errors.size(); ++i)
-    {
-        printf
-        (
-            "%d,%f,%f,%d,%f,%f,%d,%d\n",
-            g_errors[i].error,
-            std::sqrt(g_errors[i].distance_squared_cube_0),
-            std::sqrt(g_errors[i].shortest_distance_between_movements),
-            g_errors[i].velocity_bits,
-            g_errors[i].velocity,
-            g_errors[i].angular_v,
-            g_errors[i].distance_floor,
-            g_errors[i].distance_floor_calc
-        );
-    }
+//    for (unsigned i = 0; i < g_errors.size(); ++i)
+//    {
+//        printf
+//        (
+//            "%d,%f,%f,%d,%f,%f,%d,%d\n",
+//            g_errors[i].error,
+//            std::sqrt(g_errors[i].distance_squared_cube_0),
+//            std::sqrt(g_errors[i].shortest_distance_between_movements),
+//            g_errors[i].velocity_bits,
+//            g_errors[i].velocity,
+//            g_errors[i].angular_v,
+//            g_errors[i].distance_floor,
+//            g_errors[i].distance_floor_calc
+//        );
+//    }
 
 //    for (unsigned i = 0; i < g_errors_quat.size(); ++i)
 //    {
