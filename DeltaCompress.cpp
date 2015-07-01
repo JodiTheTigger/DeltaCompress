@@ -869,6 +869,9 @@ struct Error_distance
     unsigned distance_floor;
     unsigned distance_squared_cube_0;
     float    shortest_distance_between_movements;
+    unsigned velocity_bits;
+    float    velocity;
+    float    angular_v;
     unsigned error;
 };
 
@@ -1375,6 +1378,8 @@ namespace Naive_error
                 auto calculated_quat = to_gaffer(calculated.quat);
 
                 // Update the predicitons for next time.
+                auto old_predictions = predicitons[i];
+
                 predicitons[i] = update_prediciton
                 (
                     predicitons[i],
@@ -1450,15 +1455,35 @@ namespace Naive_error
                                 Segment{position(target[0]), position(base[0])}
                             );
 
+                        unsigned index = 0;
                         for (auto e : error_pos)
                         {
                             g_errors.push_back
                             ({
-                                 value_floor,
-                                 value_cube_0,
-                                 shortest_distance,
-                                 static_cast<unsigned>(std::abs(e))
+                                value_floor,
+                                value_cube_0,
+                                shortest_distance,
+                                MinBits
+                                (
+                                    static_cast<unsigned>
+                                    (
+                                        std::abs
+                                        (
+                                            old_predictions
+                                                .linear_velocity_per_frame
+                                                [
+                                                    index
+                                                ]
+                                                * frame_delta
+                                        )
+                                    )
+                                ),
+                                std::sqrt(dot(old_predictions.linear_velocity_per_frame, old_predictions.linear_velocity_per_frame)),
+                                std::sqrt(dot(old_predictions.angular_velocity_per_frame, old_predictions.angular_velocity_per_frame)),
+                                static_cast<unsigned>(std::abs(e))
                             });
+
+                            index++;
                         }
                     }
 
@@ -1483,15 +1508,35 @@ namespace Naive_error
                                 Segment{position(target[0]), position(base[0])}
                             );
 
+                        unsigned index = 0;
                         for (auto e : error_quat)
                         {
                             g_errors_quat.push_back
                             ({
-                                 value_floor,
-                                 value_cube_0,
-                                 shortest_distance,
-                                 static_cast<unsigned>(std::abs(e))
+                                value_floor,
+                                value_cube_0,
+                                shortest_distance,
+                                MinBits
+                                (
+                                    static_cast<unsigned>
+                                    (
+                                        std::abs
+                                        (
+                                            old_predictions
+                                                .linear_velocity_per_frame
+                                                [
+                                                    index
+                                                ]
+                                                * frame_delta
+                                        )
+                                    )
+                                ),
+                                std::sqrt(dot(old_predictions.linear_velocity_per_frame, old_predictions.linear_velocity_per_frame)),
+                                std::sqrt(dot(old_predictions.angular_velocity_per_frame, old_predictions.angular_velocity_per_frame)),
+                                static_cast<unsigned>(std::abs(e))
                             });
+
+                            index++;
                         }
                     }
                 }
@@ -1838,6 +1883,10 @@ void range_compress(std::vector<Frame>& frames)
     //      also distance between segments and distance between point and
     //      cube 0 are pretty much the same looking distrubtuion, so just
     //      using the point to segment distance.
+    //
+    //      For quat errors, worst errors seem to happen when the angular
+    //      velocity is near zero. range seems to be up to 0.12 / frame
+    //      this is component velocity, not vector magnitude.
 
 //    std::sort
 //    (
@@ -1853,22 +1902,28 @@ void range_compress(std::vector<Frame>& frames)
 //    {
 //        printf
 //        (
-//            "%d,%f,%f,%d\n",
+//            "%d,%f,%f,%d,%f,%f,%d\n",
 //            g_errors[i].error,
 //            std::sqrt(g_errors[i].distance_squared_cube_0),
 //            std::sqrt(g_errors[i].shortest_distance_between_movements),
+//            g_errors[i].velocity_bits,
+//            g_errors[i].velocity,
+//            g_errors[i].angular_v,
 //            g_errors[i].distance_floor
 //        );
 //    }
 
-//    for (unsigned i = 0; i < g_errors.size(); ++i)
+//    for (unsigned i = 0; i < g_errors_quat.size(); ++i)
 //    {
 //        printf
 //        (
-//            "%d,%f,%f,%d\n",
+//            "%d,%f,%f,%d,%f,%f,%d\n",
 //            g_errors_quat[i].error,
 //            std::sqrt(g_errors_quat[i].distance_squared_cube_0),
 //            std::sqrt(g_errors_quat[i].shortest_distance_between_movements),
+//            g_errors_quat[i].velocity_bits,
+//            g_errors_quat[i].velocity,
+//            g_errors_quat[i].angular_v,
 //            g_errors_quat[i].distance_floor
 //        );
 //    }
