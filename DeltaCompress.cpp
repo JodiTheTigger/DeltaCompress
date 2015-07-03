@@ -402,6 +402,15 @@ static_assert
     "Not a POD."
 );
 
+
+// //////////////////////////////////////////////////////
+
+struct Dual_quat
+{
+    Quat real;
+    Quat dual;
+};
+
 // //////////////////////////////////////////////////////
 
 inline constexpr bool operator==(const Gaffer& lhs, const Gaffer& rhs)
@@ -463,6 +472,17 @@ auto constexpr mul(const Quat& lhs, float rhs) -> Quat
     };
 }
 
+auto constexpr add(const Quat& lhs, const Quat& rhs) -> Quat
+{
+    return
+    {
+        lhs[0] + rhs[0],
+        lhs[1] + rhs[1],
+        lhs[2] + rhs[2],
+        lhs[3] + rhs[3]
+    };
+}
+
 auto constexpr mul(const Quat& lhs, const Quat& rhs) -> Quat
 {
     return
@@ -474,7 +494,6 @@ auto constexpr mul(const Quat& lhs, const Quat& rhs) -> Quat
     };
 }
 
-
 auto constexpr magnitude_squared(const Quat& quat) -> float
 {
     return
@@ -484,6 +503,9 @@ auto constexpr magnitude_squared(const Quat& quat) -> float
         quat[3] * quat[3];
 }
 
+// NOTE: Interesting theory about normalisation from David Hammen
+// http://stackoverflow.com/a/12934750 however need to convert that one to
+// to use floats.
 auto msvc_constexpr normalise(const Quat& q) -> Quat
 {
     return mul(q, 1.0f / std::sqrt(magnitude_squared(q)));
@@ -516,6 +538,57 @@ auto constexpr mul(const Rotor& lhs, float rhs) -> Rotor
         lhs[1]*rhs,
         lhs[2]*rhs,
     };
+}
+
+// //////////////////////////////////////////////////////
+
+// Thanks Ben Kenwright
+// http://www.xbdev.net/misc_demos/demos/dual_quaternions_beyond/paper.pdf
+
+auto constexpr add(const Dual_quat& lhs, const Dual_quat& rhs) -> Dual_quat
+{
+    return
+    {
+        add(lhs.real, rhs.real),
+        add(lhs.dual, rhs.dual)
+    };
+}
+
+auto constexpr mul(const Dual_quat& lhs, const Dual_quat& rhs) -> Dual_quat
+{
+    return
+    {
+        mul(lhs.real, rhs.real),
+        add(mul(lhs.real, rhs.dual), mul(lhs.dual, rhs.real))
+    };
+}
+
+auto constexpr mul(const Dual_quat& lhs, float rhs) -> Dual_quat
+{
+    return
+    {
+        mul(lhs.real, rhs),
+        mul(lhs.dual, rhs)
+    };
+}
+
+auto constexpr conjugate(const Dual_quat& lhs) -> Dual_quat
+{
+    return
+    {
+        conjugate(lhs.real),
+        conjugate(lhs.dual)
+    };
+}
+
+// Norm(D) = sqrt(D.conjugate(D)) = ND.real, ND.dual = (1, 0)
+// Thats why we only divide by the real part of the dual quat.
+// I still think it's shakey becuase you also need the other constraint of:
+// ND.real * conjugate(ND.dual) == conjugate(ND.real) * ND.dual.
+// and I haven't seen proof anywhere for that :-(
+auto constexpr normalise(const Dual_quat& lhs) -> Dual_quat
+{
+    return mul(lhs, 1.0f / dot(lhs.real.vec, conjugate(lhs).real.vec));
 }
 
 // //////////////////////////////////////////////////////
@@ -1615,7 +1688,7 @@ namespace Naive_error
                         }
                     };
 
-                    if (base[i].position_z < g_floor)
+                    if (base[i].position_z < static_cast<int>(g_floor))
                     {
                         encode_error_bits_floor(vec_pos);
                         encode_error_bits_floor(vec_quat);
@@ -1789,7 +1862,7 @@ namespace Naive_error
                         };
                     };
 
-                    if (base[i].position_z < g_floor)
+                    if (base[i].position_z < static_cast<int>(g_floor))
                     {
                         vec_pos        = decode_vec_floor();
                         vec_quat       = decode_vec_floor();
