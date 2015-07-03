@@ -684,6 +684,30 @@ auto quat_dt(const Quat& q, float dt) -> Quat
     };
 }
 
+auto quat_dt2(const Quat& q, float dt) -> Quat
+{
+    auto rd = (1.0f + q[0]);
+
+    Vec3f r =
+    {
+        dt * q[1] / rd,
+        dt * q[2] / rd,
+        dt * q[3] / rd
+    };
+
+    auto mag2 = dot(r, r);
+
+    auto d = 1 + mag2;
+
+    return
+    {
+        (1.0f - mag2) / d,
+        (r[0] * 2.0f) / d,
+        (r[1] * 2.0f) / d,
+        (r[2] * 2.0f) / d,
+    };
+}
+
 // //////////////////////////////////////////////////////
 // Converting between quantised quats and back again is really pissy.
 // //////////////////////////////////////////////////////
