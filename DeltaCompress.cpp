@@ -338,6 +338,8 @@ struct Maxwell
 
 struct Quat
 {
+    static const constexpr unsigned W_INDEX = 0;
+
     Vec4f vec;
 
     float constexpr operator[](unsigned index) const
@@ -589,6 +591,30 @@ auto constexpr conjugate(const Dual_quat& lhs) -> Dual_quat
 auto constexpr normalise(const Dual_quat& lhs) -> Dual_quat
 {
     return mul(lhs, 1.0f / dot(lhs.real.vec, conjugate(lhs).real.vec));
+}
+
+auto constexpr to_dual(const Quat& rotation, const Vec3f& position) -> Dual_quat
+{
+    // RMA: TODO: Validate order of multiplication.
+    return
+    {
+        rotation,
+        mul({0.0f, position[0], position[1], position[2]}, mul(rotation, 0.5f))
+    };
+}
+
+auto constexpr to_dual(const Vec3f& position) -> Dual_quat
+{
+    return
+    {
+        {1, 0, 0, 0},
+        {0, position[0] * 0.5f, position[1] * 0.5f, position[2] * 0.5f}
+    };
+}
+
+auto constexpr to_position(const Dual_quat& dual) -> Vec3f
+{
+    return mul(mul(dual.dual, conjugate(dual.real)), 2.0f).vec;
 }
 
 // //////////////////////////////////////////////////////
