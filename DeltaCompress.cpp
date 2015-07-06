@@ -735,6 +735,11 @@ auto slerp_caley(const Quat& at_0, const Quat& at_1, float delta) -> Quat
     auto rotor_delta    = mul(rotor, delta);
     auto result         = to_quat(rotor_delta);
 
+
+    // RAM: Is the trick to normalise the rotor?
+    // RAM: No :-(
+    //auto result_n = normalise(result);
+
     return mul(result, at_0);
 }
 
@@ -897,7 +902,6 @@ auto slerp_caley_double(const Quat& at_0, const Quat& at_1, float delta) -> Quat
     auto rotor          = to_rotor(r);
     auto rotor_delta    = mul(rotor, delta);
     auto result         = to_quat(rotor_delta);
-
     auto real_result = mul(result, at_0d);
 
     return
@@ -1378,6 +1382,31 @@ namespace Naive_error
 //                    assert(std::abs(back[3] - r[3]) < 0.000000001f);
 //                }
 //            }
+
+
+            {
+                // RAM: Test the slerps for values
+                auto bq = Quat{0,1,0,0};
+                auto tq = normalise(Quat{0.707,0.707,0,0});
+                static const unsigned TOTAL=128;
+                for (unsigned t = 1; t <= TOTAL; ++t)
+                {
+                    auto delta = t / (float) TOTAL;
+
+                    // Ok, the caley transform is _wrong_ try to find out how.
+                    auto quat_c = slerp_caley(bq, tq, delta);
+                    //auto quat_s = slerp_trig(bq, tq, delta);
+
+                    auto deg = 45.0f * t / TOTAL;
+
+                    printf
+                    (
+                        "%f\n",
+                        std::sin(deg*2*M_PI/360.0f) - quat_c[0]
+                    );
+                }
+                fflush(stdout);
+            }
 
             // RAM: Is my slerp the same as shoemaker slerp?
             for (unsigned t = 0; t <= 20; ++t)
