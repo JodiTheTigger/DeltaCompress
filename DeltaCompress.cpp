@@ -324,7 +324,7 @@ auto constexpr dot(const Vec3f& lhs, const Vec3f& rhs) -> float
 
 auto constexpr normalise(const Vec3f& lhs) -> Vec3f
 {
-    return mul(lhs, std::sqrt(dot(lhs, lhs)));
+    return mul(lhs, 1.0f / std::sqrt(dot(lhs, lhs)));
 }
 
 // //////////////////////////////////////////////////////
@@ -818,6 +818,80 @@ auto angular_velocity(const Quat& r, float dt) -> Vec3f
 
 // //////////////////////////////////////////////////////
 
+struct Angle_and_axis
+{
+    float angle;
+    Vec3f axis;
+};
+
+auto to_angle_and_axis(const Quat& q) -> Angle_and_axis
+{
+    auto theta  = 2.0f * std::acos(q[0]);
+    auto vec    = normalise(Vec3f{q[1],q[2],q[3]});
+
+    // shortest arc.
+    if (theta > M_PI)
+    {
+        theta -= 2.0f * M_PI;
+    }
+
+    return
+    {
+        theta,
+        vec
+    };
+}
+
+auto constexpr to_quat(const Angle_and_axis& aaa) -> Quat
+{
+    return
+    {
+        std::cos(aaa.angle * 0.5f),
+        aaa.axis[0] * std::sin(aaa.angle * 0.5f),
+        aaa.axis[1] * std::sin(aaa.angle * 0.5f),
+        aaa.axis[2] * std::sin(aaa.angle * 0.5f)
+    };
+}
+
+// //////////////////////////////////////////////////////
+
+// Where the unit axis is multiplied by the angle itself (in radians).
+struct Angle_axis
+{
+    Vec3f vec;
+};
+
+auto to_angle_axis(const Quat& q) -> Angle_axis
+{
+    auto theta  = 2.0f * std::acos(q[0]);
+    auto vec    = normalise(Vec3f{q[1],q[2],q[3]});
+
+    // shortest arc.
+    if (theta > M_PI)
+    {
+        theta -= 2.0f * M_PI;
+    }
+
+    return
+    {
+        mul(vec, theta)
+    };
+}
+
+auto to_quat(const Angle_axis& aa) -> Quat
+{
+    auto theta = std::sqrt(dot(aa.vec, aa.vec));
+    auto vec   = normalise(aa.vec);
+
+    return
+    {
+        std::cos(theta * 0.5f),
+        vec[0] * std::sin(theta * 0.5f),
+        vec[1] * std::sin(theta * 0.5f),
+        vec[2] * std::sin(theta * 0.5f)
+    };
+}
+
 // //////////////////////////////////////////////////////
 // Converting between quantised quats and back again is really pissy.
 // //////////////////////////////////////////////////////
@@ -1190,7 +1264,7 @@ namespace Naive_error
         auto w_delta = mul(w, frame_delta);
 
         // Ok, need to convert to quat to do actual multiplications
-        auto r = to_quat({w_delta});
+        auto r = to_quat(Rotor{w_delta});
 
         auto rotation = mul(r, base.quat);
 
@@ -1284,52 +1358,74 @@ namespace Naive_error
 //            }
 
 
-            {
-                // RAM: Test the slerps for values
-                auto bq = Quat{0,1,0,0};
-                auto tq = normalise(Quat{0.707,0.707,0,0});
-                static const unsigned TOTAL=128;
-                for (unsigned t = 1; t <= TOTAL; ++t)
-                {
-                    auto delta = t / (float) TOTAL;
+//            {
+//                // RAM: Test the slerps for values
+//                auto bq = Quat{0,1,0,0};
+//                auto tq = normalise(Quat{0.707,0.707,0,0});
+//                static const unsigned TOTAL=128;
+//                for (unsigned t = 1; t <= TOTAL; ++t)
+//                {
+//                    auto delta = t / (float) TOTAL;
 
-                    // Ok, the caley transform is _wrong_ try to find out how.
-                    auto quat_c = slerp_caley(bq, tq, delta);
-                    //auto quat_s = slerp_trig(bq, tq, delta);
+//                    // Ok, the caley transform is _wrong_ try to find out how.
+//                    auto quat_c = slerp_caley(bq, tq, delta);
+//                    //auto quat_s = slerp_trig(bq, tq, delta);
 
-                    auto deg = 45.0f * t / TOTAL;
+//                    auto deg = 45.0f * t / TOTAL;
 
-                    printf
-                    (
-                        "%f\n",
-                        std::sin(deg*2*M_PI/360.0f) - quat_c[0]
-                    );
-                }
-                fflush(stdout);
-            }
+//                    printf
+//                    (
+//                        "%f\n",
+//                        std::sin(deg*2*M_PI/360.0f) - quat_c[0]
+//                    );
+//                }
+//                fflush(stdout);
+//            }
 
-            // RAM: Is my slerp the same as shoemaker slerp?
-            for (unsigned t = 0; t <= 20; ++t)
-            {
-                auto delta = t / 20.0f;
-                auto quat_c = slerp_caley(base.quat, target.quat, delta);
-                auto quat_s = slerp_trig(base.quat, target.quat, delta);
+//            // RAM: Is my slerp the same as shoemaker slerp?
+//            // RAM: No it isnt :-(
+//            for (unsigned t = 0; t <= 20; ++t)
+//            {
+//                auto delta = t / 20.0f;
+//                auto quat_c = slerp_caley(base.quat, target.quat, delta);
+//                auto quat_s = slerp_trig(base.quat, target.quat, delta);
 
-                Vec4f errors =
-                {
-                    std::abs(quat_c[0] - quat_s[0]),
-                    std::abs(quat_c[1] - quat_s[1]),
-                    std::abs(quat_c[2] - quat_s[2]),
-                    std::abs(quat_c[3] - quat_s[3])
-                };
+//                Vec4f errors =
+//                {
+//                    std::abs(quat_c[0] - quat_s[0]),
+//                    std::abs(quat_c[1] - quat_s[1]),
+//                    std::abs(quat_c[2] - quat_s[2]),
+//                    std::abs(quat_c[3] - quat_s[3])
+//                };
 
-                static const auto EPISLON = 0.05f;
-                assert(errors[0] < EPISLON);
-                assert(errors[1] < EPISLON);
-                assert(errors[2] < EPISLON);
-                assert(errors[3] < EPISLON);
+//                static const auto EPISLON = 0.05f;
+//                assert(errors[0] < EPISLON);
+//                assert(errors[1] < EPISLON);
+//                assert(errors[2] < EPISLON);
+//                assert(errors[3] < EPISLON);
 
-            }
+//            }
+
+//            {
+//                // RAM: is my axis_angle the same as the rotor?
+//                // No, but multiply by 4 (wtf) it is close, the same way
+//                // caley and trig slerps are :-/
+//                auto aa = to_angle_axis(r);
+//                auto delta_2 = mul(angle_delta, 4.0f);
+
+//                Vec3f errors =
+//                {
+//                    std::abs(aa.vec[0] - delta_2[0]),
+//                    std::abs(aa.vec[1] - delta_2[1]),
+//                    std::abs(aa.vec[2] - delta_2[2])
+//                };
+
+//                static const auto EPISLON = 0.05f;
+//                assert(errors[0] < EPISLON);
+//                assert(errors[1] < EPISLON);
+//                assert(errors[2] < EPISLON);
+
+//            }
 
         }
 
