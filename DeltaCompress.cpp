@@ -322,6 +322,11 @@ auto constexpr dot(const Vec3f& lhs, const Vec3f& rhs) -> float
         lhs[2] * rhs[2];
 };
 
+auto constexpr normalise(const Vec3f& lhs) -> Vec3f
+{
+    return mul(lhs, std::sqrt(dot(lhs, lhs)));
+}
+
 // //////////////////////////////////////////////////////
 
 struct Gaffer
@@ -788,6 +793,27 @@ auto slerp_trig(const Quat& at_0, const Quat& at_1, float delta) -> Quat
     auto result = add(mul(at_0, ratioA), mul(at_1, ratioB * neg_mult));
 
     return result;
+}
+
+// //////////////////////////////////////////////////////
+
+// Ok, trying from:
+// http://lost-found-wandering.blogspot.co.nz/2011/09/revisiting-angular-velocity-from-two.html
+
+auto angular_velocity(const Quat& r, float dt) -> Vec3f
+{
+    auto theta = 2.0f * std::acos(r[0]);
+
+    if (theta > M_PI)
+    {
+        theta -= 2.0f * M_PI;
+    }
+
+    auto v = Vec3f{r[1], r[2], r[3]};
+    auto delta = mul(normalise(v), theta);
+    auto velocity = mul(delta, 1.0f / dt);
+
+    return velocity;
 }
 
 // //////////////////////////////////////////////////////
