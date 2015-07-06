@@ -496,6 +496,15 @@ auto constexpr mul(const Quat& lhs, const Quat& rhs) -> Quat
     };
 }
 
+auto constexpr dot(const Quat& lhs, const Quat& rhs) -> float
+{
+    return
+        lhs[0]*rhs[0] +
+        lhs[1]*rhs[1] +
+        lhs[2]*rhs[2] +
+        lhs[3]*rhs[3];
+}
+
 auto constexpr magnitude_squared(const Quat& quat) -> float
 {
     return
@@ -707,6 +716,79 @@ auto quat_dt2(const Quat& q, float dt) -> Quat
         (r[2] * 2.0f) / d,
     };
 }
+
+// //////////////////////////////////////////////////////
+
+// Ok, need to test all the slerps
+
+auto slerp_caley(const Quat& at_0, const Quat& at_1, float delta) -> Quat
+{
+    // Bah, have to choose shortest path.
+    auto cos_half_theta  = dot(at_0, at_1);
+
+    auto r =
+            (cos_half_theta < 0)
+            ? mul(mul(at_1, -1.0f), conjugate(at_0))
+            : mul(mul(at_1,  1.0f), conjugate(at_0));
+
+    auto rotor          = to_rotor(r);
+    auto rotor_delta    = mul(rotor, delta);
+    auto result         = to_quat(rotor_delta);
+
+    return mul(result, at_0);
+}
+
+auto slerp_trig(const Quat& at_0, const Quat& at_1, float delta) -> Quat
+{
+    auto cos_half_theta  = dot(at_0, at_1);
+
+    // Chose the shortest path.
+    auto neg_mult = 1.0f;
+
+    if (cos_half_theta < 0)
+    {
+        cos_half_theta  = -cos_half_theta;
+        neg_mult        = -1.0f;
+    }
+
+    // This code generates large errors from the caley version.
+//    if (cos_half_theta > 0.99995)
+//    {
+//        auto lerp = Quat
+//        {
+//            at_0[0] + delta * (at_1[0] - at_0[0]),
+//            at_0[1] + delta * (at_1[1] - at_0[1]),
+//            at_0[2] + delta * (at_1[2] - at_0[2]),
+//            at_0[3] + delta * (at_1[3] - at_0[3])
+//        };
+
+//        return normalise(lerp);
+//    }
+
+    // RAM: Just return at_0 ?
+    assert(cos_half_theta > 0.0001);
+
+
+    cos_half_theta = std::max(-1.0f, cos_half_theta);
+    cos_half_theta = std::min( 1.0f, cos_half_theta);
+
+    // code adapted from
+    // http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions/slerp/
+    auto half_theta     = std::acos(cos_half_theta);
+    auto sin_half_theta = std::sqrt(1.0f - (cos_half_theta * cos_half_theta));
+
+    auto ratioA = std::sin((1.0f - delta) * half_theta)   / sin_half_theta;
+    auto ratioB = std::sin(delta * half_theta)            / sin_half_theta;
+
+    auto result = add(mul(at_0, ratioA), mul(at_1, ratioB * neg_mult));
+
+    return result;
+}
+
+
+
+
+// //////////////////////////////////////////////////////
 
 // //////////////////////////////////////////////////////
 // Converting between quantised quats and back again is really pissy.
@@ -1172,6 +1254,30 @@ namespace Naive_error
 //                    assert(std::abs(back[3] - r[3]) < 0.000000001f);
 //                }
 //            }
+
+            // RAM: Is my slerp the same as shoemaker slerp?
+            for (unsigned t = 0; t <= 20; ++t)
+            {
+                auto delta = t / 20.0f;
+                auto quat_c = slerp_caley(base.quat, target.quat, delta);
+                auto quat_s = slerp_trig(base.quat, target.quat, delta);
+
+                Vec4f errors =
+                {
+                    std::abs(quat_c[0] - quat_s[0]),
+                    std::abs(quat_c[1] - quat_s[1]),
+                    std::abs(quat_c[2] - quat_s[2]),
+                    std::abs(quat_c[3] - quat_s[3])
+                };
+
+                static const auto EPISLON = 0.05f;
+                assert(errors[0] < EPISLON);
+                assert(errors[1] < EPISLON);
+                assert(errors[2] < EPISLON);
+                assert(errors[3] < EPISLON);
+
+            }
+
         }
 
         auto w = div(angle_delta.vec, frame_delta);
