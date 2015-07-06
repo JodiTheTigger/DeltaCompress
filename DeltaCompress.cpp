@@ -787,6 +787,130 @@ auto slerp_trig(const Quat& at_0, const Quat& at_1, float delta) -> Quat
 
 
 
+using Qd = std::array<double, 4>;
+using Rotor_d = std::array<double, 3>;
+
+auto constexpr magnitude_squared(const Rotor_d& r) -> float
+{
+    return
+        r[0] * r[0] +
+        r[1] * r[1] +
+        r[2] * r[2];
+}
+
+
+auto constexpr mul(const Rotor_d& lhs, float rhs) -> Rotor_d
+{
+    return
+    {
+        lhs[0]*rhs,
+        lhs[1]*rhs,
+        lhs[2]*rhs,
+    };
+}
+
+Rotor_d constexpr to_rotor(const Qd& q)
+{
+    return
+    {
+        q[1] / (1.0f + q[0]),
+        q[2] / (1.0f + q[0]),
+        q[3] / (1.0f + q[0]),
+    };
+}
+
+Qd constexpr to_quat(const Rotor_d& r)
+{
+    return
+    {
+        (1.0f - magnitude_squared(r)) / (1 + magnitude_squared(r)),
+        (r[0] * 2.0f) / (1 + magnitude_squared(r)),
+        (r[1] * 2.0f) / (1 + magnitude_squared(r)),
+        (r[2] * 2.0f) / (1 + magnitude_squared(r)),
+    };
+}
+
+
+
+auto mul(const Qd& lhs, const Qd& rhs) -> Qd
+{
+    return
+    {
+        (lhs[0]*rhs[0] - lhs[1]*rhs[1] - lhs[2]*rhs[2] - lhs[3]*rhs[3]),
+        (lhs[0]*rhs[1] + lhs[1]*rhs[0] + lhs[2]*rhs[3] - lhs[3]*rhs[2]),
+        (lhs[0]*rhs[2] - lhs[1]*rhs[3] + lhs[2]*rhs[0] + lhs[3]*rhs[1]),
+        (lhs[0]*rhs[3] + lhs[1]*rhs[2] - lhs[2]*rhs[1] + lhs[3]*rhs[0])
+    };
+};
+
+
+
+auto slerp_caley_double(const Quat& at_0, const Quat& at_1, float delta) -> Quat
+{
+    Qd at_0d =
+    {
+        at_0[0],
+        at_0[1],
+        at_0[2],
+        at_0[3],
+    };
+
+    Qd at_1d =
+    {
+        at_1[0],
+        at_1[1],
+        at_1[2],
+        at_1[3],
+    };
+
+    auto mulf = [](const Qd& lhs, float rhs) -> Qd
+    {
+        return
+        {
+            lhs[0]*rhs,
+            lhs[1]*rhs,
+            lhs[2]*rhs,
+            lhs[3]*rhs
+        };
+    };
+
+    // Bah, have to choose shortest path.
+    auto cos_half_theta  =
+        at_0d[0] * at_1d[0] +
+        at_0d[1] * at_1d[1] +
+        at_0d[2] * at_1d[2] +
+        at_0d[3] * at_1d[3];
+
+    Qd conjagate_0 =
+    {
+        at_0[0],
+        -at_0[1],
+        -at_0[2],
+        -at_0[3]
+    };
+
+    auto r =
+            (cos_half_theta < 0)
+            ? mul(mulf(at_1d, -1.0f), conjagate_0)
+            : mul(mulf(at_1d,  1.0f), conjagate_0);
+
+    auto rotor          = to_rotor(r);
+    auto rotor_delta    = mul(rotor, delta);
+    auto result         = to_quat(rotor_delta);
+
+    auto real_result = mul(result, at_0d);
+
+    return
+    {
+        static_cast<float>(real_result[0]),
+        static_cast<float>(real_result[1]),
+        static_cast<float>(real_result[2]),
+        static_cast<float>(real_result[3]),
+    };
+}
+
+
+
 
 // //////////////////////////////////////////////////////
 
@@ -1259,7 +1383,7 @@ namespace Naive_error
             for (unsigned t = 0; t <= 20; ++t)
             {
                 auto delta = t / 20.0f;
-                auto quat_c = slerp_caley(base.quat, target.quat, delta);
+                auto quat_c = slerp_caley_double(base.quat, target.quat, delta);
                 auto quat_s = slerp_trig(base.quat, target.quat, delta);
 
                 Vec4f errors =
