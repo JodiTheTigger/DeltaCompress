@@ -647,6 +647,30 @@ auto to_dual_quat(const Screw& s) -> Dual_quat
     };
 }
 
+// //////////////////////////////////////////////////////
+
+// Ok, right, I have no idea if the maths here is even correct, but I'm
+// going to give it a shot anyway.
+
+struct Dual_angle_axis
+{
+    Vec3f real;
+    Vec3f dual;
+};
+
+auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
+{
+    // RAM: NO! angles are dual numbers, as are the vectors. Need to do dual mul.
+    // Also, don't even try until you can figure out how to get the angles
+    // back out of a dual number (what is the magnitude of a dual vector?).
+    return
+    {
+        mul(s.direction, s.theta),
+        mul(s.moment, s.distance),
+    };
+}
+
+
 // RAM: TODO: DUAL paper with maybe useful info
 // http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3576712/
 
