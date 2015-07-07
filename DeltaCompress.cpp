@@ -368,21 +368,6 @@ float* end(Quat& q)
     return &(q.vec[4]);
 }
 
-struct Rotor
-{
-    Vec3f vec;
-
-    float constexpr operator[](unsigned index) const
-    {
-        return vec[index];
-    }
-
-    float& operator[](unsigned index)
-    {
-        return vec[index];
-    }
-};
-
 // //////////////////////////////////////////////////////
 
 static_assert
@@ -402,13 +387,6 @@ static_assert
     std::is_pod<Quat>::value,
     "Not a POD."
 );
-
-static_assert
-(
-    std::is_pod<Rotor>::value,
-    "Not a POD."
-);
-
 
 // //////////////////////////////////////////////////////
 
@@ -538,24 +516,6 @@ auto constexpr conjugate(const Quat& q) -> Quat
     };
 }
 
-auto constexpr magnitude_squared(const Rotor& r) -> float
-{
-    return
-        r[0] * r[0] +
-        r[1] * r[1] +
-        r[2] * r[2];
-}
-
-auto constexpr mul(const Rotor& lhs, float rhs) -> Rotor
-{
-    return
-    {
-        lhs[0]*rhs,
-        lhs[1]*rhs,
-        lhs[2]*rhs,
-    };
-}
-
 // //////////////////////////////////////////////////////
 
 // Thanks Ben Kenwright
@@ -634,191 +594,6 @@ auto constexpr to_position(const Dual_quat& dual) -> Vec3f
 
 // RAM: TODO: DUAL paper with maybe useful info
 // http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3576712/
-
-// //////////////////////////////////////////////////////
-
-Rotor constexpr to_rotor(const Quat& q)
-{
-    return
-    {
-        q[1] / (1.0f + q[0]),
-        q[2] / (1.0f + q[0]),
-        q[3] / (1.0f + q[0]),
-    };
-}
-
-Quat constexpr to_quat(const Rotor& r)
-{
-    return
-    {
-        (1.0f - magnitude_squared(r)) / (1 + magnitude_squared(r)),
-        (r[0] * 2.0f) / (1 + magnitude_squared(r)),
-        (r[1] * 2.0f) / (1 + magnitude_squared(r)),
-        (r[2] * 2.0f) / (1 + magnitude_squared(r)),
-    };
-}
-
-// RAM: NOTE: Compairing this with converting to rotor
-//            and dividing by 2, the intermediate value is
-//            out by 2*. Investigate!
-// multiplying rotor by 'a' reduces to:
-// r^2 = (a*q1/(1+q0))^2 + (a*q2/(1+q0))^2 + (a*q3/(1+q0))^2
-// 1 - r^2 / 1 + r^2 =
-// (1 - ((a*q1/(1+q0))^2 + (a*q2/(1+q0))^2 + (a*q3/(1+q0))^2)) /
-// (1 + ((a*q1/(1+q0))^2 + (a*q2/(1+q0))^2 + (a*q3/(1+q0))^2))
-// =
-// (via wolfram alpha's simplifier)
-// -a^2(q1^2 + q2^2 + q3^2) + q0^2 + 2q0 + 1 /
-//  a^2(q1^2 + q2^2 + q3^2) + q0^2 + 2q0 + 1
-//
-// 2r0 / 1 + r^2 =
-// (2 * (q1 / (1+q0))) /
-// (1 + ((a*q1/(1+q0))^2 + (a*q2/(1+q0))^2 + (a*q3/(1+q0))^2))
-//
-// (via wolfram alpha's simplifier)
-// 2(q0 + 1)q1 /
-// a^2(q1^2 + q2^2 + q3^2) + q0^2 + 2q0 + 1
-//
-// Can generalise to (x=1,2,3):
-// 2(q0 + 1)qx /
-// a^2(q1^2 + q2^2 + q3^2) + q0^2 + 2q0 + 1
-//
-// Which leads us to our function:
-auto quat_dt(const Quat& q, float dt) -> Quat
-{
-    auto imaginary_squared    = q[1]*q[1] + q[2]*q[2] + q[3]*q[3];
-    auto tail                 = q[0]*q[0] + 2*q[0] + 1;
-    auto a_squared            = dt * dt;
-    auto a_squared_i_squared  = a_squared * imaginary_squared;
-    auto D                    = a_squared_i_squared + tail;
-    auto b                    = 2*(q[0] + 1);
-
-    return
-    {
-        -a_squared_i_squared + tail / D,
-        (q[1] * b)                  / D,
-        (q[2] * b)                  / D,
-        (q[3] * b)                  / D
-    };
-}
-
-auto quat_dt2(const Quat& q, float dt) -> Quat
-{
-    auto rd = (1.0f + q[0]);
-
-    Vec3f r =
-    {
-        dt * q[1] / rd,
-        dt * q[2] / rd,
-        dt * q[3] / rd
-    };
-
-    auto mag2 = dot(r, r);
-
-    auto d = 1 + mag2;
-
-    return
-    {
-        (1.0f - mag2) / d,
-        (r[0] * 2.0f) / d,
-        (r[1] * 2.0f) / d,
-        (r[2] * 2.0f) / d,
-    };
-}
-
-// //////////////////////////////////////////////////////
-
-// Ok, need to test all the slerps
-
-auto slerp_caley(const Quat& at_0, const Quat& at_1, float delta) -> Quat
-{
-    // Bah, have to choose shortest path.
-    auto cos_half_theta  = dot(at_0, at_1);
-
-    auto r =
-            (cos_half_theta < 0)
-            ? mul(mul(at_1, -1.0f), conjugate(at_0))
-            : mul(mul(at_1,  1.0f), conjugate(at_0));
-
-    auto rotor          = to_rotor(r);
-    auto rotor_delta    = mul(rotor, delta);
-    auto result         = to_quat(rotor_delta);
-
-
-    // RAM: Is the trick to normalise the rotor?
-    // RAM: No :-(
-    //auto result_n = normalise(result);
-
-    return mul(result, at_0);
-}
-
-auto slerp_trig(const Quat& at_0, const Quat& at_1, float delta) -> Quat
-{
-    auto cos_half_theta  = dot(at_0, at_1);
-
-    // Chose the shortest path.
-    auto neg_mult = 1.0f;
-
-    if (cos_half_theta < 0)
-    {
-        cos_half_theta  = -cos_half_theta;
-        neg_mult        = -1.0f;
-    }
-
-    // This code generates large errors from the caley version.
-//    if (cos_half_theta > 0.99995)
-//    {
-//        auto lerp = Quat
-//        {
-//            at_0[0] + delta * (at_1[0] - at_0[0]),
-//            at_0[1] + delta * (at_1[1] - at_0[1]),
-//            at_0[2] + delta * (at_1[2] - at_0[2]),
-//            at_0[3] + delta * (at_1[3] - at_0[3])
-//        };
-
-//        return normalise(lerp);
-//    }
-
-    // RAM: Just return at_0 ?
-    assert(cos_half_theta > 0.0001);
-
-
-    cos_half_theta = std::max(-1.0f, cos_half_theta);
-    cos_half_theta = std::min( 1.0f, cos_half_theta);
-
-    // code adapted from
-    // http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions/slerp/
-    auto half_theta     = std::acos(cos_half_theta);
-    auto sin_half_theta = std::sqrt(1.0f - (cos_half_theta * cos_half_theta));
-
-    auto ratioA = std::sin((1.0f - delta) * half_theta)   / sin_half_theta;
-    auto ratioB = std::sin(delta * half_theta)            / sin_half_theta;
-
-    auto result = add(mul(at_0, ratioA), mul(at_1, ratioB * neg_mult));
-
-    return result;
-}
-
-// //////////////////////////////////////////////////////
-
-// Ok, trying from:
-// http://lost-found-wandering.blogspot.co.nz/2011/09/revisiting-angular-velocity-from-two.html
-
-auto angular_velocity(const Quat& r, float dt) -> Vec3f
-{
-    auto theta = 2.0f * std::acos(r[0]);
-
-    if (theta > M_PI)
-    {
-        theta -= 2.0f * M_PI;
-    }
-
-    auto v = Vec3f{r[1], r[2], r[3]};
-    auto delta = mul(normalise(v), theta);
-    auto velocity = mul(delta, 1.0f / dt);
-
-    return velocity;
-}
 
 // //////////////////////////////////////////////////////
 
