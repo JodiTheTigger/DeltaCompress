@@ -631,6 +631,10 @@ auto constexpr to_position(const Dual_quat& dual) -> Vec3f
     return mul(mul(dual.dual, conjugate(dual.real)), 2.0f).vec;
 }
 
+
+// RAM: TODO: DUAL paper with maybe useful info
+// http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3576712/
+
 // //////////////////////////////////////////////////////
 
 Rotor constexpr to_rotor(const Quat& q)
