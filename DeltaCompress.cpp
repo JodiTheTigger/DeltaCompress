@@ -591,6 +591,61 @@ auto constexpr to_position(const Dual_quat& dual) -> Vec3f
     return mul(mul(dual.dual, conjugate(dual.real)), 2.0f).vec;
 }
 
+// //////////////////////////////////////////////////////
+
+struct Screw
+{
+    float theta;
+    Vec3f direction;
+
+    float distance;
+    Vec3f moment;
+};
+
+auto to_screw(const Dual_quat& d) -> Screw
+{
+    auto wr         = d.real[0];
+    auto theta      = 2.0f * std::acos(wr);
+    auto vr         = Vec3f{d.real[1], d.real[2], d.real[3]};
+    auto inv_vr_mag = 1.0f / std::sqrt(dot(vr, vr));
+    auto distance   = -2.0f * d.dual[0] * inv_vr_mag;
+    auto direction  = mul(vr, inv_vr_mag);
+    auto vd         = Vec3f{d.dual[1], d.dual[2], d.dual[3]};
+
+    auto moment = mul
+    (
+        add(vd, mul(direction, -0.5f * distance * wr)),
+        inv_vr_mag
+    );
+
+    return
+    {
+        theta,
+        direction,
+        distance,
+        moment
+    };
+}
+
+auto to_dual_quat(const Screw& s) -> Dual_quat
+{
+    auto wr             = std::cos(s.theta * 0.5f);
+    auto sin_half_theta = std::sin(s.theta * 0.5f);
+    auto vr             = mul(s.direction, sin_half_theta);
+    auto wd             = -0.5f * s.distance * sin_half_theta;
+
+    auto vd = add
+    (
+        mul(s.moment,    sin_half_theta),
+        mul(s.direction, 0.5f * s.distance * wr)
+    );
+
+    return
+    {
+        {wr, vr[0], vr[1], vr[2]},
+        {wd, vd[0], vd[1], vd[2]},
+    };
+}
 
 // RAM: TODO: DUAL paper with maybe useful info
 // http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3576712/
