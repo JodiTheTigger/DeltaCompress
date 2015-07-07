@@ -968,10 +968,6 @@ struct Error_distance
     unsigned error;
 };
 
-std::vector<Error_distance> g_errors;
-std::vector<Error_distance> g_errors_quat;
-// RAM: Tried 700, did worse. Tune!
-unsigned g_floor = 1;
 namespace Naive_error
 {
     // Found emperically.
@@ -994,7 +990,6 @@ namespace Naive_error
 
         // This seems to do the trick.
         Unsigned_golomb_range error_bits                = {10, 5};
-        Unsigned_golomb_range error_bits_floor          = {10, 5};
     };
 
     auto predict
@@ -1423,9 +1418,6 @@ namespace Naive_error
 
                 auto calculated_quat = to_gaffer(calculated.quat);
 
-                // Update the predicitons for next time.
-                auto old_predictions = predicitons[i];
-
                 predicitons[i] = update_prediciton
                 (
                     predicitons[i],
@@ -1473,129 +1465,6 @@ namespace Naive_error
                     has_error_pos
                     || has_error_quat
                     || error_quat_largest;
-
-                // RAM: Store all the erros.
-                // Notes:seems better to hold errors in 4 bits instead of 5
-                // and that high errors occur within 1500 of the ground
-                // (check gnuplot for actualy number.)
-                if (i)
-                {
-                    if (has_error_pos)
-                    {
-                        unsigned value_floor = static_cast<unsigned>
-                        (
-                            std::abs(base[i].position_z)
-                        );
-                        unsigned value_floor_calc = static_cast<unsigned>
-                        (
-                            std::abs(calculated.position[2])
-                        );
-
-                        auto d = sub(position(base[i]), position(base[0]));
-
-                        unsigned value_cube_0 = static_cast<unsigned>
-                        (
-                            d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
-                        );
-
-                        auto shortest_distance =
-                            shorted_distance_between_segments_squared
-                            (
-                                Segment{position(target[i]), position(base[i])},
-                                Segment{position(target[0]), position(base[0])}
-                            );
-
-                        unsigned index = 0;
-                        for (auto e : error_pos)
-                        {
-                            g_errors.push_back
-                            ({
-                                value_floor,
-                                value_floor_calc,
-                                value_cube_0,
-                                shortest_distance,
-                                MinBits
-                                (
-                                    static_cast<unsigned>
-                                    (
-                                        std::abs
-                                        (
-                                            old_predictions
-                                                .linear_velocity_per_frame
-                                                [
-                                                    index
-                                                ]
-                                                * frame_delta
-                                        )
-                                    )
-                                ),
-                                std::sqrt(dot(old_predictions.linear_velocity_per_frame, old_predictions.linear_velocity_per_frame)),
-                                std::sqrt(dot(old_predictions.angular_velocity_per_frame, old_predictions.angular_velocity_per_frame)),
-                                static_cast<unsigned>(std::abs(e))
-                            });
-
-                            index++;
-                        }
-                    }
-
-                    if (has_error_quat)
-                    {
-                        unsigned value_floor = static_cast<unsigned>
-                        (
-                            std::abs(base[i].position_z)
-                        );
-                        unsigned value_floor_calc = static_cast<unsigned>
-                        (
-                            std::abs(calculated.position[2])
-                        );
-
-                        auto d = sub(position(base[i]), position(base[0]));
-
-                        unsigned value_cube_0 = static_cast<unsigned>
-                        (
-                            d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
-                        );
-
-                        auto shortest_distance =
-                            shorted_distance_between_segments_squared
-                            (
-                                Segment{position(target[i]), position(base[i])},
-                                Segment{position(target[0]), position(base[0])}
-                            );
-
-                        unsigned index = 0;
-                        for (auto e : error_quat)
-                        {
-                            g_errors_quat.push_back
-                            ({
-                                value_floor,
-                                value_cube_0,
-                                value_floor_calc,
-                                shortest_distance,
-                                MinBits
-                                (
-                                    static_cast<unsigned>
-                                    (
-                                        std::abs
-                                        (
-                                            old_predictions
-                                                .linear_velocity_per_frame
-                                                [
-                                                    index
-                                                ]
-                                                * frame_delta
-                                        )
-                                    )
-                                ),
-                                std::sqrt(dot(old_predictions.linear_velocity_per_frame, old_predictions.linear_velocity_per_frame)),
-                                std::sqrt(dot(old_predictions.angular_velocity_per_frame, old_predictions.angular_velocity_per_frame)),
-                                static_cast<unsigned>(std::abs(e))
-                            });
-
-                            index++;
-                        }
-                    }
-                }
 
                 // Encode!
                 model.has_error.Encode(binary, has_error);
@@ -1648,51 +1517,9 @@ namespace Naive_error
                             model.error_bits.Encode(range,v);
                         }
                     };
-                    auto encode_error_bits_floor =
-                        [&model, &range](const Vec3i& vec)
-                    {
-                        for (auto v: vec)
-                        {
-                            assert(v < (1 << 10));
 
-                            model.error_bits_floor.Encode(range,v);
-                        }
-                    };
-
-                    if (base[i].position_z < static_cast<int>(g_floor))
-                    {
-                        encode_error_bits_floor(vec_pos);
-                        encode_error_bits_floor(vec_quat);
-                    }
-                    else
-                    {
-                        encode_error_bits(vec_pos);
-                        encode_error_bits(vec_quat);
-                    }
-
-//                    for (auto v: vec_pos)
-//                    {
-//                        assert(v < (1 << 10));
-
-//                        model.error_high_5_bits.Encode(range, v >> 5);
-//                        model.error_low_5_bits.Encode
-//                        (
-//                            range,
-//                            v & ((1 << 5) - 1)
-//                        );
-//                    }
-
-//                    for (auto v: vec_quat)
-//                    {
-//                        assert(v < (1 << 10));
-
-//                        model.error_high_5_bits.Encode(range, v >> 5);
-//                        model.error_low_5_bits.Encode
-//                        (
-//                            range,
-//                            v & ((1 << 5) - 1)
-//                        );
-//                    }
+                    encode_error_bits(vec_pos);
+                    encode_error_bits(vec_quat);
 
                     if (vec_pos[0] || vec_pos[1] || vec_pos[2])
                     {
@@ -1808,17 +1635,6 @@ namespace Naive_error
 
                         return result;
                     };
-                    auto decode_vec_floor = [&model, &range]() -> Vec3i
-                    {
-                        Vec3i result;
-
-                        for (auto& v: result)
-                        {
-                            v = model.error_bits_floor.Decode(range);
-                        }
-
-                        return result;
-                    };
 
                     Vec3i vec_pos;
                     Vec3i vec_quat;
@@ -1833,16 +1649,8 @@ namespace Naive_error
                         };
                     };
 
-                    if (base[i].position_z < static_cast<int>(g_floor))
-                    {
-                        vec_pos        = decode_vec_floor();
-                        vec_quat       = decode_vec_floor();
-                    }
-                    else
-                    {
-                        vec_pos        = decode_vec();
-                        vec_quat       = decode_vec();
-                    }
+                    vec_pos        = decode_vec();
+                    vec_quat       = decode_vec();
 
                     unsigned signs_pos  = 0;
                     unsigned signs_quat = 0;
@@ -2011,47 +1819,6 @@ void range_compress(std::vector<Frame>& frames)
     //
     //      For distance to bottom I'll use base distance from floor and
     //      anything under 700 for a simple 2 context model.
-
-//    std::sort
-//    (
-//        begin(g_errors),
-//        end(g_errors),
-//        [](const Error_distance& lhs, const Error_distance& rhs)
-//        {
-//            return lhs.error > rhs.error;
-//        }
-//    );
-
-//    for (unsigned i = 0; i < g_errors.size(); ++i)
-//    {
-//        printf
-//        (
-//            "%d,%f,%f,%d,%f,%f,%d,%d\n",
-//            g_errors[i].error,
-//            std::sqrt(g_errors[i].distance_squared_cube_0),
-//            std::sqrt(g_errors[i].shortest_distance_between_movements),
-//            g_errors[i].velocity_bits,
-//            g_errors[i].velocity,
-//            g_errors[i].angular_v,
-//            g_errors[i].distance_floor,
-//            g_errors[i].distance_floor_calc
-//        );
-//    }
-
-//    for (unsigned i = 0; i < g_errors_quat.size(); ++i)
-//    {
-//        printf
-//        (
-//            "%d,%f,%f,%d,%f,%f,%d\n",
-//            g_errors_quat[i].error,
-//            std::sqrt(g_errors_quat[i].distance_squared_cube_0),
-//            std::sqrt(g_errors_quat[i].shortest_distance_between_movements),
-//            g_errors_quat[i].velocity_bits,
-//            g_errors_quat[i].velocity,
-//            g_errors_quat[i].angular_v,
-//            g_errors_quat[i].distance_floor
-//        );
-//    }
 }
 
 int main(int, char**)
