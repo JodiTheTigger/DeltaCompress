@@ -687,6 +687,13 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
     // i.e. have a zero w component. that the imaginary part is the
     // angular velocity vector.
     // only problem is that is D just bV, or is it aV + bS ?
+    //
+    // Another deveriation (for quanterions only atm) is from:
+    // http://www.mbnexplorer.com/users-guide/5-molecular-dynamics-simulations/51-equations-motion/514-quaternions-application-rigid
+    // quation 5.32 and 5.33
+    // q'  = 0.5 * mul(q, R)
+    // q'' = 0.5 * add(mul(q', R), mul(q, R'))
+    // But then, how do I get R' ?
 
     return
     {
