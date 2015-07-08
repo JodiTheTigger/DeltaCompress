@@ -678,6 +678,16 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
     // Aha! We can get b by knowing that |v| == 1. reduce to a quadratic and
     // then solve that for b. Time for pen and paper :-)
 
+    // RAM: MAybe this is what im looking for ?
+    // http://rain.aa.washington.edu/@api/deki/files/401/=Dual_q_landing_CDC12.pdf
+    // Equation 29
+    // omega' = ( delta R, Delta D + cross(R, D) )
+    //
+    // omega = R + D, where R == real, D = dual part, and both are visors
+    // i.e. have a zero w component. that the imaginary part is the
+    // angular velocity vector.
+    // only problem is that is D just bV, or is it aV + bS ?
+
     return
     {
         mul(s.direction, s.theta),
