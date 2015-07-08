@@ -663,6 +663,17 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
     // RAM: NO! angles are dual numbers, as are the vectors. Need to do dual mul.
     // Also, don't even try until you can figure out how to get the angles
     // back out of a dual number (what is the magnitude of a dual vector?).
+
+    // https://en.wikipedia.org/wiki/Screw_theory states:
+    // The multiplication of a screw S=(S, V) by the dual scalar â=(a, b)
+    // is computed componentwise to be,
+    // âS = (a, b)(S, V) = (aS, aV + bS) = (S', V')
+    //
+    // So, just working backwards. to get a and b back:
+    // a = |S'|
+    // S = S'/|S'|
+    // b = how?
+    // V = V' - (b/a)S
     return
     {
         mul(s.direction, s.theta),
