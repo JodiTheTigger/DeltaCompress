@@ -772,6 +772,24 @@ auto to_quat(const Angle_axis& aa) -> Quat
 }
 
 // //////////////////////////////////////////////////////
+
+auto delta_t(const Quat& q, float delta_t) -> Quat
+{
+    if ((q[0] == 1.0f) && (q[1] == 0.0f)  && (q[2] == 0.0f)  && (q[3] == 0.0f))
+    {
+        return {1.0f, 0.0f, 0.0f, 0.0f};
+    }
+
+    auto axis_angle = to_angle_axis(q);
+
+    axis_angle.vec = mul(axis_angle.vec, 1.0f / delta_t);
+
+    return to_quat(axis_angle);
+}
+
+// //////////////////////////////////////////////////////
+
+// //////////////////////////////////////////////////////
 // Converting between quantised quats and back again is really pissy.
 // //////////////////////////////////////////////////////
 
@@ -1092,6 +1110,42 @@ namespace Naive_error
         r = to_quat(Angle_axis{w_delta});
 
         auto rotation = mul(r, base.quat);
+
+        {
+            // RAM: DEbug, do we need to convert to axis angle in order to add
+            // angular velocities to a rotation?
+            // Hmm, it seems I have my maths wrong, as this isn't working :-(
+            auto q_wa = to_quat
+            (
+                Angle_axis{v_and_a.angular_acceleration_per_frame}
+            );
+
+            auto q_w = to_quat
+            (
+                Angle_axis{v_and_a.angular_velocity_per_frame}
+            );
+
+            auto q_wt_2     = delta_t(q_wa, frame_delta / 2.0f);
+            auto q_new_w    = mul(q_w, q_wt_2);
+
+            auto q_delta_w  = delta_t(q_new_w, frame_delta);
+
+            auto rotation2 = mul(q_delta_w, base.quat);
+
+            std::array<float, 4> error;
+
+            for (unsigned g = 0; g < 4; g++)
+            {
+                error[g] = std::abs(rotation[g] - rotation2[g]);
+            }
+
+            static const float EPISLON = 0.000001f;
+
+            assert(error[0] < EPISLON);
+            assert(error[1] < EPISLON);
+            assert(error[2] < EPISLON);
+            assert(error[3] < EPISLON);
+        }
 
         return
         {
