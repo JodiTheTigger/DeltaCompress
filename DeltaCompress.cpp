@@ -674,6 +674,10 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
     // S = S'/|S'|
     // b = how?
     // V = V' - (b/a)S
+    //
+    // Aha! We can get b by knowing that |v| == 1. reduce to a quadratic and
+    // then solve that for b. Time for pen and paper :-)
+
     return
     {
         mul(s.direction, s.theta),
