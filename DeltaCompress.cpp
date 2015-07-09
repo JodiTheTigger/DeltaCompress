@@ -806,6 +806,66 @@ auto delta_t(const Quat& q, float delta_t) -> Quat
 
 // //////////////////////////////////////////////////////
 
+void dual_tests()
+{
+    static const constexpr unsigned TEST_COUNT = 8;
+    struct Posisiton_angle_axis
+    {
+        Vec3f pos;
+        Angle_and_axis aa;
+    };
+
+    std::vector<std::vector<Posisiton_angle_axis>> tests;
+
+    // constant velocity
+    tests.push_back({});
+    for (unsigned i = 0; i < TEST_COUNT; ++i)
+    {
+        auto t = Posisiton_angle_axis
+        {
+            {i * 10.0f, 0.0f, 0.0f},
+            {0.0f, {0.0f, 0.0f, 1.0f}}
+        };
+
+        tests.back().push_back(t);
+    }
+
+
+    // constant angular velocity
+    tests.push_back({});
+    for (unsigned i = 0; i < TEST_COUNT; ++i)
+    {
+        auto t = Posisiton_angle_axis
+        {
+            {10.0f, 10.0f, 10.0f},
+            {
+                static_cast<float>(2.0f * M_PI * i / 100.0f),
+                {0.0f, 0.0f, 1.0f}
+            }
+        };
+
+        tests.back().push_back(t);
+    }
+
+    // //////////////////////////////////////////////////////
+
+    for(const auto& test : tests)
+    {
+        for (const auto& item : test)
+        {
+            Dual_quat dq =
+            {
+                to_quat(item.aa),
+                {0.0f, item.pos[0], item.pos[1], item.pos[2]}
+            };
+        }
+    }
+}
+
+
+
+// //////////////////////////////////////////////////////
+
 // //////////////////////////////////////////////////////
 // Converting between quantised quats and back again is really pissy.
 // //////////////////////////////////////////////////////
