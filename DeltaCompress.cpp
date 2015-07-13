@@ -26,7 +26,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests       = false;
+bool do_tests       = true;
 bool do_compression = true;
 bool do_decompress  = true;
 
@@ -849,6 +849,50 @@ void dual_tests()
 
     // //////////////////////////////////////////////////////
 
+    auto compare = []
+    (
+        const Dual_quat& lhs,
+        const Dual_quat& rhs,
+        const float EPISLON
+    )
+    {
+        std::vector<float> errors;
+        errors.reserve(8);
+
+        errors.push_back(std::abs(lhs.real[0] - rhs.real[0]));
+        errors.push_back(std::abs(lhs.real[1] - rhs.real[1]));
+        errors.push_back(std::abs(lhs.real[2] - rhs.real[2]));
+        errors.push_back(std::abs(lhs.real[3] - rhs.real[3]));
+
+        errors.push_back(std::abs(lhs.dual[0] - rhs.dual[0]));
+        errors.push_back(std::abs(lhs.dual[1] - rhs.dual[1]));
+        errors.push_back(std::abs(lhs.dual[2] - rhs.dual[2]));
+        errors.push_back(std::abs(lhs.dual[3] - rhs.dual[3]));
+
+        assert(errors[0] < EPISLON);
+        assert(errors[1] < EPISLON);
+        assert(errors[2] < EPISLON);
+        assert(errors[3] < EPISLON);
+
+        assert(errors[4] < EPISLON);
+        assert(errors[5] < EPISLON);
+        assert(errors[6] < EPISLON);
+        assert(errors[7] < EPISLON);
+    };
+
+    Dual_quat previous =
+    {
+        {1.0f, 0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 0.0f, 0.0f}
+    };
+
+
+//    Dual_quat previous_delta =
+//    {
+//        {0.0f, 0.0f, 0.0f, 0.0f},
+//        {0.0f, 0.0f, 0.0f, 0.0f}
+//    };
+
     for(const auto& test : tests)
     {
         for (const auto& item : test)
@@ -858,6 +902,16 @@ void dual_tests()
                 to_quat(item.aa),
                 {0.0f, item.pos[0], item.pos[1], item.pos[2]}
             };
+
+            // First, make sure that our "delta" can be converted
+            // back and forward.
+            {
+                auto r = mul(dq, conjugate(previous));
+
+                auto dq_calc = mul(r, previous);
+
+                compare(dq, dq_calc, 0.000001f);
+            }
         }
     }
 }
@@ -2034,6 +2088,7 @@ int main(int, char**)
 
     if (do_tests)
     {
+        dual_tests();
         range_tests();
     }
 
