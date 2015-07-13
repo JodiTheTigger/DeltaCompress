@@ -849,7 +849,7 @@ void dual_tests()
 
     // //////////////////////////////////////////////////////
 
-    auto compare = []
+    auto compare_dq = []
     (
         const Dual_quat& lhs,
         const Dual_quat& rhs,
@@ -880,6 +880,26 @@ void dual_tests()
         assert(errors[7] < EPISLON);
     };
 
+
+    auto compare = []
+    (
+        const Vec3f& lhs,
+        const Vec3f& rhs,
+        const float EPISLON
+    )
+    {
+        std::vector<float> errors;
+        errors.reserve(3);
+
+        errors.push_back(std::abs(lhs[0] - rhs[0]));
+        errors.push_back(std::abs(lhs[1] - rhs[1]));
+        errors.push_back(std::abs(lhs[2] - rhs[2]));
+
+        assert(errors[0] < EPISLON);
+        assert(errors[1] < EPISLON);
+        assert(errors[2] < EPISLON);
+    };
+
     Dual_quat previous =
     {
         {1.0f, 0.0f, 0.0f, 0.0f},
@@ -893,15 +913,17 @@ void dual_tests()
 //        {0.0f, 0.0f, 0.0f, 0.0f}
 //    };
 
+    static const float EPISLON = 0.000001f;
+
     for(const auto& test : tests)
     {
         for (const auto& item : test)
         {
-            Dual_quat dq =
-            {
+            Dual_quat dq = to_dual
+            (
                 to_quat(item.aa),
-                {0.0f, item.pos[0], item.pos[1], item.pos[2]}
-            };
+                item.pos
+            );
 
             // First, make sure that our "delta" can be converted
             // back and forward.
@@ -910,7 +932,11 @@ void dual_tests()
 
                 auto dq_calc = mul(r, previous);
 
-                compare(dq, dq_calc, 0.000001f);
+                compare_dq(dq, dq_calc, EPISLON);
+
+                auto pos = to_position(dq_calc);
+
+                compare(item.pos, pos, EPISLON);
             }
         }
     }
