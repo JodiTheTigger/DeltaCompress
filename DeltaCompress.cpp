@@ -907,11 +907,11 @@ void dual_tests()
     };
 
 
-//    Dual_quat previous_delta =
-//    {
-//        {0.0f, 0.0f, 0.0f, 0.0f},
-//        {0.0f, 0.0f, 0.0f, 0.0f}
-//    };
+    Dual_quat previous_delta =
+    {
+        {1.0f, 0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 0.0f, 0.0f}
+    };
 
     static const float EPISLON = 0.000001f;
 
@@ -928,15 +928,28 @@ void dual_tests()
             // First, make sure that our "delta" can be converted
             // back and forward.
             {
-                auto r = mul(dq, conjugate(previous));
+                previous_delta = mul(dq, conjugate(previous));
 
-                auto dq_calc = mul(r, previous);
+                auto dq_calc = mul(previous_delta, previous);
 
                 compare_dq(dq, dq_calc, EPISLON);
 
                 auto pos = to_position(dq_calc);
 
                 compare(item.pos, pos, EPISLON);
+            }
+
+            // Now try and predict the future!
+            {
+                auto dq_calc = mul(previous_delta, previous);
+
+                auto pos = to_position(dq_calc);
+                auto rotation = normalise(dq_calc).real;
+                auto aa = to_angle_and_axis(rotation);
+
+                compare(item.pos, pos, EPISLON);
+                compare(item.aa.axis, aa.axis, EPISLON);
+                assert(std::abs(item.aa.angle - aa.angle) < EPISLON);
             }
         }
     }
