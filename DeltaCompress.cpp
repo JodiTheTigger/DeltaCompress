@@ -586,9 +586,16 @@ auto constexpr to_dual(const Vec3f& position) -> Dual_quat
     };
 }
 
-auto constexpr to_position(const Dual_quat& dual) -> Vec3f
+auto to_position(const Dual_quat& dual) -> Vec3f
 {
-    return mul(mul(dual.dual, conjugate(dual.real)), 2.0f).vec;
+    auto as_quat = mul(mul(dual.dual, conjugate(dual.real)), 2.0f).vec;
+
+    return
+    {
+        as_quat[1],
+        as_quat[2],
+        as_quat[3]
+    };
 }
 
 // //////////////////////////////////////////////////////
