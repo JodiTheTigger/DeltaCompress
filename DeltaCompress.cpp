@@ -838,34 +838,130 @@ void dual_tests()
     std::vector<std::vector<Posisiton_angle_axis>> tests;
 
     // constant velocity
-    tests.push_back({});
-    for (unsigned i = 0; i < TEST_COUNT; ++i)
     {
-        auto t = Posisiton_angle_axis
+        tests.push_back({});
+        for (unsigned i = 0; i < TEST_COUNT; ++i)
         {
-            {i * 10.0f, 0.0f, 0.0f},
-            {0.0f, {0.0f, 0.0f, 1.0f}}
-        };
+            auto t = Posisiton_angle_axis
+            {
+                {i * 10.0f, 0.0f, 0.0f},
+                {0.0f, {0.0f, 0.0f, 1.0f}}
+            };
 
-        tests.back().push_back(t);
+            tests.back().push_back(t);
+        }
+    }
+
+    // constant acceleration
+    {
+        tests.push_back({});
+        auto velocity = 0.0f;
+        auto position = 0.0f;
+        for (unsigned i = 0; i < TEST_COUNT; ++i)
+        {
+            velocity += 10.0f;
+            position += velocity;
+
+            auto t = Posisiton_angle_axis
+            {
+                {position, 0.0f, 0.0f},
+                {0.0f, {0.0f, 0.0f, 1.0f}}
+            };
+
+            tests.back().push_back(t);
+        }
     }
 
 
     // constant angular velocity
-    tests.push_back({});
-    for (unsigned i = 0; i < TEST_COUNT; ++i)
     {
-        auto t = Posisiton_angle_axis
+        tests.push_back({});
+        for (unsigned i = 0; i < TEST_COUNT; ++i)
         {
-            {10.0f, 10.0f, 10.0f},
+            auto t = Posisiton_angle_axis
             {
-                static_cast<float>(2.0f * M_PI * i / 100.0f),
-                {0.0f, 0.0f, 1.0f}
-            }
-        };
+                {10.0f, 10.0f, 10.0f},
+                {
+                    static_cast<float>(2.0f * M_PI * i / 100.0f),
+                    {0.0f, 0.0f, 1.0f}
+                }
+            };
 
-        tests.back().push_back(t);
+            tests.back().push_back(t);
+        }
     }
+
+    // constant angular acceleration
+    {
+        tests.push_back({});
+        auto velocity = 0.0f;
+        auto angle = 0.0f;
+        for (unsigned i = 0; i < TEST_COUNT; ++i)
+        {
+            velocity += 2.0f * M_PI / 1000.0f;
+            angle += velocity;
+
+            auto t = Posisiton_angle_axis
+            {
+                {10.0f, 10.0f, 10.0f},
+                {
+                    angle,
+                    {0.0f, 0.0f, 1.0f}
+                }
+            };
+
+            tests.back().push_back(t);
+        }
+    }
+
+    // //////////////////////////////////////////////////////
+
+    // constant velocity + angular velocity
+    {
+        tests.push_back({});
+        for (unsigned i = 0; i < TEST_COUNT; ++i)
+        {
+            auto t = Posisiton_angle_axis
+            {
+                {i * 10.0f, 0.0f, 0.0f},
+                {
+                    static_cast<float>(2.0f * M_PI * i / 100.0f),
+                    {0.0f, 0.0f, 1.0f}
+                }
+            };
+
+            tests.back().push_back(t);
+        }
+    }
+
+    // constant acceleration + angular acceleration
+    {
+        tests.push_back({});
+        auto velocity = 0.0f;
+        auto position = 0.0f;
+        auto a_velocity = 0.0f;
+        auto angle = 0.0f;
+        for (unsigned i = 0; i < TEST_COUNT; ++i)
+        {
+            velocity    += 10.0f;
+            position    += velocity;
+
+            a_velocity  += 2.0f * M_PI / 1000.0f;
+            angle       += velocity;
+
+            auto t = Posisiton_angle_axis
+            {
+                {position, 0.0f, 0.0f},
+                {
+                    angle,
+                    {0.0f, 0.0f, 1.0f}
+                }
+            };
+
+            tests.back().push_back(t);
+        }
+    }
+
 
     // //////////////////////////////////////////////////////
 
