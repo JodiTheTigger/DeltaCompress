@@ -709,6 +709,33 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
     };
 }
 
+auto to_screw(const Dual_angle_axis& a) -> Screw
+{
+    auto theta = std::sqrt(dot(a.real, a.real));
+
+    auto direction =
+        (theta * theta > 0.00000001f)
+        ? normalise(a.real)
+        : Vec3f{1.0f, 0.0f, 0.0f};
+
+    // RAM: This is the dodgy bit - is it even valid?
+
+    auto distance = std::sqrt(dot(a.dual, a.dual));
+
+    auto moment =
+        (distance * distance > 0.00000001f)
+        ? normalise(a.dual)
+        : Vec3f{1.0f, 0.0f, 0.0f};
+
+    return
+    {
+        theta,
+        direction,
+        distance,
+        moment
+    };
+}
+
 
 // RAM: TODO: DUAL paper with maybe useful info
 // http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3576712/
@@ -1029,7 +1056,14 @@ void dual_tests()
         {0.0f, 0.0f, 0.0f, 0.0f}
     };
 
-    static const float EPISLON = 0.000001f;
+    Dual_angle_axis previous_v =
+    {
+        {0.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 0.0f}
+    };
+
+    static const float EPISLON = 0.00001f;
+    static const float FRAME_DELTA = 6;
 
     for(const auto& test : tests)
     {
@@ -1040,6 +1074,61 @@ void dual_tests()
                 to_quat(item.aa),
                 item.pos
             );
+
+            // Screw it :-)
+            {
+                auto delta = mul(dq, conjugate(previous));
+                auto screw_delta = to_screw(delta);
+                auto dual_aa = to_dual_angle_axis(screw_delta);
+
+                // Ok, does this work?
+                // I mean either this maths works, or is 100%
+                // shonky.
+                auto velocity = Dual_angle_axis
+                {
+                    mul(dual_aa.real, 1.0f / FRAME_DELTA),
+                    mul(dual_aa.dual, 1.0f / FRAME_DELTA)
+                };
+
+                auto v_delta = Dual_angle_axis
+                {
+                    sub(velocity.real, previous_v.real),
+                    sub(velocity.dual, previous_v.dual),
+                };
+
+                auto acc = Dual_angle_axis
+                {
+                    mul(v_delta.real, 1.0f / FRAME_DELTA),
+                    mul(v_delta.dual, 1.0f / FRAME_DELTA),
+                };
+
+                // Right, recalculate the screw delta.
+                auto at_2 = Dual_angle_axis
+                {
+                    mul(acc.real, FRAME_DELTA / 2.0f),
+                    mul(acc.dual, FRAME_DELTA / 2.0f),
+                };
+
+                auto v = Dual_angle_axis
+                {
+                    add(at_2.real, velocity.real),
+                    add(at_2.dual, velocity.dual),
+                };
+
+                auto delta_aa = Dual_angle_axis
+                {
+                    mul(v.real, FRAME_DELTA),
+                    mul(v.dual, FRAME_DELTA)
+                };
+
+                // now, how to get back to screw?
+                auto screw_delta_new = to_screw(delta_aa);
+                auto delta_new = to_dual_quat(screw_delta_new);
+
+                auto dq_calc = mul(delta_new, previous);
+
+                compare_dq(dq, dq_calc, EPISLON);
+            }
 
             // First, make sure that our "delta" can be converted
             // back and forward.
