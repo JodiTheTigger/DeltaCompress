@@ -716,8 +716,21 @@ struct Angle_and_axis
 
 auto to_angle_and_axis(const Quat& q) -> Angle_and_axis
 {
-    auto theta  = 2.0f * std::acos(q[0]);
-    auto vec    = normalise(Vec3f{q[1],q[2],q[3]});
+    auto theta      = 2.0f * std::acos(q[0]);
+    auto vec_raw    = Vec3f{q[1],q[2],q[3]};
+    auto mag2       = dot(vec_raw, vec_raw);
+
+    // RAM: TODO: Use a proper epislon.
+    if (mag2 < 0.000001)
+    {
+        return
+        {
+            0.0f,
+            {1.0f, 0.0f, 0.0f}
+        };
+    }
+
+    auto vec = mul(vec_raw, std::sqrt(mag2));
 
     // shortest arc.
     if (theta > M_PI)
@@ -945,11 +958,15 @@ void dual_tests()
 
                 auto pos = to_position(dq_calc);
                 auto rotation = normalise(dq_calc).real;
-                auto aa = to_angle_and_axis(rotation);
 
                 compare(item.pos, pos, EPISLON);
-                compare(item.aa.axis, aa.axis, EPISLON);
-                assert(std::abs(item.aa.angle - aa.angle) < EPISLON);
+
+                if (rotation[0] < 1.0f)
+                {
+                    auto aa = to_angle_and_axis(rotation);
+                    compare(item.aa.axis, aa.axis, EPISLON);
+                    assert(std::abs(item.aa.angle - aa.angle) < EPISLON);
+                }
             }
         }
     }
