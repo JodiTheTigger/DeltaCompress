@@ -614,7 +614,8 @@ auto to_screw(const Dual_quat& d) -> Screw
     auto wr         = d.real[0];
     auto theta      = 2.0f * std::acos(wr);
     auto vr         = Vec3f{d.real[1], d.real[2], d.real[3]};
-    auto inv_vr_mag = 1.0f / std::sqrt(dot(vr, vr));
+    auto vr_mag2    = dot(vr, vr);
+    auto inv_vr_mag = (vr_mag2 > 0.000001f) ? 1.0f / std::sqrt(vr_mag2) : 0.0f;
     auto distance   = -2.0f * d.dual[0] * inv_vr_mag;
     auto direction  = mul(vr, inv_vr_mag);
     auto vd         = Vec3f{d.dual[1], d.dual[2], d.dual[3]};
