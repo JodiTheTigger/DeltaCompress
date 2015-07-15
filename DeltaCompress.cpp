@@ -611,6 +611,10 @@ struct Screw
 
 auto to_screw(const Dual_quat& d) -> Screw
 {
+    // RAM: TODO: REad
+    // http://www.seas.upenn.edu/~ladislav/kavan08geometric/kavan08geometric.pdf
+    // To figure out how to screw a pure translation.
+    // Appended A.3
     auto wr         = d.real[0];
     auto theta      = 2.0f * std::acos(wr);
     auto vr         = Vec3f{d.real[1], d.real[2], d.real[3]};
