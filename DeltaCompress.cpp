@@ -609,34 +609,65 @@ struct Screw
     Vec3f moment;
 };
 
+// Oh hey, our friend cayley gets mentioned before.
+// https://en.wikipedia.org/wiki/Rotation_matrix#Skew_parameters_via_Cayley.27s_formula
+
+static const constexpr float S_EPISLON  = 0.000001f;
+static const constexpr float S_EPISLON2 = 0.00000001f;
+
 auto to_screw(const Dual_quat& d) -> Screw
 {
     // RAM: TODO: REad
     // http://www.seas.upenn.edu/~ladislav/kavan08geometric/kavan08geometric.pdf
     // To figure out how to screw a pure translation.
     // Appended A.3
+    // I quote
+    // (in the degenerate case with θ(0) = 0 or θ(0) = 2π, s(0) represents
+    // the direction of the translation vector)
+    // Note that for us θ(0) == theta, and s(0) = direction.
+    // I assume that s(0) is a unit vec (is it?). so, would distance
+    // still be valid?
     auto wr         = d.real[0];
     auto theta      = 2.0f * std::acos(wr);
-    auto vr         = Vec3f{d.real[1], d.real[2], d.real[3]};
-    auto vr_mag2    = dot(vr, vr);
-    auto inv_vr_mag = (vr_mag2 > 0.000001f) ? 1.0f / std::sqrt(vr_mag2) : 0.0f;
-    auto distance   = -2.0f * d.dual[0] * inv_vr_mag;
-    auto direction  = mul(vr, inv_vr_mag);
     auto vd         = Vec3f{d.dual[1], d.dual[2], d.dual[3]};
 
-    auto moment = mul
-    (
-        add(vd, mul(direction, -0.5f * distance * wr)),
-        inv_vr_mag
-    );
-
-    return
+    if (theta != 0.0f)
     {
-        theta,
-        direction,
-        distance,
-        moment
-    };
+        auto vr         = Vec3f{d.real[1], d.real[2], d.real[3]};
+        auto vr_mag2    = dot(vr, vr);
+
+        auto inv_vr_mag = (vr_mag2 > S_EPISLON2)
+            ? 1.0f / std::sqrt(vr_mag2)
+            : 0.0f;
+
+        auto distance   = -2.0f * d.dual[0] * inv_vr_mag;
+        auto direction  = mul(vr, inv_vr_mag);
+
+        auto moment = mul
+        (
+            add(vd, mul(direction, -0.5f * distance * wr)),
+            inv_vr_mag
+        );
+
+        return
+        {
+            theta,
+            direction,
+            distance,
+            moment
+        };
+    }
+    else
+    {
+        auto vd_mag2 = dot(vd, vd);
+        return
+        {
+            0.0f,
+            vd_mag2 > S_EPISLON2 ? normalise(vd) : Vec3f{0.0f, 0.0f, 0.0f},
+            vd_mag2 > S_EPISLON2 ? std::sqrt(vd_mag2) : 0,
+            Vec3f{0.0f, 0.0f, 0.0f}
+        };
+    }
 }
 
 auto to_dual_quat(const Screw& s) -> Dual_quat
@@ -707,11 +738,23 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
     // q'' = 0.5 * add(mul(q', R), mul(q, R'))
     // But then, how do I get R' ?
 
-    return
+    if (s.theta != 0)
     {
-        mul(s.direction, s.theta),
-        mul(s.moment, s.distance),
-    };
+        return
+        {
+            mul(s.direction, s.theta),
+            mul(s.moment, s.distance),
+        };
+    }
+    else
+    {
+        // to_screw explains this stupidity.
+        return
+        {
+            mul(s.direction, s.theta),
+            mul(s.direction, s.distance),
+        };
+    }
 }
 
 auto to_screw(const Dual_angle_axis& a) -> Screw
@@ -1103,8 +1146,8 @@ void dual_tests()
 
                 auto acc = Dual_angle_axis
                 {
-                    mul(v_delta.real, 1.0f / FRAME_DELTA),
-                    mul(v_delta.dual, 1.0f / FRAME_DELTA),
+                    mul(v_delta.real, 2.0f / FRAME_DELTA),
+                    mul(v_delta.dual, 2.0f / FRAME_DELTA),
                 };
 
                 // Right, recalculate the screw delta.
