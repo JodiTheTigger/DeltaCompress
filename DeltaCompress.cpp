@@ -1310,7 +1310,7 @@ namespace Naive_error
         };
 
         auto v_delta = sub(v, v_and_a.linear_velocity_per_frame);
-        auto a = div(v_delta, frame_delta);
+        auto a = div(v_delta, frame_delta / 2.0f);
 
         auto angle_delta = Vec3f{0.0f,0.0f,0.0f};
         if
@@ -1455,7 +1455,7 @@ namespace Naive_error
 
         auto w = div(angle_delta, frame_delta);
         auto w_delta = sub(w, v_and_a.angular_velocity_per_frame);
-        auto wa = div(w_delta, frame_delta);
+        auto wa = div(w_delta, frame_delta / 2.0f);
 
         return
         {
