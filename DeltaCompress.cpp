@@ -612,7 +612,7 @@ struct Screw
 // Oh hey, our friend cayley gets mentioned before.
 // https://en.wikipedia.org/wiki/Rotation_matrix#Skew_parameters_via_Cayley.27s_formula
 
-static const constexpr float S_EPISLON  = 0.000001f;
+//static const constexpr float S_EPISLON  = 0.000001f;
 static const constexpr float S_EPISLON2 = 0.00000001f;
 
 auto to_screw(const Dual_quat& d) -> Screw
@@ -761,27 +761,54 @@ auto to_screw(const Dual_angle_axis& a) -> Screw
 {
     auto theta = std::sqrt(dot(a.real, a.real));
 
-    auto direction =
-        (theta * theta > 0.00000001f)
-        ? normalise(a.real)
-        : Vec3f{1.0f, 0.0f, 0.0f};
-
-    // RAM: This is the dodgy bit - is it even valid?
-
-    auto distance = std::sqrt(dot(a.dual, a.dual));
-
-    auto moment =
-        (distance * distance > 0.00000001f)
-        ? normalise(a.dual)
-        : Vec3f{1.0f, 0.0f, 0.0f};
-
-    return
+    if (theta != 0)
     {
-        theta,
-        direction,
-        distance,
-        moment
-    };
+        auto direction = normalise(a.real);
+
+        // RAM: This is the dodgy bit - is it even valid?
+
+        auto distance = std::sqrt(dot(a.dual, a.dual));
+
+        auto moment =
+            (distance * distance > 0.00000001f)
+            ? normalise(a.dual)
+            : Vec3f{1.0f, 0.0f, 0.0f};
+
+        return
+        {
+            theta,
+            direction,
+            distance,
+            moment
+        };
+    }
+    else
+    {
+        auto distance = std::sqrt(dot(a.dual, a.dual));
+
+        if (distance != 0.0f)
+        {
+            auto direction = normalise(a.dual);
+
+            return
+            {
+                theta,
+                direction,
+                distance,
+                Vec3f{0.0f, 0.0f, 0.0f}
+            };
+        }
+        else
+        {
+            return
+            {
+                0.0f,
+                Vec3f{0.0f, 0.0f, 0.0f},
+                0.0f,
+                Vec3f{0.0f, 0.0f, 0.0f},
+            };
+        }
+    }
 }
 
 
@@ -1113,8 +1140,10 @@ void dual_tests()
     static const float EPISLON = 0.00001f;
     static const float FRAME_DELTA = 6;
 
+    auto ttt = 0;
     for(const auto& test : tests)
     {
+        auto ttt_ttt = 0;
         for (const auto& item : test)
         {
             Dual_quat dq = to_dual
@@ -1208,7 +1237,16 @@ void dual_tests()
                     assert(std::abs(item.aa.angle - aa.angle) < EPISLON);
                 }
             }
+
+            ttt_ttt++;
         }
+
+        ttt++;
+    }
+
+    if (ttt)
+    {
+        ttt++;
     }
 }
 
