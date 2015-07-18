@@ -993,76 +993,76 @@ void dual_tests()
         }
     }
 
-    // constant angular acceleration
-    {
-        tests.push_back({});
-        auto velocity = 0.0f;
-        auto angle = 0.0f;
-        for (unsigned i = 0; i < TEST_COUNT; ++i)
-        {
-            velocity += 2.0f * M_PI / 1000.0f;
-            angle += velocity;
+//    // constant angular acceleration
+//    {
+//        tests.push_back({});
+//        auto velocity = 0.0f;
+//        auto angle = 0.0f;
+//        for (unsigned i = 0; i < TEST_COUNT; ++i)
+//        {
+//            velocity += 2.0f * M_PI / 1000.0f;
+//            angle += velocity;
 
-            auto t = Posisiton_angle_axis
-            {
-                {10.0f, 10.0f, 10.0f},
-                {
-                    angle,
-                    {0.0f, 0.0f, 1.0f}
-                }
-            };
+//            auto t = Posisiton_angle_axis
+//            {
+//                {10.0f, 10.0f, 10.0f},
+//                {
+//                    angle,
+//                    {0.0f, 0.0f, 1.0f}
+//                }
+//            };
 
-            tests.back().push_back(t);
-        }
-    }
+//            tests.back().push_back(t);
+//        }
+//    }
 
-    // //////////////////////////////////////////////////////
+//    // //////////////////////////////////////////////////////
 
-    // constant velocity + angular velocity
-    {
-        tests.push_back({});
-        for (unsigned i = 0; i < TEST_COUNT; ++i)
-        {
-            auto t = Posisiton_angle_axis
-            {
-                {i * 10.0f, 0.0f, 0.0f},
-                {
-                    static_cast<float>(2.0f * M_PI * i / 100.0f),
-                    {0.0f, 0.0f, 1.0f}
-                }
-            };
+//    // constant velocity + angular velocity
+//    {
+//        tests.push_back({});
+//        for (unsigned i = 0; i < TEST_COUNT; ++i)
+//        {
+//            auto t = Posisiton_angle_axis
+//            {
+//                {i * 10.0f, 0.0f, 0.0f},
+//                {
+//                    static_cast<float>(2.0f * M_PI * i / 100.0f),
+//                    {0.0f, 0.0f, 1.0f}
+//                }
+//            };
 
-            tests.back().push_back(t);
-        }
-    }
+//            tests.back().push_back(t);
+//        }
+//    }
 
-    // constant acceleration + angular acceleration
-    {
-        tests.push_back({});
-        auto velocity = 0.0f;
-        auto position = 0.0f;
-        auto a_velocity = 0.0f;
-        auto angle = 0.0f;
-        for (unsigned i = 0; i < TEST_COUNT; ++i)
-        {
-            velocity    += 10.0f;
-            position    += velocity;
+//    // constant acceleration + angular acceleration
+//    {
+//        tests.push_back({});
+//        auto velocity = 0.0f;
+//        auto position = 0.0f;
+//        auto a_velocity = 0.0f;
+//        auto angle = 0.0f;
+//        for (unsigned i = 0; i < TEST_COUNT; ++i)
+//        {
+//            velocity    += 10.0f;
+//            position    += velocity;
 
-            a_velocity  += 2.0f * M_PI / 1000.0f;
-            angle       += velocity;
+//            a_velocity  += 2.0f * M_PI / 1000.0f;
+//            angle       += velocity;
 
-            auto t = Posisiton_angle_axis
-            {
-                {position, 0.0f, 0.0f},
-                {
-                    angle,
-                    {0.0f, 0.0f, 1.0f}
-                }
-            };
+//            auto t = Posisiton_angle_axis
+//            {
+//                {position, 0.0f, 0.0f},
+//                {
+//                    angle,
+//                    {0.0f, 0.0f, 1.0f}
+//                }
+//            };
 
-            tests.back().push_back(t);
-        }
-    }
+//            tests.back().push_back(t);
+//        }
+//    }
 
 
     // //////////////////////////////////////////////////////
@@ -1154,57 +1154,62 @@ void dual_tests()
 
             // Screw it :-)
             {
-                auto delta = mul(dq, conjugate(previous));
-                auto screw_delta = to_screw(delta);
-                auto dual_aa = to_dual_angle_axis(screw_delta);
-
-                // Ok, does this work?
-                // I mean either this maths works, or is 100%
-                // shonky.
-                auto velocity = Dual_angle_axis
+                if (ttt_ttt)
                 {
-                    mul(dual_aa.real, 1.0f / FRAME_DELTA),
-                    mul(dual_aa.dual, 1.0f / FRAME_DELTA)
-                };
+                    auto delta = mul(dq, conjugate(previous));
+                    auto screw_delta = to_screw(delta);
+                    auto dual_aa = to_dual_angle_axis(screw_delta);
 
-                auto v_delta = Dual_angle_axis
-                {
-                    sub(velocity.real, previous_v.real),
-                    sub(velocity.dual, previous_v.dual),
-                };
+                    // Ok, does this work?
+                    // I mean either this maths works, or is 100%
+                    // shonky.
+                    auto velocity = Dual_angle_axis
+                    {
+                        mul(dual_aa.real, 1.0f / FRAME_DELTA),
+                        mul(dual_aa.dual, 1.0f / FRAME_DELTA)
+                    };
 
-                auto acc = Dual_angle_axis
-                {
-                    mul(v_delta.real, 2.0f / FRAME_DELTA),
-                    mul(v_delta.dual, 2.0f / FRAME_DELTA),
-                };
+                    auto v_delta = Dual_angle_axis
+                    {
+                        sub(velocity.real, previous_v.real),
+                        sub(velocity.dual, previous_v.dual),
+                    };
 
-                // Right, recalculate the screw delta.
-                auto at_2 = Dual_angle_axis
-                {
-                    mul(acc.real, FRAME_DELTA / 2.0f),
-                    mul(acc.dual, FRAME_DELTA / 2.0f),
-                };
+                    auto acc = Dual_angle_axis
+                    {
+                        mul(v_delta.real, 2.0f / FRAME_DELTA),
+                        mul(v_delta.dual, 2.0f / FRAME_DELTA),
+                    };
 
-                auto v = Dual_angle_axis
-                {
-                    add(at_2.real, velocity.real),
-                    add(at_2.dual, velocity.dual),
-                };
+                    // Right, recalculate the screw delta.
+                    auto at_2 = Dual_angle_axis
+                    {
+                        mul(acc.real, FRAME_DELTA / 2.0f),
+                        mul(acc.dual, FRAME_DELTA / 2.0f),
+                    };
 
-                auto delta_aa = Dual_angle_axis
-                {
-                    mul(v.real, FRAME_DELTA),
-                    mul(v.dual, FRAME_DELTA)
-                };
+                    auto v = Dual_angle_axis
+                    {
+                        add(at_2.real, velocity.real),
+                        add(at_2.dual, velocity.dual),
+                    };
 
-                // now, how to get back to screw?
-                auto screw_delta_new = to_screw(delta_aa);
-                auto delta_new = to_dual_quat(screw_delta_new);
+                    auto delta_aa = Dual_angle_axis
+                    {
+                        mul(v.real, FRAME_DELTA),
+                        mul(v.dual, FRAME_DELTA)
+                    };
 
-                auto dq_calc = mul(delta_new, previous);
+                    // now, how to get back to screw?
+                    auto screw_delta_new = to_screw(delta_aa);
+                    auto delta_new = to_dual_quat(screw_delta_new);
 
-                compare_dq(dq, dq_calc, EPISLON);
+                    auto dq_calc = mul(delta_new, previous);
+
+                    compare_dq(dq, dq_calc, EPISLON);
+                }
+
+                previous = dq;
             }
 
             // First, make sure that our "delta" can be converted
