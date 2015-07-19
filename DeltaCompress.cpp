@@ -1140,12 +1140,17 @@ void dual_tests()
     static const float EPISLON = 0.00001f;
     static const float FRAME_DELTA = 6;
 
-    auto ttt = 0;
-    for(const auto& test : tests)
+    const auto test_count = tests.size();
+    for (unsigned test_index = 0; test_index < test_count; ++test_index)
     {
-        auto ttt_ttt = 0;
-        for (const auto& item : test)
+        const auto& test = tests[test_index];
+
+        const auto item_count = tests.size();
+
+        for (unsigned item_index = 0; item_index < item_count; ++item_index)
         {
+            const auto& item = test[item_index];
+
             Dual_quat dq = to_dual
             (
                 to_quat(item.aa),
@@ -1154,7 +1159,7 @@ void dual_tests()
 
             // Screw it :-)
             {
-                if (ttt_ttt)
+                if (item_index)
                 {
                     auto delta = mul(dq, conjugate(previous));
                     auto screw_delta = to_screw(delta);
@@ -1207,6 +1212,8 @@ void dual_tests()
                     auto dq_calc = mul(delta_new, previous);
 
                     compare_dq(dq, dq_calc, EPISLON);
+
+                    previous_v = velocity;
                 }
 
                 previous = dq;
@@ -1242,16 +1249,7 @@ void dual_tests()
                     assert(std::abs(item.aa.angle - aa.angle) < EPISLON);
                 }
             }
-
-            ttt_ttt++;
         }
-
-        ttt++;
-    }
-
-    if (ttt)
-    {
-        ttt++;
     }
 }
 
