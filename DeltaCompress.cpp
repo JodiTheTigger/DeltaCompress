@@ -1131,12 +1131,6 @@ void dual_tests()
         {0.0f, 0.0f, 0.0f, 0.0f}
     };
 
-    Dual_angle_axis previous_v =
-    {
-        {0.0f, 0.0f, 0.0f},
-        {0.0f, 0.0f, 0.0f}
-    };
-
     static const float EPISLON = 0.00001f;
     static const float FRAME_DELTA = 6;
 
@@ -1146,7 +1140,6 @@ void dual_tests()
         const auto& test = tests[test_index];
 
         const auto item_count = tests.size();
-
         for (unsigned item_index = 0; item_index < item_count; ++item_index)
         {
             const auto& item = test[item_index];
@@ -1157,11 +1150,33 @@ void dual_tests()
                 item.pos
             );
 
-            // Screw it :-)
+            if (item_index > 1)
             {
-                if (item_index)
+                const auto& item_1 = test[item_index - 1];
+                const auto& item_2 = test[item_index - 2];
+
+                // First deduce the "previous velocity"
+                const auto velocity = []
+                (
+                    const Posisiton_angle_axis& i_0,
+                    const Posisiton_angle_axis& i_1
+                )
+                -> Dual_angle_axis
                 {
-                    auto delta = mul(dq, conjugate(previous));
+                    Dual_quat dq_0 = to_dual
+                    (
+                        to_quat(i_0.aa),
+                        i_0.pos
+                    );
+
+                    Dual_quat dq_1 = to_dual
+                    (
+                        to_quat(i_1.aa),
+                        i_1.pos
+                    );
+
+                    auto delta = mul(dq_1, conjugate(dq_0));
+
                     auto screw_delta = to_screw(delta);
                     auto dual_aa = to_dual_angle_axis(screw_delta);
 
@@ -1174,49 +1189,45 @@ void dual_tests()
                         mul(dual_aa.dual, 1.0f / FRAME_DELTA)
                     };
 
-                    auto v_delta = Dual_angle_axis
-                    {
-                        sub(velocity.real, previous_v.real),
-                        sub(velocity.dual, previous_v.dual),
-                    };
+                    return velocity;
+                };
 
-                    auto acc = Dual_angle_axis
-                    {
-                        mul(v_delta.real, 2.0f / FRAME_DELTA),
-                        mul(v_delta.dual, 2.0f / FRAME_DELTA),
-                    };
+                auto v_0 = velocity(item_2, item_1);
+                auto v_1 = velocity(item_1, item);
 
-                    // Right, recalculate the screw delta.
-                    auto at_2 = Dual_angle_axis
-                    {
-                        mul(acc.real, FRAME_DELTA / 2.0f),
-                        mul(acc.dual, FRAME_DELTA / 2.0f),
-                    };
+                Dual_angle_axis acc =
+                {
+                    mul(sub(v_1.real, v_1.real), 2.0f / FRAME_DELTA),
+                    mul(sub(v_1.dual, v_0.dual), 2.0f / FRAME_DELTA)
+                };
 
-                    auto v = Dual_angle_axis
-                    {
-                        add(at_2.real, velocity.real),
-                        add(at_2.dual, velocity.dual),
-                    };
+                // Ok, now calculate R, and see if we get the correct
+                // predicted value.
+                auto at_2 = Dual_angle_axis
+                {
+                    mul(acc.real, FRAME_DELTA / 2.0f),
+                    mul(acc.dual, FRAME_DELTA / 2.0f),
+                };
 
-                    auto delta_aa = Dual_angle_axis
-                    {
-                        mul(v.real, FRAME_DELTA),
-                        mul(v.dual, FRAME_DELTA)
-                    };
+                auto v = Dual_angle_axis
+                {
+                    add(at_2.real, v_1.real),
+                    add(at_2.dual, v_1.dual),
+                };
 
-                    // now, how to get back to screw?
-                    auto screw_delta_new = to_screw(delta_aa);
-                    auto delta_new = to_dual_quat(screw_delta_new);
+                auto delta_aa = Dual_angle_axis
+                {
+                    mul(v.real, FRAME_DELTA),
+                    mul(v.dual, FRAME_DELTA)
+                };
 
-                    auto dq_calc = mul(delta_new, previous);
+                // now, how to get back to screw?
+                auto screw_delta_new = to_screw(delta_aa);
+                auto delta_new = to_dual_quat(screw_delta_new);
 
-                    compare_dq(dq, dq_calc, EPISLON);
+                auto dq_calc = mul(delta_new, previous);
 
-                    previous_v = velocity;
-                }
-
-                previous = dq;
+                compare_dq(dq, dq_calc, EPISLON);
             }
 
             // First, make sure that our "delta" can be converted
