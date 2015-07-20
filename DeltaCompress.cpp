@@ -930,6 +930,9 @@ auto delta_t(const Quat& q, float delta_t) -> Quat
 
 void dual_tests()
 {
+    static const float EPISLON = 0.00001f;
+    static const float FRAME_DELTA = 6;
+
     static const constexpr unsigned TEST_COUNT = 8;
     struct Posisiton_angle_axis
     {
@@ -957,12 +960,11 @@ void dual_tests()
     // constant acceleration
     {
         tests.push_back({});
-        auto velocity = 0.0f;
-        auto position = 0.0f;
         for (unsigned i = 0; i < TEST_COUNT; ++i)
         {
-            velocity += 10.0f;
-            position += velocity;
+            // d = ut + 1/2 at^2
+            auto position =
+                0.5f * 10.0f * (i * FRAME_DELTA) * (i * FRAME_DELTA);
 
             auto t = Posisiton_angle_axis
             {
@@ -996,12 +998,12 @@ void dual_tests()
 //    // constant angular acceleration
 //    {
 //        tests.push_back({});
-//        auto velocity = 0.0f;
-//        auto angle = 0.0f;
 //        for (unsigned i = 0; i < TEST_COUNT; ++i)
 //        {
-//            velocity += 2.0f * M_PI / 1000.0f;
-//            angle += velocity;
+//            static const constexpr float wa = 2.0f * M_PI / 1000.0f;
+
+//            // d = ut + 1/2 at^2
+//            auto angle = 0.5f * wa * (i * FRAME_DELTA)*(i * FRAME_DELTA);
 
 //            auto t = Posisiton_angle_axis
 //            {
@@ -1039,17 +1041,15 @@ void dual_tests()
 //    // constant acceleration + angular acceleration
 //    {
 //        tests.push_back({});
-//        auto velocity = 0.0f;
-//        auto position = 0.0f;
-//        auto a_velocity = 0.0f;
-//        auto angle = 0.0f;
 //        for (unsigned i = 0; i < TEST_COUNT; ++i)
 //        {
-//            velocity    += 10.0f;
-//            position    += velocity;
+//            auto position =
+//                    0.5f * 10.0f * (i * FRAME_DELTA) * (i * FRAME_DELTA);
 
-//            a_velocity  += 2.0f * M_PI / 1000.0f;
-//            angle       += velocity;
+//            static const constexpr float wa = 2.0f * M_PI / 1000.0f;
+
+//            // d = ut + 1/2 at^2
+//            auto angle = 0.5f * wa * (i * FRAME_DELTA)*(i * FRAME_DELTA);
 
 //            auto t = Posisiton_angle_axis
 //            {
@@ -1130,9 +1130,6 @@ void dual_tests()
         {1.0f, 0.0f, 0.0f, 0.0f},
         {0.0f, 0.0f, 0.0f, 0.0f}
     };
-
-    static const float EPISLON = 0.00001f;
-    static const float FRAME_DELTA = 6;
 
     const auto test_count = tests.size();
     for (unsigned test_index = 0; test_index < test_count; ++test_index)
