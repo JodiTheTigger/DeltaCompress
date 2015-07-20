@@ -1180,10 +1180,15 @@ void dual_tests()
                     // Ok, does this work?
                     // I mean either this maths works, or is 100%
                     // shonky.
+
+                    // RAM: Ok, I think the values of the angles are for
+                    // HALF the angle/distance since it's reflected.
+                    // I also fear for dual quats, it's actually only 1/4
+                    // since four reflections are involved? Ugh.
                     auto velocity = Dual_angle_axis
                     {
-                        mul(dual_aa.real, 1.0f / FRAME_DELTA),
-                        mul(dual_aa.dual, 1.0f / FRAME_DELTA)
+                        mul(dual_aa.real, 2.0f / FRAME_DELTA),
+                        mul(dual_aa.dual, 2.0f / FRAME_DELTA)
                     };
 
                     return velocity;
