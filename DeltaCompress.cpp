@@ -605,7 +605,7 @@ struct Screw
     float theta;
     Vec3f direction;
 
-    float distance;
+    float pitch;
     Vec3f moment;
 };
 
@@ -678,12 +678,12 @@ auto to_dual_quat(const Screw& s) -> Dual_quat
     auto wr             = std::cos(s.theta * 0.5f);
     auto sin_half_theta = std::sin(s.theta * 0.5f);
     auto vr             = mul(s.direction, sin_half_theta);
-    auto wd             = -0.5f * s.distance * sin_half_theta;
+    auto wd             = -0.5f * s.pitch * sin_half_theta;
 
     auto vd = add
     (
         mul(s.moment,    sin_half_theta),
-        mul(s.direction, 0.5f * s.distance * wr)
+        mul(s.direction, 0.5f * s.pitch * wr)
     );
 
     return
@@ -747,7 +747,7 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
         return
         {
             mul(s.direction, s.theta),
-            mul(s.moment, s.distance),
+            mul(s.moment, s.pitch),
         };
     }
     else
@@ -756,7 +756,7 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
         return
         {
             Vec3f{0.0f, 0.0f, 0.0f},
-            mul(s.direction, s.distance),
+            mul(s.direction, s.pitch),
         };
     }
 }
@@ -844,7 +844,7 @@ auto to_angle_and_axis(const Quat& q) -> Angle_and_axis
         };
     }
 
-    auto vec = mul(vec_raw, std::sqrt(mag2));
+    auto vec = mul(vec_raw, 1.0f / std::sqrt(mag2));
 
     // shortest arc.
     if (theta > M_PI)
@@ -1246,6 +1246,14 @@ void dual_tests()
                 );
 
                 auto dq_calc = mul(delta_new, previous_d);
+
+                // convert back to angle axis to help debugging.
+                auto aa_calc = to_angle_and_axis(dq_calc.real);
+                assert(std::abs(aa_calc.angle - item.aa.angle) < EPISLON);
+                auto pos_calc = to_position(dq_calc);
+                assert(std::abs(pos_calc[0] - item.pos[0]) < EPISLON);
+                assert(std::abs(pos_calc[1] - item.pos[1]) < EPISLON);
+                assert(std::abs(pos_calc[2] - item.pos[2]) < EPISLON);
 
                 compare_dq(dq, dq_calc, EPISLON);
             }
