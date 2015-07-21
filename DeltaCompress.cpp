@@ -661,13 +661,13 @@ auto to_screw(const Dual_quat& d) -> Screw
     {
         // Ok, this is where I have no idea what I'm doing :-(
         // I make sure the pitch is multiplied by -2 since the
-        // pitch value is -1/2 the actual distance?
+        // pitch value is 1/2 the actual distance?
         auto vd_mag2 = dot(vd, vd);
         return
         {
             0.0f,
             vd_mag2 > S_EPISLON2 ? normalise(vd) : Vec3f{0.0f, 0.0f, 0.0f},
-            vd_mag2 > S_EPISLON2 ? -2.0f * std::sqrt(vd_mag2) : 0,
+            vd_mag2 > S_EPISLON2 ? 2.0f * std::sqrt(vd_mag2) : 0,
             Vec3f{0.0f, 0.0f, 0.0f}
         };
     }
@@ -1204,12 +1204,18 @@ void dual_tests()
 
                 Dual_angle_axis acc =
                 {
-                    mul(sub(v_1.real, v_1.real), 1.0f / FRAME_DELTA),
+                    mul(sub(v_1.real, v_0.real), 1.0f / FRAME_DELTA),
                     mul(sub(v_1.dual, v_0.dual), 1.0f / FRAME_DELTA)
                 };
 
                 // Ok, now calculate R, and see if we get the correct
                 // predicted value.
+
+                // p = p0 + v0t + at^2/2
+                // p = p0 + t(v0 + at/2)
+                // p = p0 + tv
+                // v = v0 + at/2
+
                 auto at_2 = Dual_angle_axis
                 {
                     mul(acc.real, FRAME_DELTA / 2.0f),
