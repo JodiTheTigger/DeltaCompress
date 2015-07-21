@@ -1218,8 +1218,8 @@ void dual_tests()
 
                 auto at_2 = Dual_angle_axis
                 {
-                    mul(acc.real, FRAME_DELTA / 2.0f),
-                    mul(acc.dual, FRAME_DELTA / 2.0f),
+                    mul(acc.real, FRAME_DELTA / 1.0f),
+                    mul(acc.dual, FRAME_DELTA / 1.0f),
                 };
 
                 auto v = Dual_angle_axis
@@ -1238,7 +1238,13 @@ void dual_tests()
                 auto screw_delta_new = to_screw(delta_aa);
                 auto delta_new = to_dual_quat(screw_delta_new);
 
-                auto dq_calc = mul(delta_new, previous);
+                Dual_quat previous_d = to_dual
+                (
+                    to_quat(item_1.aa),
+                    item_1.pos
+                );
+
+                auto dq_calc = mul(delta_new, previous_d);
 
                 compare_dq(dq, dq_calc, EPISLON);
             }
