@@ -659,12 +659,15 @@ auto to_screw(const Dual_quat& d) -> Screw
     }
     else
     {
+        // Ok, this is where I have no idea what I'm doing :-(
+        // I make sure the pitch is multiplied by -2 since the
+        // pitch value is -1/2 the actual distance?
         auto vd_mag2 = dot(vd, vd);
         return
         {
             0.0f,
             vd_mag2 > S_EPISLON2 ? normalise(vd) : Vec3f{0.0f, 0.0f, 0.0f},
-            vd_mag2 > S_EPISLON2 ? std::sqrt(vd_mag2) : 0,
+            vd_mag2 > S_EPISLON2 ? -2.0f * std::sqrt(vd_mag2) : 0,
             Vec3f{0.0f, 0.0f, 0.0f}
         };
     }
@@ -738,6 +741,7 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
     // q'' = 0.5 * add(mul(q', R), mul(q, R'))
     // But then, how do I get R' ?
 
+    // RAM: Note that theta and distance are not half values, but whole values.
     if (s.theta != 0)
     {
         return
@@ -751,7 +755,7 @@ auto constexpr to_dual_angle_axis(const Screw& s) -> Dual_angle_axis
         // to_screw explains this stupidity.
         return
         {
-            mul(s.direction, s.theta),
+            Vec3f{0.0f, 0.0f, 0.0f},
             mul(s.direction, s.distance),
         };
     }
@@ -769,10 +773,11 @@ auto to_screw(const Dual_angle_axis& a) -> Screw
 
         auto distance = std::sqrt(dot(a.dual, a.dual));
 
+        // Should I return 0,0,0 for zero moment? or an axis of some descrption?
         auto moment =
             (distance * distance > 0.00000001f)
             ? normalise(a.dual)
-            : Vec3f{1.0f, 0.0f, 0.0f};
+            : Vec3f{0.0f, 0.0f, 0.0f};
 
         return
         {
@@ -1136,7 +1141,7 @@ void dual_tests()
     {
         const auto& test = tests[test_index];
 
-        const auto item_count = tests.size();
+        const auto item_count = test.size();
         for (unsigned item_index = 0; item_index < item_count; ++item_index)
         {
             const auto& item = test[item_index];
@@ -1187,8 +1192,8 @@ void dual_tests()
                     // since four reflections are involved? Ugh.
                     auto velocity = Dual_angle_axis
                     {
-                        mul(dual_aa.real, 2.0f / FRAME_DELTA),
-                        mul(dual_aa.dual, 2.0f / FRAME_DELTA)
+                        mul(dual_aa.real, 1.0f / FRAME_DELTA),
+                        mul(dual_aa.dual, 1.0f / FRAME_DELTA)
                     };
 
                     return velocity;
@@ -1199,8 +1204,8 @@ void dual_tests()
 
                 Dual_angle_axis acc =
                 {
-                    mul(sub(v_1.real, v_1.real), 2.0f / FRAME_DELTA),
-                    mul(sub(v_1.dual, v_0.dual), 2.0f / FRAME_DELTA)
+                    mul(sub(v_1.real, v_1.real), 1.0f / FRAME_DELTA),
+                    mul(sub(v_1.dual, v_0.dual), 1.0f / FRAME_DELTA)
                 };
 
                 // Ok, now calculate R, and see if we get the correct
