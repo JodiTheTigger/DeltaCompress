@@ -1152,10 +1152,11 @@ void dual_tests()
                 item.pos
             );
 
-            if (item_index > 1)
+            if (item_index > 2)
             {
                 const auto& item_1 = test[item_index - 1];
                 const auto& item_2 = test[item_index - 2];
+                const auto& item_3 = test[item_index - 3];
 
                 // First deduce the "previous velocity"
                 const auto velocity = []
@@ -1199,8 +1200,8 @@ void dual_tests()
                     return velocity;
                 };
 
-                auto v_0 = velocity(item_2, item_1);
-                auto v_1 = velocity(item_1, item);
+                auto v_0 = velocity(item_3, item_2);
+                auto v_1 = velocity(item_2, item_1);
 
                 Dual_angle_axis acc =
                 {
