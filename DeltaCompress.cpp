@@ -313,7 +313,6 @@ auto constexpr mul(const Vec3f& lhs, float multiple) -> Vec3f
     };
 };
 
-// RAM: NEEDED?
 auto constexpr dot(const Vec3f& lhs, const Vec3f& rhs) -> float
 {
     return
@@ -564,7 +563,11 @@ auto constexpr conjugate(const Dual_quat& lhs) -> Dual_quat
 // and I haven't seen proof anywhere for that :-(
 auto constexpr normalise(const Dual_quat& lhs) -> Dual_quat
 {
-    return mul(lhs, 1.0f / dot(lhs.real.vec, conjugate(lhs).real.vec));
+    return mul
+    (
+        lhs,
+        1.0f / std::sqrt(dot(lhs.real, conjugate(lhs).real))
+    );
 }
 
 auto constexpr to_dual(const Quat& rotation, const Vec3f& position) -> Dual_quat
@@ -981,6 +984,23 @@ void dual_tests()
         }
     }
 
+    // constant angular velocity, no offset
+    {
+        tests.push_back({});
+        for (unsigned i = 0; i < TEST_COUNT; ++i)
+        {
+            auto t = Posisiton_angle_axis
+            {
+                {0.0f, 0.0f, 0.0f},
+                {
+                    static_cast<float>(2.0f * M_PI * i / 100.0f),
+                    {0.0f, 0.0f, 1.0f}
+                }
+            };
+
+            tests.back().push_back(t);
+        }
+    }
 
     // constant angular velocity
     {
@@ -1247,6 +1267,38 @@ void dual_tests()
 
                 auto dq_calc = mul(delta_new, previous_d);
 
+                {
+                    // RAM: WTF, when I assert, the norm has a value > 1.0
+                    // Is it a rounding issue, or a maths issue?
+                    // Seems to be a precision issue :-(
+                    // comparing a,b,c to spreadsheet it comes under 1.0
+                    // but the spreadsheet says abouve 1.0.
+                    // question is: will it affect the angle and axis?
+                    auto dq_calc_norm = normalise(dq_calc);
+                    auto dq_calc_norm2 = normalise(dq_calc_norm);
+
+
+                    //auto mag2 = dot(dq_calc.real, conjugate(dq_calc).real);
+                    auto a = dq_calc.real[0] * dq_calc.real[0];
+                    auto b = dq_calc.real[3] * dq_calc.real[3];
+                    auto mag2c = a+b;
+    //                auto mag2b =
+    //                    a +
+    //                    dq_calc.real[1] * dq_calc.real[1] +
+    //                    dq_calc.real[2] * dq_calc.real[2] +
+    //                    b;
+
+
+                    auto s = std::sqrt(mag2c);
+                    auto s_1 = 1.0f / s;
+                    auto dq_calc_norm_m = mul(dq_calc, s_1);
+                    mul(dq_calc_norm, 1.0f);
+                    mul(dq_calc_norm2, 1.0f);
+                    mul(dq_calc_norm_m, 1.0f);
+                }
+
+
+
                 // convert back to angle axis to help debugging.
                 auto aa_calc = to_angle_and_axis(dq_calc.real);
                 assert(std::abs(aa_calc.angle - item.aa.angle) < EPISLON);
@@ -1256,6 +1308,7 @@ void dual_tests()
                 assert(std::abs(pos_calc[2] - item.pos[2]) < EPISLON);
 
                 compare_dq(dq, dq_calc, EPISLON);
+
             }
 
             // First, make sure that our "delta" can be converted
