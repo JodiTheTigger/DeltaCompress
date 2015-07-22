@@ -876,7 +876,7 @@ namespace Naive_error
     static const constexpr int LOWEST_POINT_CUBE_0  = 367;
     static const constexpr float RESTITUTION        = 0.869;
     static const constexpr float DRAG               = 0.997;
-    static const constexpr float DISTANCE_CUBE_0_SQ = 1711 * 1711;
+    static const constexpr float DISTANCE_CUBE_0_SQ = 1742 * 1742;
 
     struct Model
     {
