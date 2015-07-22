@@ -868,8 +868,6 @@ unsigned MinBits(unsigned value)
 
 using namespace Range_models;
 
-// RAM: Tried 700, did worse. Tune!
-unsigned g_floor = 1;
 namespace Naive_error
 {
     // Found emperically.
@@ -878,6 +876,10 @@ namespace Naive_error
     static const constexpr int LOWEST_POINT_CUBE_0  = 367;
     static const constexpr float RESTITUTION        = 0.869;
     static const constexpr float DRAG               = 0.997;
+    static const constexpr float DISTANCE_CUBE_0    = 1711;
+
+    static const constexpr float DISTANCE_CUBE_0_SQ =
+        DISTANCE_CUBE_0 * DISTANCE_CUBE_0;
 
     struct Model
     {
@@ -892,7 +894,7 @@ namespace Naive_error
 
         // This seems to do the trick.
         Unsigned_golomb_range error_bits                = {10, 5};
-        Unsigned_golomb_range error_bits_floor          = {10, 5};
+        Unsigned_golomb_range error_bits_near_cube      = {10, 5};
     };
 
     auto predict
@@ -1432,51 +1434,33 @@ namespace Naive_error
                             model.error_bits.Encode(range,v);
                         }
                     };
-                    auto encode_error_bits_floor =
+                    auto encode_error_bits_near_cube =
                         [&model, &range](const Vec3i& vec)
                     {
                         for (auto v: vec)
                         {
                             assert(v < (1 << 10));
 
-                            model.error_bits_floor.Encode(range,v);
+                            model.error_bits_near_cube.Encode(range,v);
                         }
                     };
 
-                    if (base[i].position_z < static_cast<int>(g_floor))
+                    auto previous_cube_0_distance =
+                        sub(position(base[i]), position(base[0]));
+
+                    auto previous_cube_0_distance2 =
+                        dot(previous_cube_0_distance, previous_cube_0_distance);
+
+                    if (previous_cube_0_distance2 < DISTANCE_CUBE_0_SQ)
                     {
-                        encode_error_bits_floor(vec_pos);
-                        encode_error_bits_floor(vec_quat);
+                        encode_error_bits_near_cube(vec_pos);
+                        encode_error_bits_near_cube(vec_quat);
                     }
                     else
                     {
                         encode_error_bits(vec_pos);
                         encode_error_bits(vec_quat);
                     }
-
-//                    for (auto v: vec_pos)
-//                    {
-//                        assert(v < (1 << 10));
-
-//                        model.error_high_5_bits.Encode(range, v >> 5);
-//                        model.error_low_5_bits.Encode
-//                        (
-//                            range,
-//                            v & ((1 << 5) - 1)
-//                        );
-//                    }
-
-//                    for (auto v: vec_quat)
-//                    {
-//                        assert(v < (1 << 10));
-
-//                        model.error_high_5_bits.Encode(range, v >> 5);
-//                        model.error_low_5_bits.Encode
-//                        (
-//                            range,
-//                            v & ((1 << 5) - 1)
-//                        );
-//                    }
 
                     if (vec_pos[0] || vec_pos[1] || vec_pos[2])
                     {
@@ -1592,13 +1576,13 @@ namespace Naive_error
 
                         return result;
                     };
-                    auto decode_vec_floor = [&model, &range]() -> Vec3i
+                    auto decode_vec_near_cube = [&model, &range]() -> Vec3i
                     {
                         Vec3i result;
 
                         for (auto& v: result)
                         {
-                            v = model.error_bits_floor.Decode(range);
+                            v = model.error_bits_near_cube.Decode(range);
                         }
 
                         return result;
@@ -1617,10 +1601,17 @@ namespace Naive_error
                         };
                     };
 
-                    if (base[i].position_z < static_cast<int>(g_floor))
+                    auto previous_cube_0_distance =
+                        sub(position(base[i]), position(base[0]));
+
+                    auto previous_cube_0_distance2 =
+                        dot(previous_cube_0_distance, previous_cube_0_distance);
+
+
+                    if (previous_cube_0_distance2 < DISTANCE_CUBE_0_SQ)
                     {
-                        vec_pos        = decode_vec_floor();
-                        vec_quat       = decode_vec_floor();
+                        vec_pos        = decode_vec_near_cube();
+                        vec_quat       = decode_vec_near_cube();
                     }
                     else
                     {
