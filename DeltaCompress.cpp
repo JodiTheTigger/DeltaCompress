@@ -1199,6 +1199,27 @@ void dual_tests()
                 const auto& item_2 = test[item_index - 2];
                 const auto& item_3 = test[item_index - 3];
 
+//                {
+//                    // Test reflection to see if it works.
+//                    // RAM: No it doesn't :-( I don't know what to believe now.
+//                    Dual_quat dq_0 = to_dual
+//                    (
+//                        to_quat(item_1.aa),
+//                        item_1.pos
+//                    );
+
+//                    Dual_quat dq_1 = to_dual
+//                    (
+//                        to_quat(item_2.aa),
+//                        item_2.pos
+//                    );
+
+//                    // Reflect d0(d-1)d0 should give us d1
+//                    auto dq_calc = mul(mul(dq_0, dq_1), dq_0);
+
+//                    compare_dq(dq, dq_calc, EPISLON);
+//                }
+
                 // First deduce the "previous velocity"
                 const auto velocity = []
                 (
