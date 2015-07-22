@@ -1934,6 +1934,19 @@ void range_compress(std::vector<Frame>& frames)
     //
     //      For distance to bottom I'll use base distance from floor and
     //      anything under 700 for a simple 2 context model.
+    //
+    //      Ok, emperically, distance from bottom (base or predicted) did
+    //      nothing but distance of base from cube 0 base/cube 0 target
+    //      did work (best at distance 1711 with frame delta of 6).
+    //
+    //      For position velocities, only a very small improvment (0.002 kbps)
+    //      was made with a cutoff per component velocity of 4 or 6 units/frame.
+    //      not really worth it by the looks of things.
+    //
+    //      Same deal with the angular velocities.
+    //
+    //      Conclusion: Most errors occur near cube_0 (well duh since that's
+    //      the one doing most of the collision, that makes perfect sense).
 
 //    std::sort
 //    (
