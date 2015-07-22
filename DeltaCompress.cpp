@@ -409,15 +409,6 @@ static_assert
     "Not a POD."
 );
 
-
-// //////////////////////////////////////////////////////
-
-struct Dual_quat
-{
-    Quat real;
-    Quat dual;
-};
-
 // //////////////////////////////////////////////////////
 
 inline constexpr bool operator==(const Gaffer& lhs, const Gaffer& rhs)
@@ -558,81 +549,6 @@ auto constexpr mul(const Rotor& lhs, float rhs) -> Rotor
 
 // //////////////////////////////////////////////////////
 
-// Thanks Ben Kenwright
-// http://www.xbdev.net/misc_demos/demos/dual_quaternions_beyond/paper.pdf
-
-auto constexpr add(const Dual_quat& lhs, const Dual_quat& rhs) -> Dual_quat
-{
-    return
-    {
-        add(lhs.real, rhs.real),
-        add(lhs.dual, rhs.dual)
-    };
-}
-
-auto constexpr mul(const Dual_quat& lhs, const Dual_quat& rhs) -> Dual_quat
-{
-    return
-    {
-        mul(lhs.real, rhs.real),
-        add(mul(lhs.real, rhs.dual), mul(lhs.dual, rhs.real))
-    };
-}
-
-auto constexpr mul(const Dual_quat& lhs, float rhs) -> Dual_quat
-{
-    return
-    {
-        mul(lhs.real, rhs),
-        mul(lhs.dual, rhs)
-    };
-}
-
-auto constexpr conjugate(const Dual_quat& lhs) -> Dual_quat
-{
-    return
-    {
-        conjugate(lhs.real),
-        conjugate(lhs.dual)
-    };
-}
-
-// Norm(D) = sqrt(D.conjugate(D)) = ND.real, ND.dual = (1, 0)
-// Thats why we only divide by the real part of the dual quat.
-// I still think it's shakey becuase you also need the other constraint of:
-// ND.real * conjugate(ND.dual) == conjugate(ND.real) * ND.dual.
-// and I haven't seen proof anywhere for that :-(
-auto constexpr normalise(const Dual_quat& lhs) -> Dual_quat
-{
-    return mul(lhs, 1.0f / dot(lhs.real.vec, conjugate(lhs).real.vec));
-}
-
-auto constexpr to_dual(const Quat& rotation, const Vec3f& position) -> Dual_quat
-{
-    // RMA: TODO: Validate order of multiplication.
-    return
-    {
-        rotation,
-        mul({0.0f, position[0], position[1], position[2]}, mul(rotation, 0.5f))
-    };
-}
-
-auto constexpr to_dual(const Vec3f& position) -> Dual_quat
-{
-    return
-    {
-        {1, 0, 0, 0},
-        {0, position[0] * 0.5f, position[1] * 0.5f, position[2] * 0.5f}
-    };
-}
-
-auto constexpr to_position(const Dual_quat& dual) -> Vec3f
-{
-    return mul(mul(dual.dual, conjugate(dual.real)), 2.0f).vec;
-}
-
-// //////////////////////////////////////////////////////
-
 Rotor constexpr to_rotor(const Quat& q)
 {
     return
@@ -719,182 +635,6 @@ auto quat_dt2(const Quat& q, float dt) -> Quat
         (r[0] * 2.0f) / d,
         (r[1] * 2.0f) / d,
         (r[2] * 2.0f) / d,
-    };
-}
-
-// //////////////////////////////////////////////////////
-
-// Ok, need to test all the slerps
-
-auto slerp_caley(const Quat& at_0, const Quat& at_1, float delta) -> Quat
-{
-    // Bah, have to choose shortest path.
-    auto cos_half_theta  = dot(at_0, at_1);
-
-    auto r =
-            (cos_half_theta < 0)
-            ? mul(mul(at_1, -1.0f), conjugate(at_0))
-            : mul(mul(at_1,  1.0f), conjugate(at_0));
-
-    auto rotor          = to_rotor(r);
-    auto rotor_delta    = mul(rotor, delta);
-    auto result         = to_quat(rotor_delta);
-
-
-    // RAM: Is the trick to normalise the rotor?
-    // RAM: No :-(
-    //auto result_n = normalise(result);
-
-    return mul(result, at_0);
-}
-
-auto slerp_trig(const Quat& at_0, const Quat& at_1, float delta) -> Quat
-{
-    auto cos_half_theta  = dot(at_0, at_1);
-
-    // Chose the shortest path.
-    auto neg_mult = 1.0f;
-
-    if (cos_half_theta < 0)
-    {
-        cos_half_theta  = -cos_half_theta;
-        neg_mult        = -1.0f;
-    }
-
-    // This code generates large errors from the caley version.
-//    if (cos_half_theta > 0.99995)
-//    {
-//        auto lerp = Quat
-//        {
-//            at_0[0] + delta * (at_1[0] - at_0[0]),
-//            at_0[1] + delta * (at_1[1] - at_0[1]),
-//            at_0[2] + delta * (at_1[2] - at_0[2]),
-//            at_0[3] + delta * (at_1[3] - at_0[3])
-//        };
-
-//        return normalise(lerp);
-//    }
-
-    // RAM: Just return at_0 ?
-    assert(cos_half_theta > 0.0001);
-
-
-    cos_half_theta = std::max(-1.0f, cos_half_theta);
-    cos_half_theta = std::min( 1.0f, cos_half_theta);
-
-    // code adapted from
-    // http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions/slerp/
-    auto half_theta     = std::acos(cos_half_theta);
-    auto sin_half_theta = std::sqrt(1.0f - (cos_half_theta * cos_half_theta));
-
-    auto ratioA = std::sin((1.0f - delta) * half_theta)   / sin_half_theta;
-    auto ratioB = std::sin(delta * half_theta)            / sin_half_theta;
-
-    auto result = add(mul(at_0, ratioA), mul(at_1, ratioB * neg_mult));
-
-    return result;
-}
-
-// //////////////////////////////////////////////////////
-
-// Ok, trying from:
-// http://lost-found-wandering.blogspot.co.nz/2011/09/revisiting-angular-velocity-from-two.html
-
-auto angular_velocity(const Quat& r, float dt) -> Vec3f
-{
-    auto theta = 2.0f * std::acos(r[0]);
-
-    if (theta > M_PI)
-    {
-        theta -= 2.0f * M_PI;
-    }
-
-    auto v = Vec3f{r[1], r[2], r[3]};
-    auto delta = mul(normalise(v), theta);
-    auto velocity = mul(delta, 1.0f / dt);
-
-    return velocity;
-}
-
-// //////////////////////////////////////////////////////
-
-struct Angle_and_axis
-{
-    float angle;
-    Vec3f axis;
-};
-
-auto to_angle_and_axis(const Quat& q) -> Angle_and_axis
-{
-    auto theta  = 2.0f * std::acos(q[0]);
-    auto vec    = normalise(Vec3f{q[1],q[2],q[3]});
-
-    // shortest arc.
-    if (theta > M_PI)
-    {
-        theta -= 2.0f * M_PI;
-    }
-
-    return
-    {
-        theta,
-        vec
-    };
-}
-
-auto constexpr to_quat(const Angle_and_axis& aaa) -> Quat
-{
-    return
-    {
-        std::cos(aaa.angle * 0.5f),
-        aaa.axis[0] * std::sin(aaa.angle * 0.5f),
-        aaa.axis[1] * std::sin(aaa.angle * 0.5f),
-        aaa.axis[2] * std::sin(aaa.angle * 0.5f)
-    };
-}
-
-// //////////////////////////////////////////////////////
-
-// Where the unit axis is multiplied by the angle itself (in radians).
-struct Angle_axis
-{
-    Vec3f vec;
-};
-
-auto to_angle_axis(const Quat& q) -> Angle_axis
-{
-    auto theta  = 2.0f * std::acos(q[0]);
-    auto vec    = normalise(Vec3f{q[1],q[2],q[3]});
-
-    // shortest arc.
-    if (theta > M_PI)
-    {
-        theta -= 2.0f * M_PI;
-    }
-
-    return
-    {
-        mul(vec, theta)
-    };
-}
-
-auto to_quat(const Angle_axis& aa) -> Quat
-{
-    auto theta = std::sqrt(dot(aa.vec, aa.vec));
-
-    if (theta * theta < 0.00000001f)
-    {
-        return {1,0,0,0};
-    }
-
-    auto vec   = normalise(aa.vec);
-
-    return
-    {
-        std::cos(theta * 0.5f),
-        vec[0] * std::sin(theta * 0.5f),
-        vec[1] * std::sin(theta * 0.5f),
-        vec[2] * std::sin(theta * 0.5f)
     };
 }
 
@@ -1152,8 +892,6 @@ namespace Naive_error
     static const constexpr float RESTITUTION        = 0.869;
     static const constexpr float DRAG               = 0.997;
 
-    static const bool g_use_axis_angles = true;
-
     struct Model
     {
         // Ok, lets just get coding first before simplification
@@ -1221,16 +959,7 @@ namespace Naive_error
         auto w_delta = mul(w, frame_delta);
 
         // Ok, need to convert to quat to do actual multiplications
-        Quat r;
-
-        if (g_use_axis_angles)
-        {
-            r = to_quat(Angle_axis{w_delta});
-        }
-        else
-        {
-            r = to_quat(Rotor{w_delta});
-        }
+        Quat r = to_quat(Rotor{w_delta});
 
         auto rotation = mul(r, base.quat);
 
@@ -1271,136 +1000,22 @@ namespace Naive_error
             || (base.quat[3] != target.quat[3])
         )
         {
-            if (g_use_axis_angles)
-            {
-                auto r = mul(target.quat, conjugate(base.quat));
-                angle_delta = to_angle_axis(r).vec;
-            }
-            else
-            {
-                // Hmm, seem we get stupid magnitudess due
-                // to rotating near itself (from q to -q roughly).
-                auto target_quat_neg = mul(target.quat, -1.0f);
+            // Hmm, seem we get stupid magnitudess due
+            // to rotating near itself (from q to -q roughly).
+            auto target_quat_neg = mul(target.quat, -1.0f);
 
-                // http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
-                auto r                  = mul(target.quat, conjugate(base.quat));
-                auto r_neg              = mul(target_quat_neg, conjugate(base.quat));
-                auto rotor              = to_rotor(r);
-                auto rotor_neg          = to_rotor(r_neg);
-                auto mag_squared        = magnitude_squared(rotor);
-                auto mag_squared_neg    = magnitude_squared(rotor_neg);
+            // http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
+            auto r                  = mul(target.quat, conjugate(base.quat));
+            auto r_neg              = mul(target_quat_neg, conjugate(base.quat));
+            auto rotor              = to_rotor(r);
+            auto rotor_neg          = to_rotor(r_neg);
+            auto mag_squared        = magnitude_squared(rotor);
+            auto mag_squared_neg    = magnitude_squared(rotor_neg);
 
-                angle_delta =
-                    (mag_squared < mag_squared_neg) ?
-                        rotor.vec :
-                        rotor_neg.vec;
-
-                // RAM: quat_dt testing.
-    //            {
-    //                auto a = to_rotor(r);
-    //                auto b = to_quat(a);
-
-    //                // RAM: Testing
-    //                assert(std::abs(b[0] - r[0]) < 0.000000001f);
-    //                assert(std::abs(b[1] - r[1]) < 0.000000001f);
-    //                assert(std::abs(b[2] - r[2]) < 0.000000001f);
-    //                assert(std::abs(b[3] - r[3]) < 0.000000001f);
-
-    //                auto am = div(a.vec, 2.0f);
-    //                auto bm = to_quat({am});
-    //                auto cm = to_rotor(bm);
-    //                auto c  = div(cm.vec, 0.5f);
-    //                auto d  = to_quat({c});
-
-    //                assert(std::abs(d[0] - r[0]) < 0.000000001f);
-    //                assert(std::abs(d[1] - r[1]) < 0.000000001f);
-    //                assert(std::abs(d[2] - r[2]) < 0.000000001f);
-    //                assert(std::abs(d[3] - r[3]) < 0.000000001f);
-
-
-    //                {
-    //                    // RAM: Testing
-    //                    auto dt = quat_dt(r, 0.5f);
-    //                    auto back = quat_dt(dt, 2.0f);
-
-    //                    assert(std::abs(back[0] - r[0]) < 0.000000001f);
-    //                    assert(std::abs(back[1] - r[1]) < 0.000000001f);
-    //                    assert(std::abs(back[2] - r[2]) < 0.000000001f);
-    //                    assert(std::abs(back[3] - r[3]) < 0.000000001f);
-    //                }
-    //            }
-
-
-    //            {
-    //                // RAM: Test the slerps for values
-    //                auto bq = Quat{0,1,0,0};
-    //                auto tq = normalise(Quat{0.707,0.707,0,0});
-    //                static const unsigned TOTAL=128;
-    //                for (unsigned t = 1; t <= TOTAL; ++t)
-    //                {
-    //                    auto delta = t / (float) TOTAL;
-
-    //                    // Ok, the caley transform is _wrong_ try to find out how.
-    //                    auto quat_c = slerp_caley(bq, tq, delta);
-    //                    //auto quat_s = slerp_trig(bq, tq, delta);
-
-    //                    auto deg = 45.0f * t / TOTAL;
-
-    //                    printf
-    //                    (
-    //                        "%f\n",
-    //                        std::sin(deg*2*M_PI/360.0f) - quat_c[0]
-    //                    );
-    //                }
-    //                fflush(stdout);
-    //            }
-
-    //            // RAM: Is my slerp the same as shoemaker slerp?
-    //            // RAM: No it isnt :-(
-    //            for (unsigned t = 0; t <= 20; ++t)
-    //            {
-    //                auto delta = t / 20.0f;
-    //                auto quat_c = slerp_caley(base.quat, target.quat, delta);
-    //                auto quat_s = slerp_trig(base.quat, target.quat, delta);
-
-    //                Vec4f errors =
-    //                {
-    //                    std::abs(quat_c[0] - quat_s[0]),
-    //                    std::abs(quat_c[1] - quat_s[1]),
-    //                    std::abs(quat_c[2] - quat_s[2]),
-    //                    std::abs(quat_c[3] - quat_s[3])
-    //                };
-
-    //                static const auto EPISLON = 0.05f;
-    //                assert(errors[0] < EPISLON);
-    //                assert(errors[1] < EPISLON);
-    //                assert(errors[2] < EPISLON);
-    //                assert(errors[3] < EPISLON);
-
-    //            }
-
-    //            {
-    //                // RAM: is my axis_angle the same as the rotor?
-    //                // No, but multiply by 4 (wtf) it is close, the same way
-    //                // caley and trig slerps are :-/
-    //                auto aa = to_angle_axis(r);
-    //                auto delta_2 = mul(angle_delta, 4.0f);
-
-    //                Vec3f errors =
-    //                {
-    //                    std::abs(aa.vec[0] - delta_2[0]),
-    //                    std::abs(aa.vec[1] - delta_2[1]),
-    //                    std::abs(aa.vec[2] - delta_2[2])
-    //                };
-
-    //                static const auto EPISLON = 0.05f;
-    //                assert(errors[0] < EPISLON);
-    //                assert(errors[1] < EPISLON);
-    //                assert(errors[2] < EPISLON);
-
-    //            }
-            }
-
+            angle_delta =
+                (mag_squared < mag_squared_neg) ?
+                    rotor.vec :
+                    rotor_neg.vec;
         }
 
         auto w = div(angle_delta, frame_delta);
