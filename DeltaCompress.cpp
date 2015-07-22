@@ -950,6 +950,27 @@ void dual_tests()
 
     std::vector<std::vector<Posisiton_angle_axis>> tests;
 
+    {
+        // testing to_dual from a position and quat to make sure
+        // multiplication order is correct - it is.
+        auto q = normalise(Quat{0.3,0.5,0.5,0.0});
+
+        auto dq = to_dual(q, {1.0f, 10.0f, -5.0f});
+
+        auto p = to_position(dq);
+        auto q2 = dq.real;
+
+        assert(std::abs(p[0] - 1.0f)  < EPISLON);
+        assert(std::abs(p[1] - 10.0f) < EPISLON);
+        assert(std::abs(p[2] + 5.0f)  < EPISLON);
+
+
+        assert(std::abs(q2[0] - q[0]) < EPISLON);
+        assert(std::abs(q2[1] - q[1]) < EPISLON);
+        assert(std::abs(q2[2] - q[2]) < EPISLON);
+        assert(std::abs(q2[3] - q[3]) < EPISLON);
+    }
+
     // constant velocity
     {
         tests.push_back({});
