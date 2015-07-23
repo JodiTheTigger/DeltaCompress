@@ -39,26 +39,6 @@ bool do_decompress  = true;
 #endif
 
 // //////////////////////////////////////////////////////
-// http://the-witness.net/news/2012/11/scopeexit-in-c11/
-
-template <typename F>
-struct ScopeExit {
-    ScopeExit(F f) : f(f) {}
-    ~ScopeExit() { f(); }
-    F f;
-};
-
-template <typename F>
-ScopeExit<F> MakeScopeExit(F f) {
-    return ScopeExit<F>(f);
-};
-
-#define STRING_JOIN2(arg1, arg2) DO_STRING_JOIN2(arg1, arg2)
-#define DO_STRING_JOIN2(arg1, arg2) arg1 ## arg2
-#define SCOPED_EXIT(code) \
-    auto STRING_JOIN2(scope_exit_, __LINE__) = MakeScopeExit([=](){code;})
-
-// //////////////////////////////////////////////////////
 
 struct DeltaData
 {
@@ -121,73 +101,10 @@ using ByteVector = std::vector<uint8_t>;
 
 // //////////////////////////////////////////////////////
 
-static const size_t Cubes = 901;
-static const size_t CubeBits = 10;
+static const size_t     Cubes           = 901;
 
-static_assert(Cubes < ((1 << CubeBits) - 1), "CubeBits is too small.");
-
-// Using contraints from
-// http://gafferongames.com/networked-physics/snapshot-compression/
-
-// With this technique I've found that minimum sufficient precision for
-// my simulation is 9 bits per-smallest component. This gives a result
-// of 2 + 9 + 9 + 9 = 29 bits per-orientation (originally 128!).
-
-// NOTE: All quanternion values are positive even though they are stored
-//       as ints.
-
-static const unsigned RotationMaxBits = 9;
-//static const unsigned RotationIndexMaxBits = 2;
-
-// I found a maximum speed of 32 meters per-second is a nice power of two
-// and doesn't negatively affect the player experience in the cube simulation.
-//static const unsigned MaxSpeedMetersPerSecond = 32;
-
-// Now we have only position to compress. We'll use the same trick that we used
-// for linear velocity: bound and quantize. Most game worlds are reasonably big
-// so I chose a position bound of [-256,255] meters in the horizontal plane (xy)
-// and since in my cube simulation the floor is at z=0, I chose for z a range of
-// [0,32] meters.
-
-// Now we need to work out how much precision is required. With some
-// experimentation I found that 512 values per-meter (roughly 0.5mm precision)
-// provides sufficient precision. This gives position x and y components
-// in [-131072,+131071] and z components in range [0,16383].
-
-// RAM: NOTE: ambiguous statement. So I'll use [-131072,+131071]
-
-static const unsigned   ValuesPerMeter    = 512;
-static const unsigned   MaxZInclusize     = (32 * ValuesPerMeter) - 1;
-//static const unsigned   MinZInclusize     = 0;
-static const int        MaxXYInclusize    = 131071;  // (256 * 512) - 1
-static const int        MinXYInclusize    = -131072; // (-256 * 512)
-static const int        XYRange           = MaxXYInclusize - MinXYInclusize;
-
-static const unsigned   MaxBitsZ          = 14;
-static const unsigned   MaxBitsXY         = 18;
-
-static const unsigned   MaxBitsAll        =
-    std::max(MaxBitsZ, std::max(MaxBitsXY, RotationMaxBits));
-
-//static const unsigned   MaxSnapshotsPerSecond = 60;
-
-// Currently gets stuck when the delta is larger than 26 packets.
-static const unsigned   PacketDelta           = 6;
-
-// This one is important
-//static const float      MaxPositionChangePerSnapshot =
-//        MaxSpeedMetersPerSecond * ValuesPerMeter /
-//        (float) MaxSnapshotsPerSecond;
-
-static_assert(
-    ((1 << MaxBitsZ) - 1) == MaxZInclusize,
-    "MaxBitZ doesn't match MaxZInclusize");
-
-static_assert(
-    ((1 << MaxBitsXY) - 1) == XYRange,
-    "MaxBitsXY doesn't match XYRange");
-
-// //////////////////////////////////////////////////////
+// RAM: FIXME: Currently gets stuck when the delta is larger than 26 packets.
+static const unsigned   PacketDelta     = 6;
 
 typedef std::array<DeltaData, Cubes> Frame;
 
@@ -335,12 +252,6 @@ struct Gaffer
     Vec3i vec;
 };
 
-struct Maxwell
-{
-    unsigned multiplier_index;
-    Vec3i vec;
-};
-
 struct Quat
 {
     static const constexpr unsigned W_INDEX = 0;
@@ -357,16 +268,6 @@ struct Quat
         return vec[index];
     }
 };
-
-float* begin(Quat& q)
-{
-    return &(q.vec[0]);
-}
-
-float* end(Quat& q)
-{
-    return &(q.vec[4]);
-}
 
 struct Rotor
 {
@@ -388,12 +289,6 @@ struct Rotor
 static_assert
 (
     std::is_pod<Gaffer>::value,
-    "Not a POD."
-);
-
-static_assert
-(
-    std::is_pod<Maxwell>::value,
     "Not a POD."
 );
 
@@ -1553,39 +1448,6 @@ void range_compress(std::vector<Frame>& frames)
         Naive_error::decode,
         "Naive_error"
     );
-
-    // RAM: NOTES: For position, 6 frames error doesn't go above 145
-    //      but for quats it gets as high as 450 (close and near to cube 0)
-    //      also distance between segments and distance between point and
-    //      cube 0 are pretty much the same looking distrubtuion, so just
-    //      using the point to segment distance.
-    //
-    //      For quat errors, worst errors seem to happen when the angular
-    //      velocity is near zero. range seems to be up to 0.12 / frame
-    //      this is component velocity, not vector magnitude.
-    //
-    //      Revisited error when close to ground, but for predicted
-    //      Z as opposed to base Z. Have 3 peaks. No errors under 23 (well, duh)
-    //      Put peaks then toughs at 150. A second peak around 180 to 334, then
-    //      the worsrt peak (but not as dense) at 900, before dropping off at
-    //      1600 and stabilising to errors under 20. probably related to
-    //      cube 0 as well.
-    //
-    //      For distance to bottom I'll use base distance from floor and
-    //      anything under 700 for a simple 2 context model.
-    //
-    //      Ok, emperically, distance from bottom (base or predicted) did
-    //      nothing but distance of base from cube 0 base/cube 0 target
-    //      did work (best at distance 1711 with frame delta of 6).
-    //
-    //      For position velocities, only a very small improvment (0.002 kbps)
-    //      was made with a cutoff per component velocity of 4 or 6 units/frame.
-    //      not really worth it by the looks of things.
-    //
-    //      Same deal with the angular velocities.
-    //
-    //      Conclusion: Most errors occur near cube_0 (well duh since that's
-    //      the one doing most of the collision, that makes perfect sense).
 }
 
 int main(int, char**)
@@ -1598,7 +1460,6 @@ int main(int, char**)
             printf("ERROR: Cannot open 'delta_data.bin' for reading.\n");
             return {};
         }
-        SCOPED_EXIT(fclose(fileHandle));
 
         fseek(fileHandle, 0, SEEK_END);
         const auto size = ftell(fileHandle);
@@ -1615,6 +1476,8 @@ int main(int, char**)
             sizeof(Frame),
             frameCount,
             fileHandle);
+
+        fclose(fileHandle);
 
         return frames;
     }();
