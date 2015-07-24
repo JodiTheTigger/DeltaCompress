@@ -3,7 +3,9 @@
 // Interesting reading:
 // http://www.arturocampos.com/ac_range.html
 // http://cbloomrants.blogspot.co.nz/2010/09/09-16-10-modern-arithmetic-coding-from.html
-
+//
+// But you really should be spending all your time here:
+// http://mattmahoney.net/dc/text.html
 #pragma once
 
 #include <vector>
