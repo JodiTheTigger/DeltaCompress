@@ -481,6 +481,18 @@ namespace Range_models
     class Binary_tree
     {
     public:
+        Binary_tree() = default;
+
+        // This is getting too c++'y. find an easier way..
+        template<typename... Args>
+        Binary_tree(Args&&... args)
+        {
+            for(auto& model : m_models)
+            {
+                model = BINARY_MODEL(std::forward<Args>(args)...);
+            }
+        }
+
         void Encode(Binary_encoder& coder, unsigned value, unsigned bits = BITS)
         {
             assert(value < MODEL_COUNT);
@@ -530,6 +542,18 @@ namespace Range_models
     class Unsigned_golomb_binary
     {
     public:
+        Unsigned_golomb_binary() = default;
+
+        // This is getting too c++'y. find an easier way..
+        template<typename... Args>
+        Unsigned_golomb_binary(Args&&... args)
+        {
+            for(auto& model : m_bits)
+            {
+                model = BINARY_MODEL(std::forward<Args>(args)...);
+            }
+        }
+
         void Encode(Binary_encoder& coder, unsigned value)
         {
             // Enocde how many bits we are sending
