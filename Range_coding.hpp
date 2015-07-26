@@ -526,6 +526,75 @@ namespace Range_models
         std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
     };
 
+    template<class BINARY_MODEL, unsigned BITS_FOR_BITS>
+    class Unsigned_golomb_binary
+    {
+    public:
+        void Encode(Binary_encoder& coder, unsigned value)
+        {
+            // Enocde how many bits we are sending
+            unsigned min_bits = 0;
+
+            while ((1u << min_bits) <= value)
+            {
+                ++min_bits;
+            }
+
+            assert(min_bits < BITS_FOR_BITS);
+
+            m_bits.Encode(coder, min_bits);
+
+            if (min_bits)
+            {
+                // No need to send the top bit
+                // as we can assume it's set due
+                // to min_bits.
+                --min_bits;
+
+                // Send the bits, no probabilities.
+                while (min_bits--)
+                {
+                    const auto mask = (1 << min_bits);
+
+                    Binary_bitstream::Encode
+                    (
+                        coder,
+                        value & mask
+                    );
+                }
+            }
+        }
+
+        unsigned Decode(Binary_decoder& coder)
+        {
+            auto min_bits = m_bits.Decode(coder);
+
+            unsigned result = 0;
+
+            if (min_bits)
+            {
+                // top bit is always set.
+                result |= 1;
+
+                --min_bits;
+
+                while (min_bits)
+                {
+                    result <<= 1;
+
+                    result |= Binary_bitstream::Decode(coder);
+
+                    --min_bits;
+                }
+            }
+
+            return result;
+        }
+
+    private:
+        Binary_tree<BINARY_MODEL, BITS_FOR_BITS> m_bits;
+    };
+
     class Periodic_update
     {
     public:
