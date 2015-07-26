@@ -713,8 +713,8 @@ namespace Naive_error
         std::array<Binary_two_speed, 4> interactive     = {};
 
         // If I get error, send both pos and quat errors.
-        Exp_update      quat_largest                    = {4, 8};
-        Exp_update      error_signs                     = {8, 7};
+        Binary_tree<Binary_two_speed, 2> quat_largest = {};
+        Binary_tree<Binary_two_speed, 3> error_signs  = {};
 
         // This seems to do the trick.
         Unsigned_golomb_range error_bits                = {10, 5};
@@ -1076,7 +1076,7 @@ namespace Naive_error
                     {
                         model.quat_largest.Encode
                         (
-                            range,
+                            binary,
                             target[i].orientation_largest
                         );
                     }
@@ -1148,7 +1148,7 @@ namespace Naive_error
                     {
                         model.error_signs.Encode
                         (
-                            range,
+                            binary,
                             signs_pos
                         );
                     }
@@ -1157,7 +1157,7 @@ namespace Naive_error
                     {
                         model.error_signs.Encode
                         (
-                            range,
+                            binary,
                             signs_quat
                         );
                     }
@@ -1240,7 +1240,7 @@ namespace Naive_error
 
                     if (has_error_quat_largest)
                     {
-                        auto largest = model.quat_largest.Decode(range);
+                        auto largest = model.quat_largest.Decode(binary);
 
                         calculated_quat =
                             swap_orientation_largest(calculated_quat, largest);
@@ -1306,12 +1306,12 @@ namespace Naive_error
 
                     if (vec_pos[0] || vec_pos[1] || vec_pos[2])
                     {
-                        signs_pos = model.error_signs.Decode(range);
+                        signs_pos = model.error_signs.Decode(binary);
                     }
 
                     if (vec_quat[0] || vec_quat[1] || vec_quat[2])
                     {
-                        signs_quat = model.error_signs.Decode(range);
+                        signs_quat = model.error_signs.Decode(binary);
                     }
 
                     auto error_pos  = add_signs(signs_pos, vec_pos);
