@@ -717,8 +717,8 @@ namespace Naive_error
         Binary_tree<Binary_two_speed, 3> error_signs  = {};
 
         // This seems to do the trick.
-        Unsigned_golomb_range error_bits                = {10, 5};
-        Unsigned_golomb_range error_bits_near_cube      = {10, 5};
+        Unsigned_golomb_binary<Binary_two_speed, 10> error_bits = {};
+        Unsigned_golomb_binary<Binary_two_speed, 10> error_bits_near_cube = {};
     };
 
     auto predict
@@ -1107,23 +1107,23 @@ namespace Naive_error
                     auto vec_pos    = strip_signs(error_pos);
                     auto vec_quat   = strip_signs(error_quat);
 
-                    auto encode_error_bits = [&model, &range](const Vec3i& vec)
+                    auto encode_error_bits = [&model, &binary](const Vec3i& vec)
                     {
                         for (auto v: vec)
                         {
                             assert(v < (1 << 10));
 
-                            model.error_bits.Encode(range,v);
+                            model.error_bits.Encode(binary,v);
                         }
                     };
                     auto encode_error_bits_near_cube =
-                        [&model, &range](const Vec3i& vec)
+                        [&model, &binary](const Vec3i& vec)
                     {
                         for (auto v: vec)
                         {
                             assert(v < (1 << 10));
 
-                            model.error_bits_near_cube.Encode(range,v);
+                            model.error_bits_near_cube.Encode(binary,v);
                         }
                     };
 
@@ -1247,24 +1247,24 @@ namespace Naive_error
                     }
 
                     // Get the errors and add them to things.
-                    auto decode_vec = [&model, &range]() -> Vec3i
+                    auto decode_vec = [&model, &binary]() -> Vec3i
                     {
                         Vec3i result;
 
                         for (auto& v: result)
                         {
-                            v = model.error_bits.Decode(range);
+                            v = model.error_bits.Decode(binary);
                         }
 
                         return result;
                     };
-                    auto decode_vec_near_cube = [&model, &range]() -> Vec3i
+                    auto decode_vec_near_cube = [&model, &binary]() -> Vec3i
                     {
                         Vec3i result;
 
                         for (auto& v: result)
                         {
-                            v = model.error_bits_near_cube.Decode(range);
+                            v = model.error_bits_near_cube.Decode(binary);
                         }
 
                         return result;
