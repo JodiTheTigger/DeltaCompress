@@ -713,12 +713,19 @@ namespace Naive_error
         std::array<Binary_two_speed, 4> interactive     = {};
 
         // If I get error, send both pos and quat errors.
-        Binary_tree<Binary_two_speed, 2> quat_largest = {};
-        Binary_tree<Binary_two_speed, 3> error_signs  = {};
+        Binary_tree<Binary_two_speed, 2> quat_largest = {5, 6};
+        Binary_tree<Binary_two_speed, 3> error_signs  = {5, 6};
 
         // This seems to do the trick.
-        Unsigned_golomb_binary<Binary_two_speed, 10> error_bits = {};
-        Unsigned_golomb_binary<Binary_two_speed, 10> error_bits_near_cube = {};
+        Unsigned_golomb_binary<Binary_two_speed, 10> error_bits =
+        {
+            1, 4
+        };
+
+        Unsigned_golomb_binary<Binary_two_speed, 10> error_bits_near_cube =
+        {
+            1, 3
+        };
     };
 
     auto predict
@@ -978,7 +985,7 @@ namespace Naive_error
 
         {
             Range_coders::Encoder           range(data);
-            Range_coders::Binary_encoder    binary(range);;
+            Range_coders::Binary_encoder    binary(range);
 
             // //////////////////////////////////////////////////////
 

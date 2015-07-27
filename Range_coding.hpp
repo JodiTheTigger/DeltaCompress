@@ -548,10 +548,11 @@ namespace Range_models
         template<typename... Args>
         Unsigned_golomb_binary(Args&&... args)
         {
-            for(auto& model : m_bits)
-            {
-                model = BINARY_MODEL(std::forward<Args>(args)...);
-            }
+            m_bits =
+                Binary_tree<BINARY_MODEL, BITS_FOR_BITS>
+                (
+                    std::forward<Args>(args)...
+                );
         }
 
         void Encode(Binary_encoder& coder, unsigned value)
