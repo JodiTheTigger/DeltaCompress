@@ -694,8 +694,7 @@ unsigned MinBits(unsigned value)
 // //////////////////////////////////////////////////////
 
 using namespace Range_models;
-unsigned g_0 = 1;
-unsigned g_1 = 1;
+
 namespace Naive_error
 {
     // Found emperically.
@@ -710,8 +709,14 @@ namespace Naive_error
     {
         // Ok, lets just get coding first before simplification
         Binary_two_speed has_error                      = {1, 5};
-        Binary_two_speed has_quat_largest               = {1, 5};
-        std::array<Binary_two_speed, 4> interactive     = {};
+        Binary_two_speed has_quat_largest               = {1, 4};
+        std::array<Binary_two_speed, 4> interactive     =
+        {{
+            {1, 1},
+            {1, 4},
+            {1, 2},
+            {1, 1}
+        }};
 
         // If I get error, send both pos and quat errors.
         Binary_tree<Binary_two_speed, 2> quat_largest = {5, 7};
@@ -982,28 +987,7 @@ namespace Naive_error
 
         // //////////////////////////////////////////////////////
 
-        Model model
-        {
-            // Ok, lets just get coding first before simplification
-            {1, 5},
-            {1, 4},
-            {},
-
-            // If I get error, send both pos and quat errors.
-            {5, 7},
-            {5, 6},
-
-            // This seems to do the trick.
-
-            {
-                2, 5
-            },
-
-
-            {
-                2, 4
-            },
-        };
+        Model model;
 
         {
             Range_coders::Encoder           range(data);
@@ -1230,28 +1214,7 @@ namespace Naive_error
         auto    size = base.size();
         Frame   target;        
 
-        Model model
-        {
-            // Ok, lets just get coding first before simplification
-            {1, 5},
-            {1, 4},
-            {},
-
-            // If I get error, send both pos and quat errors.
-            {5, 7},
-            {5, 6},
-
-            // This seems to do the trick.
-
-            {
-                2, 5
-            },
-
-
-            {
-                2, 4
-            },
-        };
+        Model model;
 
         {
             Range_coders::Decoder           range(data);
@@ -1492,21 +1455,12 @@ void range_compress(std::vector<Frame>& frames)
         printf("\n==============================================\n");
     };
 
-    for (g_0 = 1; g_0 < 8; g_0++)
-    {
-        for (g_1 = g_0; g_1 < 8; g_1++)
-        {
-            printf ("%d, %d", g_0, g_1);
-            test
-            (
-                Naive_error::encode,
-                Naive_error::decode,
-                "Naive_error"
-            );
-
-            fflush(stdout);
-        }
-    }
+    test
+    (
+        Naive_error::encode,
+        Naive_error::decode,
+        "Naive_error"
+    );
 }
 
 int main(int, char**)
