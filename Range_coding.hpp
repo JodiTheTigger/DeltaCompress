@@ -565,7 +565,16 @@ namespace Range_models
                 ++min_bits;
             }
 
-            assert(min_bits < BITS_FOR_BITS);
+            {
+                unsigned min_bits_2 = 0;
+
+                while ((1u << min_bits_2) <= min_bits)
+                {
+                    ++min_bits_2;
+                }
+
+                assert(min_bits_2 <= BITS_FOR_BITS);
+            }
 
             m_bits.Encode(coder, min_bits);
 
