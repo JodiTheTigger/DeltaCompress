@@ -538,6 +538,8 @@ namespace Range_models
         std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
     };
 
+    // RAM: TODO: Pre init the probabilities for values
+    // larger than some MAX value to 0.
     template<class BINARY_MODEL, unsigned BITS_FOR_BITS>
     class Unsigned_golomb_binary
     {
