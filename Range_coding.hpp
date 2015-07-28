@@ -538,6 +538,89 @@ namespace Range_models
         std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
     };
 
+    template<class BINARY_MODEL, unsigned BITS, unsigned MAX_VALUE>
+    class Binary_tree_max_value
+    {
+    public:
+        Binary_tree_max_value() = default;
+
+        // This is getting too c++'y. find an easier way..
+        template<typename... Args>
+        Binary_tree_max_value(Args&&... args)
+        {
+            for(auto& model : m_models)
+            {
+                model = BINARY_MODEL(std::forward<Args>(args)...);
+            }
+        }
+
+        void Encode(Binary_encoder& coder, unsigned value)
+        {
+            assert(value < MODEL_COUNT);
+
+            // Model the MSB first, then work our way down.
+            // Seems adds are better than << 1.
+            unsigned rebuilt = 1;
+            unsigned mask = MAX_VALUE;
+
+            while (rebuilt < MODEL_COUNT)
+            {
+                unsigned bit = ((value & TOP_BIT) != 0);
+                value += value;
+
+                if (mask & TOP_BIT)
+                {
+                    m_models[rebuilt - 1].Encode(coder, bit);
+                    rebuilt += rebuilt + bit;
+
+                    // At any point we get a zero, then that means
+                    // we are not constrained by max value anymore.
+                    // RAM: TODO: algorithm is clunky - fix.
+                    if (!bit)
+                    {
+                        mask = MODEL_COUNT - 1;
+                    }
+                }
+
+                mask += mask;
+            }
+        }
+
+        unsigned Decode(Binary_decoder& coder)
+        {
+            unsigned rebuilt = 1;
+            unsigned count = MODEL_COUNT;
+            unsigned mask = MAX_VALUE;
+
+            while (rebuilt < count)
+            {
+                auto new_bit = 0u;
+
+                if (mask & TOP_BIT)
+                {
+                    new_bit = m_models[rebuilt - 1].Decode(coder);
+
+                    if (!new_bit)
+                    {
+                        mask = MODEL_COUNT - 1;
+                    }
+                }
+
+                rebuilt += rebuilt + new_bit;
+                mask += mask;
+            }
+
+            // Clear the top bit due to starting rebuilt with 1.
+            return rebuilt - count;
+        }
+
+    private:
+        static const unsigned MODEL_COUNT   = 1 << BITS;
+        static const unsigned TOP_BIT       = MODEL_COUNT / 2;
+
+        std::array<BINARY_MODEL, MODEL_COUNT - 1> m_models;
+    };
+
     // RAM: TODO: Pre init the probabilities for values
     // larger than some MAX value to 0.
     template<class BINARY_MODEL, unsigned BITS_FOR_BITS>
