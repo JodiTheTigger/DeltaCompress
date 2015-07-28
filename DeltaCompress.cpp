@@ -26,7 +26,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests       = false;
+bool do_tests       = true;
 bool do_compression = true;
 bool do_decompress  = true;
 

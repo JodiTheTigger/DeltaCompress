@@ -2178,5 +2178,36 @@ void range_tests()
                 Unsigned_golomb_range(8)
             );
         }
+    }    
+
+    // Binary tree tests.
+    {
+        Bytes data;
+        Bytes tests{0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 0,1,2};
+
+        {
+            Encoder range_encoder(data);
+            Binary_encoder test_encoder(range_encoder);
+            Binary_tree_max_value<Binary_two_speed, 3, 5> tree;
+
+            for (auto t : tests)
+            {
+                tree.Encode(test_encoder, t % 5);
+            }
+        }
+        {
+            Decoder range_decoder(data);
+            Binary_decoder test_decoder(range_decoder);
+            Binary_tree_max_value<Binary_two_speed, 3, 5> tree;
+
+            for (unsigned t : tests)
+            {
+                auto value = tree.Decode(test_decoder);
+                assert(value == (t % 5));
+            }
+
+            auto read = test_decoder.FlushAndGetBytesRead();
+            assert(read == data.size());
+        }
     }
 }
