@@ -623,7 +623,12 @@ namespace Range_models
 
     // RAM: TODO: Pre init the probabilities for values
     // larger than some MAX value to 0.
-    template<class BINARY_MODEL, unsigned BITS_FOR_BITS>
+    template
+    <
+        class BINARY_MODEL,
+        unsigned BITS_FOR_BITS,
+        unsigned MAX_VALUE=((1 << BITS_FOR_BITS) - 1)
+    >
     class Unsigned_golomb_binary
     {
     public:
@@ -634,7 +639,7 @@ namespace Range_models
         Unsigned_golomb_binary(Args&&... args)
         {
             m_bits =
-                Binary_tree<BINARY_MODEL, BITS_FOR_BITS>
+                Binary_tree_max_value<BINARY_MODEL, BITS_FOR_BITS, MAX_VALUE>
                 (
                     std::forward<Args>(args)...
                 );
@@ -649,6 +654,8 @@ namespace Range_models
             {
                 ++min_bits;
             }
+
+            assert(min_bits <= MAX_VALUE);
 
             {
                 unsigned min_bits_2 = 0;
@@ -711,7 +718,7 @@ namespace Range_models
         }
 
     private:
-        Binary_tree<BINARY_MODEL, BITS_FOR_BITS> m_bits;
+        Binary_tree_max_value<BINARY_MODEL, BITS_FOR_BITS, MAX_VALUE> m_bits;
     };
 
     class Periodic_update

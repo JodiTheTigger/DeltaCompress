@@ -723,12 +723,12 @@ namespace Naive_error
         Binary_tree<Binary_two_speed, 3> error_signs  = {5, 6};
 
         // This seems to do the trick.
-        Unsigned_golomb_binary<Binary_two_speed, 4> error_bits =
+        Unsigned_golomb_binary<Binary_two_speed, 4, 10> error_bits =
         {
             2, 5
         };
 
-        Unsigned_golomb_binary<Binary_two_speed, 4> error_bits_near_cube =
+        Unsigned_golomb_binary<Binary_two_speed, 4, 10> error_bits_near_cube =
         {
             2, 4
         };
