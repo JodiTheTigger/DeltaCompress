@@ -571,7 +571,6 @@ namespace Range_models
                 if (mask & TOP_BIT)
                 {
                     m_models[rebuilt - 1].Encode(coder, bit);
-                    rebuilt += rebuilt + bit;
 
                     // At any point we get a zero, then that means
                     // we are not constrained by max value anymore.
@@ -582,6 +581,7 @@ namespace Range_models
                     }
                 }
 
+                rebuilt += rebuilt + bit;
                 mask += mask;
             }
         }
@@ -2192,7 +2192,7 @@ void range_tests()
 
             for (auto t : tests)
             {
-                tree.Encode(test_encoder, t % 5);
+                tree.Encode(test_encoder, t % 6);
             }
         }
         {
@@ -2203,7 +2203,7 @@ void range_tests()
             for (unsigned t : tests)
             {
                 auto value = tree.Decode(test_decoder);
-                assert(value == (t % 5));
+                assert(value == (t % 6));
             }
 
             auto read = test_decoder.FlushAndGetBytesRead();
