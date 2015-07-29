@@ -707,7 +707,7 @@ namespace Naive_error
 
     struct Model
     {
-        using Base_model = Binary_two_speed<Binary_encoder, Binary_decoder>;
+        using Base_model = Binary_two_speed<fpaq0p_encoder, fpaq0p_decoder>;
 
         // Ok, lets just get coding first before simplification
         Base_model has_error                      = {1, 5};
@@ -992,8 +992,7 @@ namespace Naive_error
         Model model;
 
         {
-            Range_coders::Encoder           range(data);
-            Range_coders::Binary_encoder    binary(range);
+            Range_coders::fpaq0p_encoder binary(data);
 
             // //////////////////////////////////////////////////////
 
@@ -1219,8 +1218,7 @@ namespace Naive_error
         Model model;
 
         {
-            Range_coders::Decoder           range(data);
-            Range_coders::Binary_decoder    binary(range);
+            Range_coders::fpaq0p_decoder binary(data);
 
             for (unsigned i = 0; i < size; ++i)
             {

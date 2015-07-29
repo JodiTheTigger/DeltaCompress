@@ -422,7 +422,7 @@ namespace Range_coders
         // Maybe test to see if I can get away with > 15?
         const unsigned PROBABILITY_BITS = 15;
 
-        fpaq0p_decoder(Bytes& bytes)
+        fpaq0p_decoder(const Bytes& bytes)
             : m_bytes(&bytes)
             , m_byteSize(bytes.size())
         {
@@ -479,12 +479,12 @@ namespace Range_coders
         }
 
     private:
-        Bytes*      m_bytes         = 0;
-        uint32_t    m_value         = 0;
-        uint32_t    m_low           = 0;
-        uint32_t    m_high          = 0xffffffff;
-        uint32_t    m_read_index    = 0;
-        uint32_t    m_byteSize      = 0;
+        const Bytes*    m_bytes         = 0;
+        uint32_t        m_value         = 0;
+        uint32_t        m_low           = 0;
+        uint32_t        m_high          = 0xffffffff;
+        uint32_t        m_read_index    = 0;
+        uint32_t        m_byteSize      = 0;
 
         uint8_t Read()
         {
@@ -558,6 +558,9 @@ namespace Range_models
     class Binary_two_speed
     {
     public:
+        typedef ENCODER Encoder;
+        typedef DECODER Decoder;
+
         Binary_two_speed(
                 unsigned inertia_1 = 4,
                 unsigned inertia_2 = 4,
@@ -607,6 +610,24 @@ namespace Range_models
         }
     };
 
+    template<typename ENCODER, typename DECODER>
+    class Binary_bitstream_general
+    {
+    public:
+        static const constexpr unsigned HALF_RANGE = PROBABILITY_RANGE / 2;
+
+        static void Encode(ENCODER& coder, unsigned value)
+        {
+            coder.Encode(value, HALF_RANGE);
+        }
+
+        static unsigned Decode(DECODER& coder)
+        {
+            auto result = coder.Decode(HALF_RANGE);
+            return result;
+        }
+    };
+
     class Binary_bitstream
     {
     public:
@@ -649,6 +670,7 @@ namespace Range_models
         }
     };
 
+    // Ugly hack, coders should be inferred from the binary model.
     template<class BINARY_MODEL, unsigned BITS>
     class Binary_tree
     {
@@ -665,7 +687,7 @@ namespace Range_models
             }
         }
 
-        void Encode(Binary_encoder& coder, unsigned value, unsigned bits = BITS)
+        void Encode(typename BINARY_MODEL::Encoder& coder, unsigned value, unsigned bits = BITS)
         {
             assert(value < MODEL_COUNT);
             assert(bits <= BITS);
@@ -687,7 +709,7 @@ namespace Range_models
             }
         }
 
-        unsigned Decode(Binary_decoder& coder, unsigned bits = BITS)
+        unsigned Decode(typename BINARY_MODEL::Decoder& coder, unsigned bits = BITS)
         {
             assert(bits <= BITS);
 
@@ -726,7 +748,7 @@ namespace Range_models
             }
         }
 
-        void Encode(Binary_encoder& coder, unsigned value)
+        void Encode(typename BINARY_MODEL::Encoder& coder, unsigned value)
         {
             assert(value < MODEL_COUNT);
 
@@ -758,7 +780,7 @@ namespace Range_models
             }
         }
 
-        unsigned Decode(Binary_decoder& coder)
+        unsigned Decode(typename BINARY_MODEL::Decoder& coder)
         {
             unsigned rebuilt = 1;
             unsigned count = MODEL_COUNT;
@@ -817,7 +839,7 @@ namespace Range_models
                 );
         }
 
-        void Encode(Binary_encoder& coder, unsigned value)
+        void Encode(typename BINARY_MODEL::Encoder& coder, unsigned value)
         {
             // Enocde how many bits we are sending
             unsigned min_bits = 0;
@@ -854,7 +876,12 @@ namespace Range_models
                 {
                     const auto mask = (1 << min_bits);
 
-                    Binary_bitstream::Encode
+                    Binary_bitstream_general
+                    <
+                        typename BINARY_MODEL::Encoder,
+                        typename BINARY_MODEL::Decoder
+                    >
+                    ::Encode
                     (
                         coder,
                         value & mask
@@ -863,7 +890,7 @@ namespace Range_models
             }
         }
 
-        unsigned Decode(Binary_decoder& coder)
+        unsigned Decode(typename BINARY_MODEL::Decoder& coder)
         {
             auto min_bits = m_bits.Decode(coder);
 
@@ -880,7 +907,13 @@ namespace Range_models
                 {
                     result <<= 1;
 
-                    result |= Binary_bitstream::Decode(coder);
+                    result |=
+                        Binary_bitstream_general
+                        <
+                            typename BINARY_MODEL::Encoder,
+                            typename BINARY_MODEL::Decoder
+                        >
+                        ::Decode(coder);
 
                     --min_bits;
                 }
