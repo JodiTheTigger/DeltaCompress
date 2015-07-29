@@ -554,6 +554,7 @@ namespace Range_models
         }
     };
 
+    template<typename ENCODER, typename DECODER>
     class Binary_two_speed
     {
     public:
@@ -568,13 +569,13 @@ namespace Range_models
             , m_probabilities_2(initial_probability_2)
         {}
 
-        void Encode(Binary_encoder& coder, unsigned value)
+        void Encode(ENCODER& coder, unsigned value)
         {
             coder.Encode(value, m_probabilities_1 + m_probabilities_2);
             Adapt(value);
         }
 
-        unsigned Decode(Binary_decoder& coder)
+        unsigned Decode(DECODER& coder)
         {
             auto result = coder.Decode(m_probabilities_1 + m_probabilities_2);
             Adapt(result);
@@ -2144,16 +2145,16 @@ void range_tests()
 
         Binary_test(
             tests,
-            Binary_two_speed(5,2),
-            Binary_two_speed(5,2));
+            Binary_two_speed<Binary_encoder, Binary_decoder>(5,2),
+            Binary_two_speed<Binary_encoder, Binary_decoder>(5,2));
         Binary_test(
             tests,
-            Binary_two_speed(6,1),
-            Binary_two_speed(6,1));
+            Binary_two_speed<Binary_encoder, Binary_decoder>(6,1),
+            Binary_two_speed<Binary_encoder, Binary_decoder>(6,1));
         Binary_test(
             tests,
-            Binary_two_speed(3,4),
-            Binary_two_speed(3,4));
+            Binary_two_speed<Binary_encoder, Binary_decoder>(3,4),
+            Binary_two_speed<Binary_encoder, Binary_decoder>(3,4));
     }
 
     // Range Model Tests
@@ -2366,7 +2367,12 @@ void range_tests()
         {
             Encoder range_encoder(data);
             Binary_encoder test_encoder(range_encoder);
-            Binary_tree_max_value<Binary_two_speed, 3, 5> tree;
+            Binary_tree_max_value
+            <
+                Binary_two_speed<Binary_encoder, Binary_decoder>,
+                3,
+                5
+            > tree;
 
             for (auto t : tests)
             {
@@ -2376,7 +2382,12 @@ void range_tests()
         {
             Decoder range_decoder(data);
             Binary_decoder test_decoder(range_decoder);
-            Binary_tree_max_value<Binary_two_speed, 3, 5> tree;
+            Binary_tree_max_value
+            <
+                Binary_two_speed<Binary_encoder, Binary_decoder>,
+                3,
+                5
+            > tree;
 
             for (unsigned t : tests)
             {

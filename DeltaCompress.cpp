@@ -707,10 +707,12 @@ namespace Naive_error
 
     struct Model
     {
+        using Base_model = Binary_two_speed<Binary_encoder, Binary_decoder>;
+
         // Ok, lets just get coding first before simplification
-        Binary_two_speed has_error                      = {1, 5};
-        Binary_two_speed has_quat_largest               = {1, 4};
-        std::array<Binary_two_speed, 4> interactive     =
+        Base_model has_error                      = {1, 5};
+        Base_model has_quat_largest               = {1, 4};
+        std::array<Base_model, 4> interactive     =
         {{
             {1, 1},
             {1, 4},
@@ -719,16 +721,16 @@ namespace Naive_error
         }};
 
         // If I get error, send both pos and quat errors.
-        Binary_tree<Binary_two_speed, 2> quat_largest = {5, 7};
-        Binary_tree<Binary_two_speed, 3> error_signs  = {5, 6};
+        Binary_tree<Base_model, 2> quat_largest = {5, 7};
+        Binary_tree<Base_model, 3> error_signs  = {5, 6};
 
         // This seems to do the trick.
-        Unsigned_golomb_binary<Binary_two_speed, 4, 10> error_bits =
+        Unsigned_golomb_binary<Base_model, 4, 10> error_bits =
         {
             2, 5
         };
 
-        Unsigned_golomb_binary<Binary_two_speed, 4, 10> error_bits_near_cube =
+        Unsigned_golomb_binary<Base_model, 4, 10> error_bits_near_cube =
         {
             2, 4
         };
