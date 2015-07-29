@@ -20,7 +20,7 @@
 
 namespace Range_types
 {
-    static const uint32_t PROBABILITY_RANGE_BITS = 16;
+    static const uint32_t PROBABILITY_RANGE_BITS = 15;
     static const uint32_t PROBABILITY_RANGE      = 1 << PROBABILITY_RANGE_BITS;
 
     using Bytes = std::vector<uint8_t>;
@@ -2085,7 +2085,7 @@ void range_tests()
 
             for (const unsigned t : tests)
             {
-                encoder.Encode(t, 40000);
+                encoder.Encode(t, (PROBABILITY_RANGE * 2) / 3);
             }
         }
 
@@ -2095,7 +2095,7 @@ void range_tests()
 
             for (const unsigned t : tests)
             {
-                auto value = decoder.Decode(40000);
+                auto value = decoder.Decode((PROBABILITY_RANGE * 2) / 3);
                 assert(value == t);
             }
 
