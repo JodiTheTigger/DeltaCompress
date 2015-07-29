@@ -326,6 +326,177 @@ namespace Range_coders
         Decoder* m_decoder;
     };
 
+    class fpaq0p_encoder
+    {
+    public:
+        // Maths means for 32 bits, max range is 15. Can't remember why
+        // Maybe test to see if I can get away with > 15?
+        const unsigned PROBABILITY_BITS = 15;
+
+        fpaq0p_encoder(Bytes& bytes)
+            : m_bytes(&bytes)
+        {}
+
+        void Encode(unsigned bit, uint16_t one_probability)
+        {
+            assert(one_probability < (1 << PROBABILITY_BITS));
+
+            // cast to 64 bits for more precision.
+            const uint32_t middle =
+                m_low
+                +
+                (
+                    (
+                        static_cast<uint64_t>(m_high - m_low)
+                        * one_probability
+                    )
+                    >> PROBABILITY_BITS
+                );
+
+            if (bit)
+            {
+                m_high = middle;
+            }
+            else
+            {
+                // +1 has something to do with squashing carrry bits and
+                // underflow. I'm fuzzy with the maths.
+                m_low = middle + 1;
+            }
+
+            // flush while the top byte is all set for both low and high
+            // i.e. normalise.
+            while ((m_low ^ m_high) < (1u << 24))
+            {
+                m_bytes->push_back(m_low >> 24);
+                m_low <<= 8;
+
+                // Some people ignore the 0xff at the end, can't remember
+                // why it was there. *shrug*
+                m_high = (m_high << 8) | 0xff;
+            }
+        }
+
+        ~fpaq0p_encoder()
+        {
+            // Just copy Fabian's flush code.
+
+            // Find shortest encoding that still decodes to the
+            // right symbols. This is assume the decoder implicitly
+            // zero-pads out of bounds array accesses.
+            uint32_t round_up = 0xffffffu;
+            while (round_up)
+            {
+                if ((m_low | round_up) != ~0u)
+                {
+                    uint32_t rounded = (m_low + round_up) & ~round_up;
+
+                    if (rounded <= m_high)
+                    {
+                        // inside interval, we're good!
+                        m_low = rounded;
+                        break;
+                    }
+                }
+
+                round_up >>= 8;
+            }
+
+            while (m_low)
+            {
+                m_bytes->push_back(m_low >> 24);
+                m_low <<= 8;
+            }
+        }
+
+    private:
+        Bytes*      m_bytes = 0;
+        uint32_t    m_low   = 0;
+        uint32_t    m_high  = 0xffffffff;
+    };
+
+    class fpaq0p_decoder
+    {
+    public:
+        // Maths means for 32 bits, max range is 15. Can't remember why
+        // Maybe test to see if I can get away with > 15?
+        const unsigned PROBABILITY_BITS = 15;
+
+        fpaq0p_decoder(Bytes& bytes)
+            : m_bytes(&bytes)
+            , m_byteSize(bytes.size())
+        {
+            m_value = (m_value << 8) + Read();
+            m_value = (m_value << 8) + Read();
+            m_value = (m_value << 8) + Read();
+            m_value = (m_value << 8) + Read();
+        }
+
+        unsigned Decode(uint16_t one_probability)
+        {
+            assert(one_probability < (1 << PROBABILITY_BITS));
+
+            const uint32_t middle =
+                m_low
+                +
+                (
+                    (
+                        static_cast<uint64_t>(m_high - m_low)
+                        * one_probability
+                    )
+                    >> PROBABILITY_BITS
+                );
+
+            auto bit = 0u;
+
+            if (m_value <= middle)
+            {
+                bit = 1;
+                m_high = middle;
+            }
+            else
+            {
+                m_low = middle + 1;
+            }
+
+            // Renormaise
+            while ((m_low ^ m_high) < (1u << 24))
+            {
+                m_low <<= 8;
+                m_high = (m_high << 8) | 0xff;
+
+                m_value <<= 8;
+                m_value += Read();
+            }
+
+            return bit;
+        }
+
+        uint32_t FlushAndGetBytesRead()
+        {
+            // Do I need to renormalise?
+            return m_read_index;
+        }
+
+    private:
+        Bytes*      m_bytes         = 0;
+        uint32_t    m_value         = 0;
+        uint32_t    m_low           = 0;
+        uint32_t    m_high          = 0xffffffff;
+        uint32_t    m_read_index    = 0;
+        uint32_t    m_byteSize      = 0;
+
+        uint8_t Read()
+        {
+            if (m_read_index < m_byteSize)
+            {
+                return (*m_bytes)[m_read_index++];
+            }
+
+            return 0;
+        }
+    };
+
 } // namespace Range_coders
 
 // //////////////////////////////////////////////
@@ -2214,6 +2385,35 @@ void range_tests()
             }
 
             auto read = test_decoder.FlushAndGetBytesRead();
+            assert(read == data.size());
+        }
+    }
+
+    // Binary coder.
+    {
+        Bytes data;
+
+        auto tests = {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
+
+        {
+            fpaq0p_encoder encoder(data);
+
+            for (const unsigned t : tests)
+            {
+                encoder.Encode(t, 4000);
+            }
+        }
+
+        {
+            fpaq0p_decoder decoder(data);
+
+            for (const unsigned t : tests)
+            {
+                auto value = decoder.Decode(4000);
+                assert(value == t);
+            }
+
+            auto read = decoder.FlushAndGetBytesRead();
             assert(read == data.size());
         }
     }
