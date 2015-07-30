@@ -24,7 +24,6 @@ CppApplication {
 
     files: [
         "DeltaCompress.cpp",
-        "Binary_coding.hpp",
     ]
 
     Group {     // Properties for the produced executable
