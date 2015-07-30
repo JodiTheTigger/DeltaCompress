@@ -690,7 +690,7 @@ void binary_tests()
 
 // //////////////////////////////////////////////////////
 
-struct DeltaData
+struct Delta_data
 {
     int orientation_largest;
     int orientation_a;
@@ -702,7 +702,7 @@ struct DeltaData
     int interacting;
 };
 
-inline constexpr bool operator==(const DeltaData& lhs, const DeltaData& rhs)
+inline constexpr bool operator==(const Delta_data& lhs, const Delta_data& rhs)
 {
     return
     (
@@ -717,14 +717,14 @@ inline constexpr bool operator==(const DeltaData& lhs, const DeltaData& rhs)
     );
 }
 
-inline constexpr bool operator!=(const DeltaData& lhs, const DeltaData& rhs)
+inline constexpr bool operator!=(const Delta_data& lhs, const Delta_data& rhs)
 {
     return !operator==(lhs,rhs);
 }
 
 // //////////////////////////////////////////////////////
 
-inline constexpr bool quat_equal(const DeltaData& lhs, const DeltaData& rhs)
+inline constexpr bool quat_equal(const Delta_data& lhs, const Delta_data& rhs)
 {
     return
     (
@@ -735,7 +735,7 @@ inline constexpr bool quat_equal(const DeltaData& lhs, const DeltaData& rhs)
     );
 }
 
-inline constexpr bool pos_equal(const DeltaData& lhs, const DeltaData& rhs)
+inline constexpr bool pos_equal(const Delta_data& lhs, const Delta_data& rhs)
 {
     return
     (
@@ -751,12 +751,12 @@ using ByteVector = std::vector<uint8_t>;
 
 // //////////////////////////////////////////////////////
 
-static const size_t     Cubes           = 901;
+static const size_t     CUBES           = 901;
 
 // RAM: FIXME: Currently gets stuck when the delta is larger than 26 packets.
-static const unsigned   PacketDelta     = 6;
+static const unsigned   PACKET_DELTA    = 6;
 
-typedef std::array<DeltaData, Cubes> Frame;
+typedef std::array<Delta_data, CUBES> Frame;
 
 // //////////////////////////////////////////////////////
 
@@ -988,11 +988,11 @@ struct Predictors
     Vec3f angular_acceleration_per_frame;
 };
 
-typedef std::array<Predictors, Cubes> Frame_predicitons;
+typedef std::array<Predictors, CUBES> Frame_predicitons;
 
 // //////////////////////////////////////////////////////
 
-auto constexpr position(const DeltaData& lhs) -> Vec3i
+auto constexpr position(const Delta_data& lhs) -> Vec3i
 {
     return
     {
@@ -1314,7 +1314,7 @@ Gaffer to_gaffer(const Quat& quat)
     return result;
 }
 
-Gaffer to_gaffer(const DeltaData& delta)
+Gaffer to_gaffer(const Delta_data& delta)
 {
     return Gaffer
     {
@@ -1346,700 +1346,697 @@ unsigned MinBits(unsigned value)
 using namespace Coders;
 using namespace Coders::Models;
 
-namespace Naive_error
+// Found emperically.
+// Changing restitution for cube 0 makes no difference.
+static const constexpr int LOWEST_POINT         = 38;
+static const constexpr int LOWEST_POINT_CUBE_0  = 367;
+static const constexpr float RESTITUTION        = 0.869;
+static const constexpr float DRAG               = 0.997;
+static const constexpr float DISTANCE_CUBE_0_SQ = 1742 * 1742;
+
+struct Model
 {
-    // Found emperically.
-    // Changing restitution for cube 0 makes no difference.
-    static const constexpr int LOWEST_POINT         = 38;
-    static const constexpr int LOWEST_POINT_CUBE_0  = 367;
-    static const constexpr float RESTITUTION        = 0.869;
-    static const constexpr float DRAG               = 0.997;
-    static const constexpr float DISTANCE_CUBE_0_SQ = 1742 * 1742;
+    using Coder         = Fpaq0p_32bits<13>;
+    using Base_model    = Dual_exponential<Coder>;
 
-    struct Model
+    // Ok, lets just get coding first before simplification
+    Base_model has_error                      = {1, 5};
+    Base_model has_quat_largest               = {1, 4};
+    std::array<Base_model, 4> interactive     =
+    {{
+        {1, 1},
+        {1, 4},
+        {1, 2},
+        {1, 1}
+    }};
+
+    // If I get error, send both pos and quat errors.
+    Tree<Base_model, 2> quat_largest = {5, 7};
+    Tree<Base_model, 3> error_signs  = {5, 6};
+
+    // This seems to do the trick.
+    Unsigned_golomb<Base_model, 4, 10> error_bits =
     {
-        using Coder         = Fpaq0p_32bits<13>;
-        using Base_model    = Dual_exponential<Coder>;
-
-        // Ok, lets just get coding first before simplification
-        Base_model has_error                      = {1, 5};
-        Base_model has_quat_largest               = {1, 4};
-        std::array<Base_model, 4> interactive     =
-        {{
-            {1, 1},
-            {1, 4},
-            {1, 2},
-            {1, 1}
-        }};
-
-        // If I get error, send both pos and quat errors.
-        Tree<Base_model, 2> quat_largest = {5, 7};
-        Tree<Base_model, 3> error_signs  = {5, 6};
-
-        // This seems to do the trick.
-        Unsigned_golomb<Base_model, 4, 10> error_bits =
-        {
-            2, 5
-        };
-
-        Unsigned_golomb<Base_model, 4, 10> error_bits_near_cube =
-        {
-            2, 4
-        };
+        2, 5
     };
 
-    auto predict
-    (
-        const Predictors& v_and_a,
-        const Position_and_quat& base,
-        int zero_height,
-        unsigned frame_delta
-    )
-    -> Position_and_quat
+    Unsigned_golomb<Base_model, 4, 10> error_bits_near_cube =
     {
-        // p = p0 + v0t + at^2/2
-        // p = p0 + t(v0 + at/2)
-        // p = p0 + tv
-        // v = v0 + at/2
-        auto at_2 =
-            mul(v_and_a.linear_acceleration_per_frame, frame_delta / 2.0f);
+        2, 4
+    };
+};
 
-        auto v = add(v_and_a.linear_velocity_per_frame, at_2);
+auto predict
+(
+    const Predictors& v_and_a,
+    const Position_and_quat& base,
+    int zero_height,
+    unsigned frame_delta
+)
+-> Position_and_quat
+{
+    // p = p0 + v0t + at^2/2
+    // p = p0 + t(v0 + at/2)
+    // p = p0 + tv
+    // v = v0 + at/2
+    auto at_2 =
+        mul(v_and_a.linear_acceleration_per_frame, frame_delta / 2.0f);
 
-        // RAM: TODO: angular!
-        if ((std::abs(v[0]) > 0.0001f) || (std::abs(v[1]) > 0.0001f))
+    auto v = add(v_and_a.linear_velocity_per_frame, at_2);
+
+    // RAM: TODO: angular!
+    if ((std::abs(v[0]) > 0.0001f) || (std::abs(v[1]) > 0.0001f))
+    {
+        if (std::abs(v[2]) < 0.001f)
         {
-            if (std::abs(v[2]) < 0.001f)
-            {
-                v = mul(v, DRAG);
-            }
+            v = mul(v, DRAG);
         }
-
-        auto pos_delta = mul(v, frame_delta);
-
-        auto pos = Vec3i
-        {
-            static_cast<int>(std::round(base.position[0] + pos_delta[0])),
-            static_cast<int>(std::round(base.position[1] + pos_delta[1])),
-            static_cast<int>(std::round(base.position[2] + pos_delta[2]))
-        };
-
-        // reflect z about lowest point.
-        if (pos[2] < zero_height)
-        {
-            pos[2] = zero_height + RESTITUTION * (zero_height - pos[2]);
-        }
-
-        // Yay, this seems to work!
-        auto wt_2 =
-            mul(v_and_a.angular_acceleration_per_frame, frame_delta / 2.0f);
-
-        auto w = add(v_and_a.angular_velocity_per_frame, wt_2);
-
-        auto w_delta = mul(w, frame_delta);
-
-        // Ok, need to convert to quat to do actual multiplications
-        Quat r = to_quat(Rotor{w_delta});
-
-        auto rotation = mul(r, base.quat);
-
-        return
-        {
-            pos,
-            rotation,
-        };
     }
 
-    auto update_prediciton
-    (
-        const Predictors& v_and_a,
-        const Position_and_quat& base,
-        const Position_and_quat& target,
-        unsigned frame_delta
-    )
-    -> Predictors
+    auto pos_delta = mul(v, frame_delta);
+
+    auto pos = Vec3i
     {
-        float frame_delta_f = static_cast<float>(frame_delta);
-        auto pos_delta = sub(target.position, base.position);
-        auto v = Vec3f
-        {
-            pos_delta[0] / frame_delta_f,
-            pos_delta[1] / frame_delta_f,
-            pos_delta[2] / frame_delta_f,
-        };
+        static_cast<int>(std::round(base.position[0] + pos_delta[0])),
+        static_cast<int>(std::round(base.position[1] + pos_delta[1])),
+        static_cast<int>(std::round(base.position[2] + pos_delta[2]))
+    };
 
-        auto v_delta = sub(v, v_and_a.linear_velocity_per_frame);
-        auto a = div(v_delta, frame_delta / 2.0f);
+    // reflect z about lowest point.
+    if (pos[2] < zero_height)
+    {
+        pos[2] = zero_height + RESTITUTION * (zero_height - pos[2]);
+    }
 
-        auto angle_delta = Vec3f{0.0f,0.0f,0.0f};
+    // Yay, this seems to work!
+    auto wt_2 =
+        mul(v_and_a.angular_acceleration_per_frame, frame_delta / 2.0f);
+
+    auto w = add(v_and_a.angular_velocity_per_frame, wt_2);
+
+    auto w_delta = mul(w, frame_delta);
+
+    // Ok, need to convert to quat to do actual multiplications
+    Quat r = to_quat(Rotor{w_delta});
+
+    auto rotation = mul(r, base.quat);
+
+    return
+    {
+        pos,
+        rotation,
+    };
+}
+
+auto update_prediciton
+(
+    const Predictors& v_and_a,
+    const Position_and_quat& base,
+    const Position_and_quat& target,
+    unsigned frame_delta
+)
+-> Predictors
+{
+    float frame_delta_f = static_cast<float>(frame_delta);
+    auto pos_delta = sub(target.position, base.position);
+    auto v = Vec3f
+    {
+        pos_delta[0] / frame_delta_f,
+        pos_delta[1] / frame_delta_f,
+        pos_delta[2] / frame_delta_f,
+    };
+
+    auto v_delta = sub(v, v_and_a.linear_velocity_per_frame);
+    auto a = div(v_delta, frame_delta / 2.0f);
+
+    auto angle_delta = Vec3f{0.0f,0.0f,0.0f};
+    if
+    (
+        (base.quat[0] != target.quat[0])
+        || (base.quat[1] != target.quat[1])
+        || (base.quat[2] != target.quat[2])
+        || (base.quat[3] != target.quat[3])
+    )
+    {
+        // Hmm, seem we get stupid magnitudess due
+        // to rotating near itself (from q to -q roughly).
+        auto target_quat_neg = mul(target.quat, -1.0f);
+
+        // http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
+        auto r                  = mul(target.quat, conjugate(base.quat));
+        auto r_neg              = mul(target_quat_neg, conjugate(base.quat));
+        auto rotor              = to_rotor(r);
+        auto rotor_neg          = to_rotor(r_neg);
+        auto mag_squared        = magnitude_squared(rotor);
+        auto mag_squared_neg    = magnitude_squared(rotor_neg);
+
+        angle_delta =
+            (mag_squared < mag_squared_neg) ?
+                rotor.vec :
+                rotor_neg.vec;
+    }
+
+    auto w = div(angle_delta, frame_delta);
+    auto w_delta = sub(w, v_and_a.angular_velocity_per_frame);
+    auto wa = div(w_delta, frame_delta / 2.0f);
+
+    return
+    {
+        v,
+        a,
+        w,
+        wa
+    };
+}
+
+auto swap_orientation_largest
+(
+    const Gaffer& quat,
+    unsigned new_largest
+)
+-> Gaffer
+{
+    // Due to errors, we cannot reliablly predict what the next
+    // largest value is going to be. So just encode it with the
+    // prediciton.
+    auto max = 256;
+    for (auto i = 0 ; i < 3; ++i)
+    {
         if
         (
-            (base.quat[0] != target.quat[0])
-            || (base.quat[1] != target.quat[1])
-            || (base.quat[2] != target.quat[2])
-            || (base.quat[3] != target.quat[3])
+            std::abs(quat.vec[i] - 256)
+            >
+            std::abs(max - 256)
         )
         {
-            // Hmm, seem we get stupid magnitudess due
-            // to rotating near itself (from q to -q roughly).
-            auto target_quat_neg = mul(target.quat, -1.0f);
-
-            // http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
-            auto r                  = mul(target.quat, conjugate(base.quat));
-            auto r_neg              = mul(target_quat_neg, conjugate(base.quat));
-            auto rotor              = to_rotor(r);
-            auto rotor_neg          = to_rotor(r_neg);
-            auto mag_squared        = magnitude_squared(rotor);
-            auto mag_squared_neg    = magnitude_squared(rotor_neg);
-
-            angle_delta =
-                (mag_squared < mag_squared_neg) ?
-                    rotor.vec :
-                    rotor_neg.vec;
+            max = quat.vec[i];
         }
-
-        auto w = div(angle_delta, frame_delta);
-        auto w_delta = sub(w, v_and_a.angular_velocity_per_frame);
-        auto wa = div(w_delta, frame_delta / 2.0f);
-
-        return
-        {
-            v,
-            a,
-            w,
-            wa
-        };
     }
 
-    auto swap_orientation_largest
-    (
-        const Gaffer& quat,
-        unsigned new_largest
-    )
-    -> Gaffer
+    int full_quat[4];
+
     {
-        // Due to errors, we cannot reliablly predict what the next
-        // largest value is going to be. So just encode it with the
-        // prediciton.
-        auto max = 256;
-        for (auto i = 0 ; i < 3; ++i)
+        auto j = 0;
+        for (unsigned i = 0; i < 3; ++i)
         {
-            if
-            (
-                std::abs(quat.vec[i] - 256)
-                >
-                std::abs(max - 256)
-            )
+            if (i == quat.orientation_largest)
             {
-                max = quat.vec[i];
+                j++;
             }
+
+            full_quat[j++] = quat.vec[i];
         }
-
-        int full_quat[4];
-
-        {
-            auto j = 0;
-            for (unsigned i = 0; i < 3; ++i)
-            {
-                if (i == quat.orientation_largest)
-                {
-                    j++;
-                }
-
-                full_quat[j++] = quat.vec[i];
-            }
-        }
-
-        full_quat[quat.orientation_largest] = max;
-
-        auto result = Gaffer
-        {
-            new_largest,
-            {0, 0, 0}
-        };
-
-        {
-            auto j = 0;
-            for (unsigned i = 0; i < 3; ++i)
-            {
-                if (i == new_largest)
-                {
-                    j++;
-                }
-
-                result.vec[i] = full_quat[j++];
-            }
-        }
-
-        return result;
     }
 
-    // //////////////////////////////////////////////////////
+    full_quat[quat.orientation_largest] = max;
 
-    auto distance_to_point
+    auto result = Gaffer
+    {
+        new_largest,
+        {0, 0, 0}
+    };
+
+    {
+        auto j = 0;
+        for (unsigned i = 0; i < 3; ++i)
+        {
+            if (i == new_largest)
+            {
+                j++;
+            }
+
+            result.vec[i] = full_quat[j++];
+        }
+    }
+
+    return result;
+}
+
+// //////////////////////////////////////////////////////
+
+auto distance_to_point
+(
+    const Vec3i segment_end_a,
+    const Vec3i segment_end_b,
+    const Vec3i point
+)
+-> unsigned
+{
+    auto v = sub(segment_end_a, segment_end_b);
+    auto w = sub(point, segment_end_a);
+
+    auto distance_square = []
     (
-        const Vec3i segment_end_a,
-        const Vec3i segment_end_b,
-        const Vec3i point
+        const Vec3i& lhs,
+        const Vec3i& rhs
     )
     -> unsigned
     {
-        auto v = sub(segment_end_a, segment_end_b);
-        auto w = sub(point, segment_end_a);
+        return
+            ((lhs[0] - rhs[0]) * (lhs[0] - rhs[0])) +
+            ((lhs[1] - rhs[1]) * (lhs[1] - rhs[1])) +
+            ((lhs[2] - rhs[2]) * (lhs[2] - rhs[2]));
+    };
 
-        auto distance_square = []
-        (
-            const Vec3i& lhs,
-            const Vec3i& rhs
-        )
-        -> unsigned
-        {
-            return
-                ((lhs[0] - rhs[0]) * (lhs[0] - rhs[0])) +
-                ((lhs[1] - rhs[1]) * (lhs[1] - rhs[1])) +
-                ((lhs[2] - rhs[2]) * (lhs[2] - rhs[2]));
-        };
+    auto c1 = dot(w, v);
 
-        auto c1 = dot(w, v);
-
-        if (c1 <= 0)
-        {
-            return distance_square(point, segment_end_a);
-        }
-
-        auto c2 = dot(v, v);
-
-        if (c2 <= c1)
-        {
-            return distance_square(point, segment_end_b);
-        }
-
-        auto b = c1 / c2;
-        Vec3i point_b =
-        {
-            segment_end_a[0] + v[0] * b,
-            segment_end_a[1] + v[1] * b,
-            segment_end_a[2] + v[2] * b,
-        };
-
-        return distance_square(point, point_b);
+    if (c1 <= 0)
+    {
+        return distance_square(point, segment_end_a);
     }
 
-    //===================================================================
+    auto c2 = dot(v, v);
 
-    auto encode
-    (
-        const Frame& base,
-        const Frame& target,
-        Frame_predicitons& predicitons,
-        unsigned frame_delta
-    )
-    -> Coders::Bytes
+    if (c2 <= c1)
     {
-        auto                size = base.size();
-        Coders::Bytes  data;
+        return distance_square(point, segment_end_b);
+    }
+
+    auto b = c1 / c2;
+    Vec3i point_b =
+    {
+        segment_end_a[0] + v[0] * b,
+        segment_end_a[1] + v[1] * b,
+        segment_end_a[2] + v[2] * b,
+    };
+
+    return distance_square(point, point_b);
+}
+
+//===================================================================
+
+auto encode
+(
+    const Frame& base,
+    const Frame& target,
+    Frame_predicitons& predicitons,
+    unsigned frame_delta
+)
+-> Coders::Bytes
+{
+    auto                size = base.size();
+    Coders::Bytes  data;
+
+    // //////////////////////////////////////////////////////
+
+    Model model;
+
+    {
+        Model::Coder::Encoder binary(data);
 
         // //////////////////////////////////////////////////////
 
-        Model model;
-
+        for (unsigned i = 0; i < size; ++i)
         {
-            Model::Coder::Encoder binary(data);
+            // Ok, get the predicted values, calculate the error
+            // and if the error is non-zero, then we have some encoding
+            // to do.
+            auto g_b = to_gaffer(base[i]);
+            auto g_t = to_gaffer(target[i]);
+            auto q_b = to_quat(g_b);
+            auto q_t = to_quat(g_t);
 
-            // //////////////////////////////////////////////////////
-
-            for (unsigned i = 0; i < size; ++i)
+            // Right, for fun, lets see how good the predictor is.
+            auto b = Position_and_quat
             {
-                // Ok, get the predicted values, calculate the error
-                // and if the error is non-zero, then we have some encoding
-                // to do.
-                auto g_b = to_gaffer(base[i]);
-                auto g_t = to_gaffer(target[i]);
-                auto q_b = to_quat(g_b);
-                auto q_t = to_quat(g_t);
+                position(base[i]),
+                q_b
+            };
 
-                // Right, for fun, lets see how good the predictor is.
-                auto b = Position_and_quat
-                {
-                    position(base[i]),
-                    q_b
-                };
+            auto t = Position_and_quat
+            {
+                position(target[i]),
+                q_t
+            };
 
-                auto t = Position_and_quat
-                {
-                    position(target[i]),
-                    q_t
-                };
+            auto zero_height = i ? LOWEST_POINT : LOWEST_POINT_CUBE_0;
 
-                auto zero_height = i ? LOWEST_POINT : LOWEST_POINT_CUBE_0;
+            auto calculated = predict
+            (
+                predicitons[i],
+                b,
+                zero_height,
+                frame_delta
+            );
 
-                auto calculated = predict
-                (
-                    predicitons[i],
-                    b,
-                    zero_height,
-                    frame_delta
-                );
+            auto calculated_quat = to_gaffer(calculated.quat);
 
-                auto calculated_quat = to_gaffer(calculated.quat);
+            predicitons[i] = update_prediciton
+            (
+                predicitons[i],
+                b,
+                t,
+                frame_delta
+            );
 
-                predicitons[i] = update_prediciton
-                (
-                    predicitons[i],
-                    b,
-                    t,
-                    frame_delta
-                );
+            auto error_pos = sub(position(target[i]), calculated.position);
+            auto error_quat_largest =
+                calculated_quat.orientation_largest !=
+                    static_cast<unsigned>(target[i].orientation_largest);
 
-                auto error_pos = sub(position(target[i]), calculated.position);
-                auto error_quat_largest =
-                    calculated_quat.orientation_largest !=
-                        static_cast<unsigned>(target[i].orientation_largest);
+            if (error_quat_largest)
+            {
+                calculated_quat =
+                    swap_orientation_largest
+                    (
+                        calculated_quat,
+                        static_cast<unsigned>
+                        (
+                            target[i].orientation_largest
+                        )
+                    );
+            }
+
+            auto error_quat = Vec3i
+            {
+                target[i].orientation_a - calculated_quat.vec[0],
+                target[i].orientation_b - calculated_quat.vec[1],
+                target[i].orientation_c - calculated_quat.vec[2],
+            };
+
+            auto has_error_pos =
+                error_pos[0]
+                || error_pos[1]
+                || error_pos[2];
+
+            auto has_error_quat =
+                error_quat[0]
+                    || error_quat[1]
+                    || error_quat[2];
+
+            auto has_error =
+                has_error_pos
+                || has_error_quat
+                || error_quat_largest;
+
+            // Encode!
+            model.has_error.Encode(binary, has_error);
+
+            if (has_error)
+            {
+                model.has_quat_largest.Encode(binary, error_quat_largest);
 
                 if (error_quat_largest)
                 {
-                    calculated_quat =
-                        swap_orientation_largest
-                        (
-                            calculated_quat,
-                            static_cast<unsigned>
-                            (
-                                target[i].orientation_largest
-                            )
-                        );
-                }
-
-                auto error_quat = Vec3i
-                {
-                    target[i].orientation_a - calculated_quat.vec[0],
-                    target[i].orientation_b - calculated_quat.vec[1],
-                    target[i].orientation_c - calculated_quat.vec[2],
-                };
-
-                auto has_error_pos =
-                    error_pos[0]
-                    || error_pos[1]
-                    || error_pos[2];
-
-                auto has_error_quat =
-                    error_quat[0]
-                        || error_quat[1]
-                        || error_quat[2];
-
-                auto has_error =
-                    has_error_pos
-                    || has_error_quat
-                    || error_quat_largest;                
-
-                // Encode!
-                model.has_error.Encode(binary, has_error);
-
-                if (has_error)
-                {
-                    model.has_quat_largest.Encode(binary, error_quat_largest);
-
-                    if (error_quat_largest)
-                    {
-                        model.quat_largest.Encode
-                        (
-                            binary,
-                            target[i].orientation_largest
-                        );
-                    }
-
-                    auto get_signs = [](const Vec3i& v) -> unsigned
-                    {
-                        unsigned result = 0;
-
-                        if (v[0] < 0) { result |= 1; }
-                        if (v[1] < 0) { result |= 2; }
-                        if (v[2] < 0) { result |= 4; }
-
-                        return result;
-                    };
-
-                    auto strip_signs = [](const Vec3i& v) -> Vec3i
-                    {
-                        return
-                        {
-                            std::abs(v[0]),
-                            std::abs(v[1]),
-                            std::abs(v[2]),
-                        };
-                    };
-
-                    auto signs_pos  = get_signs(error_pos);
-                    auto signs_quat = get_signs(error_quat);
-                    auto vec_pos    = strip_signs(error_pos);
-                    auto vec_quat   = strip_signs(error_quat);
-
-                    auto encode_error_bits = [&model, &binary](const Vec3i& vec)
-                    {
-                        for (auto v: vec)
-                        {
-                            assert(v < (1 << 10));
-
-                            model.error_bits.Encode(binary,v);
-                        }
-                    };
-                    auto encode_error_bits_near_cube =
-                        [&model, &binary](const Vec3i& vec)
-                    {
-                        for (auto v: vec)
-                        {
-                            assert(v < (1 << 10));
-
-                            model.error_bits_near_cube.Encode(binary,v);
-                        }
-                    };
-
-                    auto previous_cube_0_distance =
-                        sub(position(base[i]), position(base[0]));
-
-                    auto previous_cube_0_distance2 =
-                        dot(previous_cube_0_distance, previous_cube_0_distance);
-
-                    if (previous_cube_0_distance2 < DISTANCE_CUBE_0_SQ)
-                    {
-                        encode_error_bits_near_cube(vec_pos);
-                        encode_error_bits_near_cube(vec_quat);
-                    }
-                    else
-                    {
-                        encode_error_bits(vec_pos);
-                        encode_error_bits(vec_quat);
-                    }
-
-                    if (vec_pos[0] || vec_pos[1] || vec_pos[2])
-                    {
-                        model.error_signs.Encode
-                        (
-                            binary,
-                            signs_pos
-                        );
-                    }
-
-                    if (vec_quat[0] || vec_quat[1] || vec_quat[2])
-                    {
-                        model.error_signs.Encode
-                        (
-                            binary,
-                            signs_quat
-                        );
-                    }
-                }
-
-                // //////////////////////////////////////////////////////
-
-                auto quat_changed = !quat_equal(base[i], target[i]);
-                auto pos_changed = !pos_equal(base[i], target[i]);
-
-                // //////////////////////////////////////////////////////
-
-                // Note: You CAN get no interaction even if the quat or pos
-                // changes.
-                unsigned interact_lookup = base[i].interacting;
-                if (pos_changed | quat_changed)
-                {
-                    interact_lookup |= 2;
-                }
-
-                model.interactive[interact_lookup].Encode
-                (
-                    binary,
-                    target[i].interacting
-                );
-            }
-        }
-
-        return data;
-    }
-
-    auto decode
-    (
-        const Frame& base,
-        Frame_predicitons& predicitons,
-        const Coders::Bytes& data,
-        unsigned frame_delta
-    )
-    -> Frame
-    {
-        auto    size = base.size();
-        Frame   target;        
-
-        Model model;
-
-        {
-            Model::Coder::Decoder binary(data);
-
-            for (unsigned i = 0; i < size; ++i)
-            {
-                auto g_b = to_gaffer(base[i]);
-                auto q_b = to_quat(g_b);
-
-                // Right, for fun, lets see how good the predictor is.
-                auto b = Position_and_quat
-                {
-                    position(base[i]),
-                    q_b
-                };
-
-                auto zero_height = i ? LOWEST_POINT : LOWEST_POINT_CUBE_0;
-
-                auto calculated = predict
-                (
-                    predicitons[i],
-                    b,
-                    zero_height,
-                    frame_delta
-                );
-
-                auto calculated_quat = to_gaffer(calculated.quat);
-
-                auto has_error = model.has_error.Decode(binary);
-
-                if (has_error)
-                {
-                    auto has_error_quat_largest =
-                        model.has_quat_largest.Decode(binary);
-
-                    if (has_error_quat_largest)
-                    {
-                        auto largest = model.quat_largest.Decode(binary);
-
-                        calculated_quat =
-                            swap_orientation_largest(calculated_quat, largest);
-                    }
-
-                    // Get the errors and add them to things.
-                    auto decode_vec = [&model, &binary]() -> Vec3i
-                    {
-                        Vec3i result;
-
-                        for (auto& v: result)
-                        {
-                            v = model.error_bits.Decode(binary);
-                        }
-
-                        return result;
-                    };
-                    auto decode_vec_near_cube = [&model, &binary]() -> Vec3i
-                    {
-                        Vec3i result;
-
-                        for (auto& v: result)
-                        {
-                            v = model.error_bits_near_cube.Decode(binary);
-                        }
-
-                        return result;
-                    };
-
-                    Vec3i vec_pos;
-                    Vec3i vec_quat;
-
-                    auto add_signs = [](unsigned signs, const Vec3i& v) -> Vec3i
-                    {
-                        return
-                        {
-                            (signs & 1) ? -v[0] : v[0],
-                            (signs & 2) ? -v[1] : v[1],
-                            (signs & 4) ? -v[2] : v[2],
-                        };
-                    };
-
-                    auto previous_cube_0_distance =
-                        sub(position(base[i]), position(base[0]));
-
-                    auto previous_cube_0_distance2 =
-                        dot(previous_cube_0_distance, previous_cube_0_distance);
-
-
-                    if (previous_cube_0_distance2 < DISTANCE_CUBE_0_SQ)
-                    {
-                        vec_pos        = decode_vec_near_cube();
-                        vec_quat       = decode_vec_near_cube();
-                    }
-                    else
-                    {
-                        vec_pos        = decode_vec();
-                        vec_quat       = decode_vec();
-                    }
-
-                    unsigned signs_pos  = 0;
-                    unsigned signs_quat = 0;
-
-                    if (vec_pos[0] || vec_pos[1] || vec_pos[2])
-                    {
-                        signs_pos = model.error_signs.Decode(binary);
-                    }
-
-                    if (vec_quat[0] || vec_quat[1] || vec_quat[2])
-                    {
-                        signs_quat = model.error_signs.Decode(binary);
-                    }
-
-                    auto error_pos  = add_signs(signs_pos, vec_pos);
-                    auto error_quat = add_signs(signs_quat, vec_quat);
-
-                    calculated.position = add(calculated.position, error_pos);
-                    calculated_quat.vec = add(calculated_quat.vec, error_quat);
-                }
-
-                target[i].orientation_largest =
-                    calculated_quat.orientation_largest;
-
-                target[i].orientation_a = calculated_quat.vec[0];
-                target[i].orientation_b = calculated_quat.vec[1];
-                target[i].orientation_c = calculated_quat.vec[2];
-
-                target[i].position_x = calculated.position[0];
-                target[i].position_y = calculated.position[1];
-                target[i].position_z = calculated.position[2];
-
-                // //////////////////////////////////////////////////////
-
-                auto g_t = to_gaffer(target[i]);
-                auto q_t = to_quat(g_t);
-
-                auto t = Position_and_quat
-                {
-                    position(target[i]),
-                    q_t
-                };
-
-                // Update the predicitons for next time.
-                predicitons[i] = update_prediciton
-                (
-                    predicitons[i],
-                    b,
-                    t,
-                    frame_delta
-                );
-
-                // //////////////////////////////////////////////////////
-
-                auto quat_changed = !quat_equal(base[i], target[i]);
-                auto pos_changed = !pos_equal(base[i], target[i]);
-
-                // //////////////////////////////////////////////////////
-
-                unsigned interact_lookup = base[i].interacting;
-                if (pos_changed | quat_changed)
-                {
-                    interact_lookup |= 2;
-                }
-
-                target[i].interacting =
-                    model.interactive[interact_lookup].Decode
+                    model.quat_largest.Encode
                     (
-                        binary
+                        binary,
+                        target[i].orientation_largest
                     );
-            }
-        }
+                }
 
-        return target;
+                auto get_signs = [](const Vec3i& v) -> unsigned
+                {
+                    unsigned result = 0;
+
+                    if (v[0] < 0) { result |= 1; }
+                    if (v[1] < 0) { result |= 2; }
+                    if (v[2] < 0) { result |= 4; }
+
+                    return result;
+                };
+
+                auto strip_signs = [](const Vec3i& v) -> Vec3i
+                {
+                    return
+                    {
+                        std::abs(v[0]),
+                        std::abs(v[1]),
+                        std::abs(v[2]),
+                    };
+                };
+
+                auto signs_pos  = get_signs(error_pos);
+                auto signs_quat = get_signs(error_quat);
+                auto vec_pos    = strip_signs(error_pos);
+                auto vec_quat   = strip_signs(error_quat);
+
+                auto encode_error_bits = [&model, &binary](const Vec3i& vec)
+                {
+                    for (auto v: vec)
+                    {
+                        assert(v < (1 << 10));
+
+                        model.error_bits.Encode(binary,v);
+                    }
+                };
+                auto encode_error_bits_near_cube =
+                    [&model, &binary](const Vec3i& vec)
+                {
+                    for (auto v: vec)
+                    {
+                        assert(v < (1 << 10));
+
+                        model.error_bits_near_cube.Encode(binary,v);
+                    }
+                };
+
+                auto previous_cube_0_distance =
+                    sub(position(base[i]), position(base[0]));
+
+                auto previous_cube_0_distance2 =
+                    dot(previous_cube_0_distance, previous_cube_0_distance);
+
+                if (previous_cube_0_distance2 < DISTANCE_CUBE_0_SQ)
+                {
+                    encode_error_bits_near_cube(vec_pos);
+                    encode_error_bits_near_cube(vec_quat);
+                }
+                else
+                {
+                    encode_error_bits(vec_pos);
+                    encode_error_bits(vec_quat);
+                }
+
+                if (vec_pos[0] || vec_pos[1] || vec_pos[2])
+                {
+                    model.error_signs.Encode
+                    (
+                        binary,
+                        signs_pos
+                    );
+                }
+
+                if (vec_quat[0] || vec_quat[1] || vec_quat[2])
+                {
+                    model.error_signs.Encode
+                    (
+                        binary,
+                        signs_quat
+                    );
+                }
+            }
+
+            // //////////////////////////////////////////////////////
+
+            auto quat_changed = !quat_equal(base[i], target[i]);
+            auto pos_changed = !pos_equal(base[i], target[i]);
+
+            // //////////////////////////////////////////////////////
+
+            // Note: You CAN get no interaction even if the quat or pos
+            // changes.
+            unsigned interact_lookup = base[i].interacting;
+            if (pos_changed | quat_changed)
+            {
+                interact_lookup |= 2;
+            }
+
+            model.interactive[interact_lookup].Encode
+            (
+                binary,
+                target[i].interacting
+            );
+        }
     }
+
+    return data;
+}
+
+auto decode
+(
+    const Frame& base,
+    Frame_predicitons& predicitons,
+    const Coders::Bytes& data,
+    unsigned frame_delta
+)
+-> Frame
+{
+    auto    size = base.size();
+    Frame   target;
+
+    Model model;
+
+    {
+        Model::Coder::Decoder binary(data);
+
+        for (unsigned i = 0; i < size; ++i)
+        {
+            auto g_b = to_gaffer(base[i]);
+            auto q_b = to_quat(g_b);
+
+            // Right, for fun, lets see how good the predictor is.
+            auto b = Position_and_quat
+            {
+                position(base[i]),
+                q_b
+            };
+
+            auto zero_height = i ? LOWEST_POINT : LOWEST_POINT_CUBE_0;
+
+            auto calculated = predict
+            (
+                predicitons[i],
+                b,
+                zero_height,
+                frame_delta
+            );
+
+            auto calculated_quat = to_gaffer(calculated.quat);
+
+            auto has_error = model.has_error.Decode(binary);
+
+            if (has_error)
+            {
+                auto has_error_quat_largest =
+                    model.has_quat_largest.Decode(binary);
+
+                if (has_error_quat_largest)
+                {
+                    auto largest = model.quat_largest.Decode(binary);
+
+                    calculated_quat =
+                        swap_orientation_largest(calculated_quat, largest);
+                }
+
+                // Get the errors and add them to things.
+                auto decode_vec = [&model, &binary]() -> Vec3i
+                {
+                    Vec3i result;
+
+                    for (auto& v: result)
+                    {
+                        v = model.error_bits.Decode(binary);
+                    }
+
+                    return result;
+                };
+                auto decode_vec_near_cube = [&model, &binary]() -> Vec3i
+                {
+                    Vec3i result;
+
+                    for (auto& v: result)
+                    {
+                        v = model.error_bits_near_cube.Decode(binary);
+                    }
+
+                    return result;
+                };
+
+                Vec3i vec_pos;
+                Vec3i vec_quat;
+
+                auto add_signs = [](unsigned signs, const Vec3i& v) -> Vec3i
+                {
+                    return
+                    {
+                        (signs & 1) ? -v[0] : v[0],
+                        (signs & 2) ? -v[1] : v[1],
+                        (signs & 4) ? -v[2] : v[2],
+                    };
+                };
+
+                auto previous_cube_0_distance =
+                    sub(position(base[i]), position(base[0]));
+
+                auto previous_cube_0_distance2 =
+                    dot(previous_cube_0_distance, previous_cube_0_distance);
+
+
+                if (previous_cube_0_distance2 < DISTANCE_CUBE_0_SQ)
+                {
+                    vec_pos        = decode_vec_near_cube();
+                    vec_quat       = decode_vec_near_cube();
+                }
+                else
+                {
+                    vec_pos        = decode_vec();
+                    vec_quat       = decode_vec();
+                }
+
+                unsigned signs_pos  = 0;
+                unsigned signs_quat = 0;
+
+                if (vec_pos[0] || vec_pos[1] || vec_pos[2])
+                {
+                    signs_pos = model.error_signs.Decode(binary);
+                }
+
+                if (vec_quat[0] || vec_quat[1] || vec_quat[2])
+                {
+                    signs_quat = model.error_signs.Decode(binary);
+                }
+
+                auto error_pos  = add_signs(signs_pos, vec_pos);
+                auto error_quat = add_signs(signs_quat, vec_quat);
+
+                calculated.position = add(calculated.position, error_pos);
+                calculated_quat.vec = add(calculated_quat.vec, error_quat);
+            }
+
+            target[i].orientation_largest =
+                calculated_quat.orientation_largest;
+
+            target[i].orientation_a = calculated_quat.vec[0];
+            target[i].orientation_b = calculated_quat.vec[1];
+            target[i].orientation_c = calculated_quat.vec[2];
+
+            target[i].position_x = calculated.position[0];
+            target[i].position_y = calculated.position[1];
+            target[i].position_z = calculated.position[2];
+
+            // //////////////////////////////////////////////////////
+
+            auto g_t = to_gaffer(target[i]);
+            auto q_t = to_quat(g_t);
+
+            auto t = Position_and_quat
+            {
+                position(target[i]),
+                q_t
+            };
+
+            // Update the predicitons for next time.
+            predicitons[i] = update_prediciton
+            (
+                predicitons[i],
+                b,
+                t,
+                frame_delta
+            );
+
+            // //////////////////////////////////////////////////////
+
+            auto quat_changed = !quat_equal(base[i], target[i]);
+            auto pos_changed = !pos_equal(base[i], target[i]);
+
+            // //////////////////////////////////////////////////////
+
+            unsigned interact_lookup = base[i].interacting;
+            if (pos_changed | quat_changed)
+            {
+                interact_lookup |= 2;
+            }
+
+            target[i].interacting =
+                model.interactive[interact_lookup].Decode
+                (
+                    binary
+                );
+        }
+    }
+
+    return target;
 }
 
 #define PRINT_INT(x) printf("%-32s\t%d\n", #x, x);
@@ -2047,72 +2044,60 @@ namespace Naive_error
 
 void range_compress(std::vector<Frame>& frames)
 {
-    auto packets = frames.size();
+    auto packets            = frames.size();
+    unsigned bytes          = 0;
+    unsigned packetsCoded   = 0;
+    unsigned min            = 10000000;
+    unsigned max            = 0;
 
-    auto test = [&](auto encoder, auto decoder, const auto& title)
+    Frame_predicitons predict_server = {};
+    Frame_predicitons predict_client = {};
+
+    for (size_t i = PACKET_DELTA; i < packets; ++i)
     {
-        unsigned bytes = 0;
-        unsigned packetsCoded = 0;
-        unsigned min = 10000000;
-        unsigned max = 0;
+        auto buffer = encode(
+            frames[i-PACKET_DELTA],
+            frames[i],
+            predict_server,
+            PACKET_DELTA);
 
-        Frame_predicitons predict_server = {};
-        Frame_predicitons predict_client = {};
-
-        for (size_t i = PacketDelta; i < packets; ++i)
+        const unsigned size = buffer.size();
+        bytes += size;
+        if (bytes)
         {
-            auto buffer = encoder(
-                frames[i-PacketDelta],
-                frames[i],
-                predict_server,
-                PacketDelta);
-
-            const unsigned size = buffer.size();
-            bytes += size;
-            if (bytes)
-            {
-                min = std::min(min, size);
-                max = std::max(max, size);
-            }
-
-            if (do_decompress)
-            {
-                auto back = decoder(
-                    frames[i-PacketDelta],
-                    predict_client,
-                    buffer,
-                    PacketDelta);
-
-                assert(back == frames[i]);
-            }
-
-            packetsCoded++;
+            min = std::min(min, size);
+            max = std::max(max, size);
         }
 
-        float packetSizeAverge = ((float) bytes) / packetsCoded;
-        float bytesPerSecondAverage = packetSizeAverge * 60.0f;
-        float kbps = bytesPerSecondAverage * 8 / 1000.0f;
+        if (do_decompress)
+        {
+            auto back = decode(
+                frames[i-PACKET_DELTA],
+                predict_client,
+                buffer,
+                PACKET_DELTA);
 
-        printf("\n");
-        printf("== Compression (%s) =======================\n\n", title);
+            assert(back == frames[i]);
+        }
 
-        PRINT_INT(packetsCoded);
-        PRINT_INT(bytes);
-        PRINT_FLOAT(bytesPerSecondAverage);
-        PRINT_FLOAT(packetSizeAverge);
-        PRINT_INT(min);
-        PRINT_INT(max);
-        PRINT_FLOAT(kbps);
+        packetsCoded++;
+    }
 
-        printf("\n==============================================\n");
-    };
+    float packetSizeAverge = ((float) bytes) / packetsCoded;
+    float bytesPerSecondAverage = packetSizeAverge * 60.0f;
+    float kbps = bytesPerSecondAverage * 8 / 1000.0f;
 
-    test
-    (
-        Naive_error::encode,
-        Naive_error::decode,
-        "Naive_error"
-    );
+    printf("\n==============================================\n\n");
+
+    PRINT_INT(packetsCoded);
+    PRINT_INT(bytes);
+    PRINT_FLOAT(bytesPerSecondAverage);
+    PRINT_FLOAT(packetSizeAverge);
+    PRINT_INT(min);
+    PRINT_INT(max);
+    PRINT_FLOAT(kbps);
+
+    printf("\n==============================================\n");
 }
 
 int main(int, char**)
