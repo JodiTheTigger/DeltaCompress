@@ -693,7 +693,8 @@ unsigned MinBits(unsigned value)
 
 // //////////////////////////////////////////////////////
 
-using namespace Models;
+using namespace Coders;
+using namespace Coders::Models;
 
 namespace Naive_error
 {
@@ -707,7 +708,8 @@ namespace Naive_error
 
     struct Model
     {
-        using Base_model = Binary_two_speed<fpaq0p_encoder, fpaq0p_decoder>;
+        using Coder         = Fpaq0p_32bits<13>;
+        using Base_model    = Dual_exponential<Coder>;
 
         // Ok, lets just get coding first before simplification
         Base_model has_error                      = {1, 5};
@@ -721,16 +723,16 @@ namespace Naive_error
         }};
 
         // If I get error, send both pos and quat errors.
-        Binary_tree<Base_model, 2> quat_largest = {5, 7};
-        Binary_tree<Base_model, 3> error_signs  = {5, 6};
+        Tree<Base_model, 2> quat_largest = {5, 7};
+        Tree<Base_model, 3> error_signs  = {5, 6};
 
         // This seems to do the trick.
-        Unsigned_golomb_binary<Base_model, 4, 10> error_bits =
+        Unsigned_golomb<Base_model, 4, 10> error_bits =
         {
             2, 5
         };
 
-        Unsigned_golomb_binary<Base_model, 4, 10> error_bits_near_cube =
+        Unsigned_golomb<Base_model, 4, 10> error_bits_near_cube =
         {
             2, 4
         };
@@ -982,17 +984,17 @@ namespace Naive_error
         Frame_predicitons& predicitons,
         unsigned frame_delta
     )
-    -> Binary_types::Bytes
+    -> Coders::Bytes
     {
         auto                size = base.size();
-        Binary_types::Bytes  data;
+        Coders::Bytes  data;
 
         // //////////////////////////////////////////////////////
 
         Model model;
 
         {
-            Binary_coders::fpaq0p_encoder binary(data);
+            Model::Coder::Encoder binary(data);
 
             // //////////////////////////////////////////////////////
 
@@ -1207,7 +1209,7 @@ namespace Naive_error
     (
         const Frame& base,
         Frame_predicitons& predicitons,
-        const Binary_types::Bytes& data,
+        const Coders::Bytes& data,
         unsigned frame_delta
     )
     -> Frame
@@ -1218,7 +1220,7 @@ namespace Naive_error
         Model model;
 
         {
-            Binary_coders::fpaq0p_decoder binary(data);
+            Model::Coder::Decoder binary(data);
 
             for (unsigned i = 0; i < size; ++i)
             {
