@@ -752,8 +752,6 @@ using ByteVector = std::vector<uint8_t>;
 // //////////////////////////////////////////////////////
 
 static const size_t     CUBES           = 901;
-
-// RAM: FIXME: Currently gets stuck when the delta is larger than 26 packets.
 static const unsigned   PACKET_DELTA    = 6;
 
 typedef std::array<Delta_data, CUBES> Frame;
