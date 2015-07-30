@@ -16,14 +16,15 @@ CppApplication {
         "-std=c++14",
         "-Wextra",
         "-Wno-missing-braces",
-        "-Wno-unneeded-internal-declaration"
+        "-Wno-unneeded-internal-declaration",
+        "-g"
     ]
     cpp.treatWarningsAsErrors: true
     cpp.warningLevel: "all"
 
     files: [
         "DeltaCompress.cpp",
-        "Range_coding.hpp",
+        "Binary_coding.hpp",
     ]
 
     Group {     // Properties for the produced executable

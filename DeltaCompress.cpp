@@ -9,7 +9,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define _USE_MATH_DEFINES
 
-#include "Range_coding.hpp"
+#include "Binary_coding.hpp"
 
 #include <algorithm>
 #include <array>
@@ -693,7 +693,7 @@ unsigned MinBits(unsigned value)
 
 // //////////////////////////////////////////////////////
 
-using namespace Range_models;
+using namespace Models;
 
 namespace Naive_error
 {
@@ -982,17 +982,17 @@ namespace Naive_error
         Frame_predicitons& predicitons,
         unsigned frame_delta
     )
-    -> Range_types::Bytes
+    -> Binary_types::Bytes
     {
         auto                size = base.size();
-        Range_types::Bytes  data;
+        Binary_types::Bytes  data;
 
         // //////////////////////////////////////////////////////
 
         Model model;
 
         {
-            Range_coders::fpaq0p_encoder binary(data);
+            Binary_coders::fpaq0p_encoder binary(data);
 
             // //////////////////////////////////////////////////////
 
@@ -1207,7 +1207,7 @@ namespace Naive_error
     (
         const Frame& base,
         Frame_predicitons& predicitons,
-        const Range_types::Bytes& data,
+        const Binary_types::Bytes& data,
         unsigned frame_delta
     )
     -> Frame
@@ -1218,7 +1218,7 @@ namespace Naive_error
         Model model;
 
         {
-            Range_coders::fpaq0p_decoder binary(data);
+            Binary_coders::fpaq0p_decoder binary(data);
 
             for (unsigned i = 0; i < size; ++i)
             {
@@ -1502,7 +1502,7 @@ int main(int, char**)
 
     if (do_tests)
     {
-        range_tests();
+        binary_tests();
     }
 
     if (do_compression)
