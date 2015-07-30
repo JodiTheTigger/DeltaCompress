@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cassert>
 #include <type_traits>
+#include <chrono>
 
 // //////////////////////////////////////////////////////
 
@@ -2038,26 +2039,45 @@ auto decode
 }
 
 #define PRINT_INT(x) printf("%-32s\t%d\n", #x, x);
+#define PRINT_LONG(x) printf("%-32s\t%ld\n", #x, x);
 #define PRINT_FLOAT(x) printf("%-32s\t%f\n", #x, x);
 
 void range_compress(std::vector<Frame>& frames)
 {
+    using namespace std::chrono;
+
+    using Clock = high_resolution_clock;
+
     auto packets            = frames.size();
     unsigned bytes          = 0;
     unsigned packetsCoded   = 0;
     unsigned min            = 10000000;
     unsigned max            = 0;
 
+    auto min_speed_encode = microseconds::max();
+    auto max_speed_encode = microseconds::min();
+
+    auto min_speed_decode = microseconds::max();
+    auto max_speed_decode = microseconds::min();
+
     Frame_predicitons predict_server = {};
     Frame_predicitons predict_client = {};
 
     for (size_t i = PACKET_DELTA; i < packets; ++i)
     {
+        auto encode_start = Clock::now();
+
         auto buffer = encode(
             frames[i-PACKET_DELTA],
             frames[i],
             predict_server,
             PACKET_DELTA);
+
+        auto encode_time
+            = duration_cast<microseconds>(Clock::now() - encode_start);
+
+        min_speed_encode = std::min(min_speed_encode, encode_time);
+        max_speed_encode = std::max(max_speed_encode, encode_time);
 
         const unsigned size = buffer.size();
         bytes += size;
@@ -2069,6 +2089,8 @@ void range_compress(std::vector<Frame>& frames)
 
         if (do_decompress)
         {
+            auto decode_start = Clock::now();
+
             auto back = decode(
                 frames[i-PACKET_DELTA],
                 predict_client,
@@ -2076,6 +2098,12 @@ void range_compress(std::vector<Frame>& frames)
                 PACKET_DELTA);
 
             assert(back == frames[i]);
+
+            auto decode_time
+                = duration_cast<microseconds>(Clock::now() - decode_start);
+
+            min_speed_decode = std::min(min_speed_decode, decode_time);
+            max_speed_decode = std::max(max_speed_decode, decode_time);
         }
 
         packetsCoded++;
@@ -2091,6 +2119,12 @@ void range_compress(std::vector<Frame>& frames)
     PRINT_INT(bytes);
     PRINT_FLOAT(bytesPerSecondAverage);
     PRINT_FLOAT(packetSizeAverge);
+
+    PRINT_LONG(min_speed_encode.count());
+    PRINT_LONG(max_speed_encode.count());
+    PRINT_LONG(min_speed_decode.count());
+    PRINT_LONG(max_speed_decode.count());
+
     PRINT_INT(min);
     PRINT_INT(max);
     PRINT_FLOAT(kbps);
