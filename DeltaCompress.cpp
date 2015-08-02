@@ -48,6 +48,9 @@ namespace Coders
     template<unsigned PROBABILITY_RANGE_BITS = 15>
     struct Fpaq0p_32bits
     {
+        static const unsigned PROBABILITY_BITS  = PROBABILITY_RANGE_BITS;
+        static const unsigned PROBABILITY_RANGE = 1 << PROBABILITY_RANGE_BITS;
+
         // w >= 2f + 1 comes from:
         // http://sachingarg.com/compression/entropy_coding/64bit/
         static_assert
@@ -62,9 +65,6 @@ namespace Coders
             "Comon, what's the point if PROBABILITY_RANGE_BITS < 2?"
         );
 
-        static const unsigned PROBABILITY_BITS  = PROBABILITY_RANGE_BITS;
-        static const unsigned PROBABILITY_RANGE = 1 << PROBABILITY_RANGE_BITS;
-
         class Encoder
         {
         public:
@@ -72,7 +72,7 @@ namespace Coders
                 : m_bytes(&bytes)
             {}
 
-            void Encode(unsigned bit, uint16_t one_probability)
+            void encode(unsigned bit, uint16_t one_probability)
             {
                 assert(one_probability < PROBABILITY_RANGE);
 
@@ -124,7 +124,7 @@ namespace Coders
                 {
                     if ((m_low | round_up) != ~0u)
                     {
-                        uint32_t rounded = (m_low + round_up) & ~round_up;
+                        const uint32_t rounded = (m_low + round_up) & ~round_up;
 
                         if (rounded <= m_high)
                         {
@@ -148,24 +148,22 @@ namespace Coders
             Bytes*      m_bytes = 0;
             uint32_t    m_low   = 0;
             uint32_t    m_high  = 0xffffffff;
-
         };
 
         class Decoder
         {
         public:
-
             Decoder(const Bytes& bytes)
                 : m_bytes(&bytes)
-                , m_byteSize(bytes.size())
+                , m_byte_count(bytes.size())
             {
-                m_value = (m_value << 8) + Read();
-                m_value = (m_value << 8) + Read();
-                m_value = (m_value << 8) + Read();
-                m_value = (m_value << 8) + Read();
+                m_value = (m_value << 8) + read();
+                m_value = (m_value << 8) + read();
+                m_value = (m_value << 8) + read();
+                m_value = (m_value << 8) + read();
             }
 
-            unsigned Decode(uint16_t one_probability)
+            unsigned decode(uint16_t one_probability)
             {
                 assert(one_probability < (1 << PROBABILITY_RANGE_BITS));
 
@@ -199,15 +197,14 @@ namespace Coders
                     m_high = (m_high << 8) | 0xff;
 
                     m_value <<= 8;
-                    m_value += Read();
+                    m_value += read();
                 }
 
                 return bit;
             }
 
-            uint32_t FlushAndGetBytesRead()
+            uint32_t constexpr bytes_read() const
             {
-                // Do I need to renormalise?
                 return m_read_index;
             }
 
@@ -217,11 +214,11 @@ namespace Coders
             uint32_t        m_low           = 0;
             uint32_t        m_high          = 0xffffffff;
             uint32_t        m_read_index    = 0;
-            uint32_t        m_byteSize      = 0;
+            uint32_t        m_byte_count    = 0;
 
-            uint8_t Read()
+            uint8_t read()
             {
-                if (m_read_index < m_byteSize)
+                if (m_read_index < m_byte_count)
                 {
                     return (*m_bytes)[m_read_index++];
                 }
@@ -262,16 +259,18 @@ namespace Coders
                 assert(m_inertia_2);
             }
 
-            void Encode(Encoder& coder, unsigned value)
+            void encode(Encoder& coder, unsigned value)
             {
-                coder.Encode(value, m_probabilities_1 + m_probabilities_2);
-                Adapt(value);
+                coder.encode(value, m_probabilities_1 + m_probabilities_2);
+                adapt(value);
             }
 
-            unsigned Decode(Decoder& coder)
+            unsigned decode(Decoder& coder)
             {
-                auto result = coder.Decode(m_probabilities_1 + m_probabilities_2);
-                Adapt(result);
+                auto result =
+                    coder.decode(m_probabilities_1 + m_probabilities_2);
+
+                adapt(result);
 
                 return result;
             }
@@ -285,7 +284,7 @@ namespace Coders
             uint16_t m_probabilities_1;
             uint16_t m_probabilities_2;
 
-            void Adapt(unsigned value)
+            void adapt(unsigned value)
             {
                 if (value)
                 {
@@ -309,19 +308,20 @@ namespace Coders
         class Bitstream
         {
         public:
+            typedef CODER                   Coder;
             typedef typename CODER::Encoder Encoder;
             typedef typename CODER::Decoder Decoder;
 
             static const unsigned HALF_RANGE =  CODER::PROBABILITY_RANGE / 2;
 
-            static void Encode(Encoder& coder, unsigned value)
+            static void encode(Encoder& coder, unsigned value)
             {
-                coder.Encode(value, HALF_RANGE);
+                coder.encode(value, HALF_RANGE);
             }
 
-            static unsigned Decode(Decoder& coder)
+            static unsigned decode(Decoder& coder)
             {
-                auto result = coder.Decode(HALF_RANGE);
+                auto result = coder.decode(HALF_RANGE);
                 return result;
             }
         };
@@ -349,7 +349,7 @@ namespace Coders
                 }
             }
 
-            void Encode(typename BINARY_MODEL::Encoder& coder, unsigned value)
+            void encode(typename BINARY_MODEL::Encoder& coder, unsigned value)
             {
                 assert(value < MODEL_COUNT);
 
@@ -365,7 +365,7 @@ namespace Coders
 
                     if (mask & TOP_BIT)
                     {
-                        m_models[rebuilt - 1].Encode(coder, bit);
+                        m_models[rebuilt - 1].encode(coder, bit);
 
                         // At any point we get a zero, then that means
                         // we are not constrained by max value anymore.
@@ -381,11 +381,11 @@ namespace Coders
                 }
             }
 
-            unsigned Decode(typename BINARY_MODEL::Decoder& coder)
+            unsigned decode(typename BINARY_MODEL::Decoder& coder)
             {
-                unsigned rebuilt = 1;
-                unsigned count = MODEL_COUNT;
-                unsigned mask = MAX_VALUE;
+                unsigned rebuilt    = 1;
+                unsigned count      = MODEL_COUNT;
+                unsigned mask       = MAX_VALUE;
 
                 while (rebuilt < count)
                 {
@@ -393,7 +393,7 @@ namespace Coders
 
                     if (mask & TOP_BIT)
                     {
-                        new_bit = m_models[rebuilt - 1].Decode(coder);
+                        new_bit = m_models[rebuilt - 1].decode(coder);
 
                         if (!new_bit)
                         {
@@ -402,7 +402,7 @@ namespace Coders
                     }
 
                     rebuilt += rebuilt + new_bit;
-                    mask += mask;
+                    mask    += mask;
                 }
 
                 // Clear the top bit due to starting rebuilt with 1.
@@ -445,7 +445,7 @@ namespace Coders
                     );
             }
 
-            void Encode(typename BINARY_MODEL::Encoder& coder, unsigned value)
+            void encode(typename BINARY_MODEL::Encoder& coder, unsigned value)
             {
                 // Enocde how many bits we are sending
                 unsigned min_bits = 0;
@@ -468,7 +468,7 @@ namespace Coders
                     assert(min_bits_2 <= BITCOUNT_FOR_MAX_VALUE);
                 }
 
-                m_bits.Encode(coder, min_bits);
+                m_bits.encode(coder, min_bits);
 
                 if (min_bits)
                 {
@@ -482,7 +482,7 @@ namespace Coders
                     {
                         const auto mask = (1 << min_bits);
 
-                        Bitstream<typename BINARY_MODEL::Coder>::Encode
+                        Bitstream<typename BINARY_MODEL::Coder>::encode
                         (
                             coder,
                             value & mask
@@ -491,9 +491,9 @@ namespace Coders
                 }
             }
 
-            unsigned Decode(typename BINARY_MODEL::Decoder& coder)
+            unsigned decode(typename BINARY_MODEL::Decoder& coder)
             {
-                auto min_bits = m_bits.Decode(coder);
+                auto min_bits = m_bits.decode(coder);
 
                 unsigned result = 0;
 
@@ -513,7 +513,7 @@ namespace Coders
                             <
                                 typename BINARY_MODEL::Coder
                             >
-                            ::Decode(coder);
+                            ::decode(coder);
 
                         --min_bits;
                     }
@@ -543,7 +543,7 @@ void binary_tests()
 
             for (const unsigned t : tests)
             {
-                encoder.Encode(t, (Fpaq0p_32bits<>::PROBABILITY_RANGE * 2) / 3);
+                encoder.encode(t, (Fpaq0p_32bits<>::PROBABILITY_RANGE * 2) / 3);
             }
         }
 
@@ -553,7 +553,7 @@ void binary_tests()
             for (const unsigned t : tests)
             {
                 auto value =
-                    decoder.Decode
+                    decoder.decode
                     (
                         (Fpaq0p_32bits<>::PROBABILITY_RANGE * 2)
                         / 3
@@ -562,7 +562,7 @@ void binary_tests()
                 assert(value == t);
             }
 
-            auto read = decoder.FlushAndGetBytesRead();
+            auto read = decoder.bytes_read();
             assert(read == data.size());
         }
     }
@@ -580,7 +580,7 @@ void binary_tests()
 
                 for (auto t : tests)
                 {
-                    model_in.Encode(test_encoder, t);
+                    model_in.encode(test_encoder, t);
                 }
             }
             {
@@ -588,11 +588,11 @@ void binary_tests()
 
                 for (unsigned t : tests)
                 {
-                    auto value = model_out.Decode(test_decoder);
+                    auto value = model_out.decode(test_decoder);
                     assert(value == t);
                 }
 
-                auto read = test_decoder.FlushAndGetBytesRead();
+                auto read = test_decoder.bytes_read();
                 assert(read == data.size());
             }
         };
@@ -634,7 +634,7 @@ void binary_tests()
 
             for (auto t : tests)
             {
-                tree.Encode(test_encoder, t % 6);
+                tree.encode(test_encoder, t % 6);
             }
         }
         {
@@ -648,11 +648,11 @@ void binary_tests()
 
             for (unsigned t : tests)
             {
-                auto value = tree.Decode(test_decoder);
+                auto value = tree.decode(test_decoder);
                 assert(value == (t % 6));
             }
 
-            auto read = test_decoder.FlushAndGetBytesRead();
+            auto read = test_decoder.bytes_read();
             assert(read == data.size());
         }
     }
@@ -668,7 +668,7 @@ void binary_tests()
 
             for (const unsigned t : tests)
             {
-                encoder.Encode(t, Fpaq0p_32bits<>::PROBABILITY_RANGE / 10);
+                encoder.encode(t, Fpaq0p_32bits<>::PROBABILITY_RANGE / 10);
             }
         }
 
@@ -678,12 +678,12 @@ void binary_tests()
             for (const unsigned t : tests)
             {
                 auto value =
-                    decoder.Decode(Fpaq0p_32bits<>::PROBABILITY_RANGE / 10);
+                    decoder.decode(Fpaq0p_32bits<>::PROBABILITY_RANGE / 10);
 
                 assert(value == t);
             }
 
-            auto read = decoder.FlushAndGetBytesRead();
+            auto read = decoder.bytes_read();
             assert(read == data.size());
         }
     }
@@ -1729,15 +1729,15 @@ auto encode
                 || error_quat_largest;
 
             // Encode!
-            model.has_error.Encode(binary, has_error);
+            model.has_error.encode(binary, has_error);
 
             if (has_error)
             {
-                model.has_quat_largest.Encode(binary, error_quat_largest);
+                model.has_quat_largest.encode(binary, error_quat_largest);
 
                 if (error_quat_largest)
                 {
-                    model.quat_largest.Encode
+                    model.quat_largest.encode
                     (
                         binary,
                         target[i].orientation_largest
@@ -1776,7 +1776,7 @@ auto encode
                     {
                         assert(v < (1 << 10));
 
-                        model.error_bits.Encode(binary,v);
+                        model.error_bits.encode(binary,v);
                     }
                 };
                 auto encode_error_bits_near_cube =
@@ -1786,7 +1786,7 @@ auto encode
                     {
                         assert(v < (1 << 10));
 
-                        model.error_bits_near_cube.Encode(binary,v);
+                        model.error_bits_near_cube.encode(binary,v);
                     }
                 };
 
@@ -1809,7 +1809,7 @@ auto encode
 
                 if (vec_pos[0] || vec_pos[1] || vec_pos[2])
                 {
-                    model.error_signs.Encode
+                    model.error_signs.encode
                     (
                         binary,
                         signs_pos
@@ -1818,7 +1818,7 @@ auto encode
 
                 if (vec_quat[0] || vec_quat[1] || vec_quat[2])
                 {
-                    model.error_signs.Encode
+                    model.error_signs.encode
                     (
                         binary,
                         signs_quat
@@ -1841,7 +1841,7 @@ auto encode
                 interact_lookup |= 2;
             }
 
-            model.interactive[interact_lookup].Encode
+            model.interactive[interact_lookup].encode
             (
                 binary,
                 target[i].interacting
@@ -1893,16 +1893,16 @@ auto decode
 
             auto calculated_quat = to_gaffer(calculated.quat);
 
-            auto has_error = model.has_error.Decode(binary);
+            auto has_error = model.has_error.decode(binary);
 
             if (has_error)
             {
                 auto has_error_quat_largest =
-                    model.has_quat_largest.Decode(binary);
+                    model.has_quat_largest.decode(binary);
 
                 if (has_error_quat_largest)
                 {
-                    auto largest = model.quat_largest.Decode(binary);
+                    auto largest = model.quat_largest.decode(binary);
 
                     calculated_quat =
                         swap_orientation_largest(calculated_quat, largest);
@@ -1915,7 +1915,7 @@ auto decode
 
                     for (auto& v: result)
                     {
-                        v = model.error_bits.Decode(binary);
+                        v = model.error_bits.decode(binary);
                     }
 
                     return result;
@@ -1926,7 +1926,7 @@ auto decode
 
                     for (auto& v: result)
                     {
-                        v = model.error_bits_near_cube.Decode(binary);
+                        v = model.error_bits_near_cube.decode(binary);
                     }
 
                     return result;
@@ -1968,12 +1968,12 @@ auto decode
 
                 if (vec_pos[0] || vec_pos[1] || vec_pos[2])
                 {
-                    signs_pos = model.error_signs.Decode(binary);
+                    signs_pos = model.error_signs.decode(binary);
                 }
 
                 if (vec_quat[0] || vec_quat[1] || vec_quat[2])
                 {
-                    signs_quat = model.error_signs.Decode(binary);
+                    signs_quat = model.error_signs.decode(binary);
                 }
 
                 auto error_pos  = add_signs(signs_pos, vec_pos);
@@ -2028,7 +2028,7 @@ auto decode
             }
 
             target[i].interacting =
-                model.interactive[interact_lookup].Decode
+                model.interactive[interact_lookup].decode
                 (
                     binary
                 );
