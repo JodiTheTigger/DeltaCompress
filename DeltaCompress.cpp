@@ -1316,6 +1316,7 @@ static const constexpr int LOWEST_POINT         = 38;
 static const constexpr int LOWEST_POINT_CUBE_0  = 367;
 static const constexpr float RESTITUTION        = 0.869;
 static const constexpr float DRAG               = 0.997;
+static const constexpr float ANGULAR_CORRECTION = 0.999;
 static const constexpr float DISTANCE_CUBE_0_SQ = 1742 * 1742;
 
 struct Model
@@ -1368,13 +1369,16 @@ auto predict
 
     auto v = add(v_and_a.linear_velocity_per_frame, at_2);
 
-    // RAM: TODO: angular!
-    if ((std::abs(v[0]) > 0.0001f) || (std::abs(v[1]) > 0.0001f))
+    const auto drag =
+        ((std::abs(v[0]) > 0.0001f) || (std::abs(v[1]) > 0.0001f))
+            ? (std::abs(v[2]) < 0.001f)
+                ? true
+                : false
+            : false;
+
+    if (drag)
     {
-        if (std::abs(v[2]) < 0.001f)
-        {
-            v = mul(v, DRAG);
-        }
+        v = mul(v, DRAG);
     }
 
     auto pos_delta = mul(v, frame_delta);
@@ -1397,6 +1401,15 @@ auto predict
         mul(v_and_a.angular_acceleration_per_frame, frame_delta / 2.0f);
 
     auto w = add(v_and_a.angular_velocity_per_frame, wt_2);
+
+    if (!drag)
+    {
+        w = mul(w, ANGULAR_CORRECTION);
+    }
+    else
+    {
+        w = mul(w, ANGULAR_CORRECTION * ANGULAR_CORRECTION);
+    }
 
     auto w_delta = mul(w, frame_delta);
 
