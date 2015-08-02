@@ -33,6 +33,20 @@ bool do_decompress  = true;
 
 // //////////////////////////////////////////////////////
 
+inline unsigned constexpr min_bits(unsigned value)
+{
+    unsigned result = 0;
+
+    while ((1u << result) <= value)
+    {
+        ++result;
+    }
+
+    return result;
+}
+
+// //////////////////////////////////////////////////////
+
 namespace Coders
 {
     // //////////////////////////////////////////////
@@ -448,39 +462,29 @@ namespace Coders
             void encode(typename BINARY_MODEL::Encoder& coder, unsigned value)
             {
                 // Enocde how many bits we are sending
-                unsigned min_bits = 0;
+                unsigned value_bits = min_bits(value);
 
-                while ((1u << min_bits) <= value)
-                {
-                    ++min_bits;
-                }
-
-                assert(min_bits <= MAX_VALUE);
+                assert(value_bits <= MAX_VALUE);
 
                 {
-                    unsigned min_bits_2 = 0;
-
-                    while ((1u << min_bits_2) <= min_bits)
-                    {
-                        ++min_bits_2;
-                    }
+                    unsigned min_bits_2 = min_bits(value_bits);
 
                     assert(min_bits_2 <= BITCOUNT_FOR_MAX_VALUE);
                 }
 
-                m_bits.encode(coder, min_bits);
+                m_bits.encode(coder, value_bits);
 
-                if (min_bits)
+                if (value_bits)
                 {
                     // No need to send the top bit
                     // as we can assume it's set due
-                    // to min_bits.
-                    --min_bits;
+                    // to value_bits.
+                    --value_bits;
 
                     // Send the bits, no probabilities.
-                    while (min_bits--)
+                    while (value_bits--)
                     {
-                        const auto mask = (1 << min_bits);
+                        const auto mask = (1 << value_bits);
 
                         Bitstream<typename BINARY_MODEL::Coder>::encode
                         (
@@ -528,20 +532,21 @@ namespace Coders
     }
 }
 
-void binary_tests()
+void run_tests()
 {
     using namespace Coders;
     using namespace Models;
 
+    const auto binary_test =
+            {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
+
     {
         Bytes data;
-
-        auto tests = {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
 
         {
             Fpaq0p_32bits<>::Encoder encoder(data);
 
-            for (const unsigned t : tests)
+            for (const unsigned t : binary_test)
             {
                 encoder.encode(t, (Fpaq0p_32bits<>::PROBABILITY_RANGE * 2) / 3);
             }
@@ -550,7 +555,7 @@ void binary_tests()
         {
             Fpaq0p_32bits<>::Decoder decoder(data);
 
-            for (const unsigned t : tests)
+            for (const unsigned t : binary_test)
             {
                 auto value =
                     decoder.decode
@@ -569,8 +574,6 @@ void binary_tests()
 
     // Binary Model Tests
     {
-        auto tests = {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
-
         auto Binary_test = [](auto tests, auto model_in, auto model_out)
         {
             Bytes data;
@@ -599,21 +602,21 @@ void binary_tests()
 
         Binary_test
         (
-            tests,
+            binary_test,
             Bitstream<Fpaq0p_32bits<>>(),
             Bitstream<Fpaq0p_32bits<>>()
         );
 
         Binary_test(
-            tests,
+            binary_test,
             Dual_exponential<Fpaq0p_32bits<>>(5,2),
             Dual_exponential<Fpaq0p_32bits<>>(5,2));
         Binary_test(
-            tests,
+            binary_test,
             Dual_exponential<Fpaq0p_32bits<>>(6,1),
             Dual_exponential<Fpaq0p_32bits<>>(6,1));
         Binary_test(
-            tests,
+            binary_test,
             Dual_exponential<Fpaq0p_32bits<>>(3,4),
             Dual_exponential<Fpaq0p_32bits<>>(3,4));
     }
@@ -661,12 +664,10 @@ void binary_tests()
     {
         Bytes data;
 
-        auto tests = {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
-
         {
             Fpaq0p_32bits<>::Encoder encoder(data);
 
-            for (const unsigned t : tests)
+            for (const unsigned t : binary_test)
             {
                 encoder.encode(t, Fpaq0p_32bits<>::PROBABILITY_RANGE / 10);
             }
@@ -675,7 +676,7 @@ void binary_tests()
         {
             Fpaq0p_32bits<>::Decoder decoder(data);
 
-            for (const unsigned t : tests)
+            for (const unsigned t : binary_test)
             {
                 auto value =
                     decoder.decode(Fpaq0p_32bits<>::PROBABILITY_RANGE / 10);
@@ -703,26 +704,6 @@ struct Delta_data
     int interacting;
 };
 
-inline constexpr bool operator==(const Delta_data& lhs, const Delta_data& rhs)
-{
-    return
-    (
-            (lhs.interacting            == rhs.interacting)
-        &&  (lhs.orientation_a          == rhs.orientation_a)
-        &&  (lhs.orientation_b          == rhs.orientation_b)
-        &&  (lhs.orientation_c          == rhs.orientation_c)
-        &&  (lhs.orientation_largest    == rhs.orientation_largest)
-        &&  (lhs.position_x             == rhs.position_x)
-        &&  (lhs.position_y             == rhs.position_y)
-        &&  (lhs.position_z             == rhs.position_z)
-    );
-}
-
-inline constexpr bool operator!=(const Delta_data& lhs, const Delta_data& rhs)
-{
-    return !operator==(lhs,rhs);
-}
-
 // //////////////////////////////////////////////////////
 
 inline constexpr bool quat_equal(const Delta_data& lhs, const Delta_data& rhs)
@@ -748,6 +729,18 @@ inline constexpr bool pos_equal(const Delta_data& lhs, const Delta_data& rhs)
 
 // //////////////////////////////////////////////////////
 
+inline constexpr bool operator==(const Delta_data& lhs, const Delta_data& rhs)
+{
+    return (quat_equal(lhs, rhs) && pos_equal(lhs,rhs));
+}
+
+inline constexpr bool operator!=(const Delta_data& lhs, const Delta_data& rhs)
+{
+    return !operator==(lhs,rhs);
+}
+
+// //////////////////////////////////////////////////////
+
 using ByteVector = std::vector<uint8_t>;
 
 // //////////////////////////////////////////////////////
@@ -759,7 +752,7 @@ typedef std::array<Delta_data, CUBES> Frame;
 
 // //////////////////////////////////////////////////////
 
-inline bool operator==(const Frame& lhs, const Frame& rhs)
+inline bool constexpr operator==(const Frame& lhs, const Frame& rhs)
 {
     auto size = lhs.size();
 
@@ -878,20 +871,6 @@ auto constexpr mul(const Vec3f& lhs, float multiple) -> Vec3f
         lhs[2] * multiple
     };
 };
-
-// RAM: NEEDED?
-auto constexpr dot(const Vec3f& lhs, const Vec3f& rhs) -> float
-{
-    return
-        lhs[0] * rhs[0] +
-        lhs[1] * rhs[1] +
-        lhs[2] * rhs[2];
-};
-
-auto constexpr normalise(const Vec3f& lhs) -> Vec3f
-{
-    return mul(lhs, 1.0f / std::sqrt(dot(lhs, lhs)));
-}
 
 // //////////////////////////////////////////////////////
 
@@ -1324,20 +1303,6 @@ Gaffer to_gaffer(const Delta_data& delta)
             delta.orientation_c,
         }
     };
-}
-
-// //////////////////////////////////////////////////////
-
-unsigned MinBits(unsigned value)
-{
-    unsigned result = 0;
-
-    while ((1u << result) <= value)
-    {
-        ++result;
-    }
-
-    return result;
 }
 
 // //////////////////////////////////////////////////////
@@ -2042,7 +2007,7 @@ auto decode
 #define PRINT_LONG(x) printf("%-32s\t%ld\n", #x, x);
 #define PRINT_FLOAT(x) printf("%-32s\t%f\n", #x, x);
 
-void range_compress(std::vector<Frame>& frames)
+void compress(std::vector<Frame>& frames)
 {
     using namespace std::chrono;
 
@@ -2171,12 +2136,12 @@ int main(int, char**)
 
     if (do_tests)
     {
-        binary_tests();
+        run_tests();
     }
 
     if (do_compression)
     {
-        range_compress(frames);
+        compress(frames);
     }
 
     return 0;
