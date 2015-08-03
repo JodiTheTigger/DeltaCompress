@@ -769,26 +769,6 @@ auto constexpr add(const Vec3i& lhs, const Vec3i& rhs) -> Vec3i
     };
 };
 
-auto constexpr div(const Vec3i& lhs, int denominator) -> Vec3i
-{
-    return
-    {
-        lhs[0] / denominator,
-        lhs[1] / denominator,
-        lhs[2] / denominator
-    };
-};
-
-auto constexpr mul(const Vec3i& lhs, int multiple) -> Vec3i
-{
-    return
-    {
-        lhs[0] * multiple,
-        lhs[1] * multiple,
-        lhs[2] * multiple
-    };
-};
-
 auto constexpr dot(const Vec3i& lhs, const Vec3i rhs) -> int
 {
     return (lhs[0] * rhs[0]) + (lhs[1] * rhs[1]) + (lhs[2] * rhs[2]);
