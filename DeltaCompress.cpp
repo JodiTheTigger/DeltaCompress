@@ -14,7 +14,6 @@
 #include <cstdint>
 #include <algorithm>
 #include <cassert>
-#include <type_traits>
 #include <chrono>
 
 // //////////////////////////////////////////////////////
@@ -29,6 +28,16 @@ bool do_decompress  = true;
 #define msvc_constexpr
 #else
 #define msvc_constexpr constexpr
+#endif
+
+#ifdef NDEBUG
+#define REQUIRE(expr) \
+        if (!(expr)) \
+        {\
+            printf("%s:%d: REQUIREMENT FAIL: %s\n", __FILE__, __LINE__, #expr);\
+        }
+#else
+#define REQUIRE(expr) assert(expr)
 #endif
 
 // //////////////////////////////////////////////////////
@@ -88,7 +97,7 @@ namespace Coders
 
             void encode(unsigned bit, uint16_t one_probability)
             {
-                assert(one_probability < PROBABILITY_RANGE);
+                REQUIRE(one_probability < PROBABILITY_RANGE);
 
                 // cast to 64 bits for more precision.
                 const uint32_t middle =
@@ -179,7 +188,7 @@ namespace Coders
 
             unsigned decode(uint16_t one_probability)
             {
-                assert(one_probability < (1 << PROBABILITY_RANGE_BITS));
+                REQUIRE(one_probability < (1 << PROBABILITY_RANGE_BITS));
 
                 const uint32_t middle =
                     m_low
@@ -269,8 +278,8 @@ namespace Coders
                 , m_probabilities_1(initial_probability_1)
                 , m_probabilities_2(initial_probability_2)
             {
-                assert(m_inertia_1);
-                assert(m_inertia_2);
+                REQUIRE(m_inertia_1);
+                REQUIRE(m_inertia_2);
             }
 
             void encode(Encoder& coder, unsigned value)
@@ -367,7 +376,7 @@ namespace Coders
 
             void encode(typename BINARY_MODEL::Encoder& coder, unsigned value)
             {
-                assert(value < MODEL_COUNT);
+                REQUIRE(value < MODEL_COUNT);
 
                 // Model the MSB first, then work our way down.
                 // Seems adds are better than << 1.
@@ -466,12 +475,12 @@ namespace Coders
                 // Enocde how many bits we are sending
                 unsigned value_bits = min_bits(value);
 
-                assert(value_bits <= MAX_VALUE);
+                REQUIRE(value_bits <= MAX_VALUE);
 
                 {
                     unsigned min_bits_2 = min_bits(value_bits);
 
-                    assert(min_bits_2 <= BITCOUNT_FOR_MAX_VALUE);
+                    REQUIRE(min_bits_2 <= BITCOUNT_FOR_MAX_VALUE);
                 }
 
                 m_bits.encode(coder, value_bits);
@@ -536,6 +545,8 @@ void run_tests()
     using namespace Coders;
     using namespace Models;
 
+    using Coder = Fpaq0p_32bits<>;
+
     const auto binary_test_items =
     {
         0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0
@@ -546,7 +557,7 @@ void run_tests()
         const auto p = (Fpaq0p_32bits<>::PROBABILITY_RANGE * 2) / 3;
 
         {
-            Fpaq0p_32bits<>::Encoder encoder(data);
+            Coder::Encoder encoder(data);
 
             for (const unsigned t : binary_test_items)
             {
@@ -555,17 +566,17 @@ void run_tests()
         }
 
         {
-            Fpaq0p_32bits<>::Decoder decoder(data);
+            Coder::Decoder decoder(data);
 
             for (const unsigned t : binary_test_items)
             {
                 auto value = decoder.decode(p);
 
-                assert(value == t);
+                REQUIRE(value == t);
             }
 
             auto read = decoder.bytes_read();
-            assert(read == data.size());
+            REQUIRE(read == data.size());
         }
     }
 
@@ -576,7 +587,7 @@ void run_tests()
             Bytes data;
 
             {
-                Fpaq0p_32bits<>::Encoder test_encoder(data);
+                Coder::Encoder test_encoder(data);
 
                 for (const auto t : binary_test_items)
                 {
@@ -584,44 +595,44 @@ void run_tests()
                 }
             }
             {
-                Fpaq0p_32bits<>::Decoder test_decoder(data);
+                Coder::Decoder test_decoder(data);
 
                 for (unsigned t : binary_test_items)
                 {
                     auto value = model_out.decode(test_decoder);
-                    assert(value == t);
+                    REQUIRE(value == t);
                 }
 
                 auto read = test_decoder.bytes_read();
-                assert(read == data.size());
+                REQUIRE(read == data.size());
             }
         };
 
         binary_test
         (
-            Bitstream<Fpaq0p_32bits<>>(),
-            Bitstream<Fpaq0p_32bits<>>()
+            Bitstream<Coder>(),
+            Bitstream<Coder>()
         );
         binary_test
         (
-            Dual_exponential<Fpaq0p_32bits<>>(5,2),
-            Dual_exponential<Fpaq0p_32bits<>>(5,2)
+            Dual_exponential<Coder>(5,2),
+            Dual_exponential<Coder>(5,2)
         );
         binary_test
         (
-            Dual_exponential<Fpaq0p_32bits<>>(6,1),
-            Dual_exponential<Fpaq0p_32bits<>>(6,1)
+            Dual_exponential<Coder>(6,1),
+            Dual_exponential<Coder>(6,1)
         );
         binary_test
         (
-            Dual_exponential<Fpaq0p_32bits<>>(3,4),
-            Dual_exponential<Fpaq0p_32bits<>>(3,4)
+            Dual_exponential<Coder>(3,4),
+            Dual_exponential<Coder>(3,4)
         );
     }
 
     // Binary tree tests.
     {
-        using Tree_model = Tree<Dual_exponential<Fpaq0p_32bits<>>, 3, 5>;
+        using Tree_model = Tree<Dual_exponential<Coder>, 3, 5>;
         Bytes data;
         Bytes tests
         {
@@ -645,11 +656,11 @@ void run_tests()
             for (unsigned t : tests)
             {
                 auto value = tree.decode(test_decoder);
-                assert(value == (t % 6));
+                REQUIRE(value == (t % 6));
             }
 
             auto read = test_decoder.bytes_read();
-            assert(read == data.size());
+            REQUIRE(read == data.size());
         }
     }
 }
@@ -1061,18 +1072,13 @@ Quat to_quat(const Gaffer& gaffer)
             largest_squared[2]
         );
 
-    assert(largest_value_squared >= 0);
+    REQUIRE(largest_value_squared >= 0);
 
     // Deal with quantising errors.
     auto next_largest = largest_squared[0];
-    if (next_largest < largest_squared[1])
-    {
-        next_largest = largest_squared[1];
-    }
-    if (next_largest < largest_squared[2])
-    {
-        next_largest = largest_squared[2];
-    }
+
+    next_largest = std::max(next_largest, largest_squared[1]);
+    next_largest = std::max(next_largest, largest_squared[2]);
 
     if (next_largest > largest_value_squared)
     {
@@ -1105,6 +1111,7 @@ Quat to_quat(const Gaffer& gaffer)
     result[gaffer.orientation_largest] = largest;
     result = mul(result, G_TO_Q);
     result = normalise(result);
+
     return result;
 }
 
@@ -1199,13 +1206,13 @@ Gaffer to_gaffer(const Quat& quat)
         }
     };
 
-    assert(result.vec[0] >= 0);
-    assert(result.vec[1] >= 0);
-    assert(result.vec[2] >= 0);
+    REQUIRE(result.vec[0] >= 0);
+    REQUIRE(result.vec[1] >= 0);
+    REQUIRE(result.vec[2] >= 0);
 
-    assert(result.vec[0] < 512);
-    assert(result.vec[1] < 512);
-    assert(result.vec[2] < 512);
+    REQUIRE(result.vec[0] < 512);
+    REQUIRE(result.vec[1] < 512);
+    REQUIRE(result.vec[2] < 512);
 
     return result;
 }
@@ -1608,7 +1615,7 @@ auto encode
                 {
                     for (auto component : v)
                     {
-                        assert(component < (1 << 10));
+                        REQUIRE(component < (1 << 10));
 
                         model.encode(binary,component);
                     }
@@ -1906,7 +1913,7 @@ void compress(std::vector<Frame>& frames)
                 buffer,
                 PACKET_DELTA);
 
-            assert(back == frames[i]);
+            REQUIRE(back == frames[i]);
 
             auto decode_time
                 = duration_cast<microseconds>(Clock::now() - decode_start);
