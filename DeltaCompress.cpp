@@ -656,15 +656,15 @@ void run_tests()
 
 // //////////////////////////////////////////////////////
 
+using Vec3i = std::array<int, 3>;
+
+// //////////////////////////////////////////////////////
+
 struct Delta_data
 {
     int orientation_largest;
-    int orientation_a;
-    int orientation_b;
-    int orientation_c;
-    int position_x;
-    int position_y;
-    int position_z;
+    Vec3i orientation;
+    Vec3i position;
     int interacting;
 };
 
@@ -674,9 +674,9 @@ inline constexpr bool quat_equal(const Delta_data& lhs, const Delta_data& rhs)
 {
     return
     (
-            (lhs.orientation_a          == rhs.orientation_a)
-        &&  (lhs.orientation_b          == rhs.orientation_b)
-        &&  (lhs.orientation_c          == rhs.orientation_c)
+            (lhs.orientation[0]          == rhs.orientation[0])
+        &&  (lhs.orientation[1]          == rhs.orientation[1])
+        &&  (lhs.orientation[2]          == rhs.orientation[2])
         &&  (lhs.orientation_largest    == rhs.orientation_largest)
     );
 }
@@ -685,9 +685,9 @@ inline constexpr bool pos_equal(const Delta_data& lhs, const Delta_data& rhs)
 {
     return
     (
-            (lhs.position_x             == rhs.position_x)
-        &&  (lhs.position_y             == rhs.position_y)
-        &&  (lhs.position_z             == rhs.position_z)
+            (lhs.position[0]             == rhs.position[0])
+        &&  (lhs.position[1]             == rhs.position[1])
+        &&  (lhs.position[2]             == rhs.position[2])
     );
 }
 
@@ -743,7 +743,6 @@ inline bool operator!=(const Frame& lhs, const Frame& rhs)
 
 // //////////////////////////////////////////////////////
 
-using Vec3i = std::array<int, 3>;
 using Vec4f = std::array<float, 4>;
 using Vec3f = std::array<float, 4>;
 
@@ -911,18 +910,6 @@ struct Predictors
 };
 
 typedef std::array<Predictors, CUBES> Frame_predicitons;
-
-// //////////////////////////////////////////////////////
-
-auto constexpr position(const Delta_data& lhs) -> Vec3i
-{
-    return
-    {
-        lhs.position_x,
-        lhs.position_y,
-        lhs.position_z,
-    };
-}
 
 // //////////////////////////////////////////////////////
 
@@ -1224,11 +1211,7 @@ Gaffer to_gaffer(const Delta_data& delta)
     return Gaffer
     {
         static_cast<unsigned>(delta.orientation_largest),
-        {
-            delta.orientation_a,
-            delta.orientation_b,
-            delta.orientation_c,
-        }
+        delta.orientation,
     };
 }
 
@@ -1513,13 +1496,13 @@ auto encode
             // Right, for fun, lets see how good the predictor is.
             auto b = Position_and_quat
             {
-                position(base[i]),
+                base[i].position,
                 q_b
             };
 
             auto t = Position_and_quat
             {
-                position(target[i]),
+                target[i].position,
                 q_t
             };
 
@@ -1543,7 +1526,7 @@ auto encode
                 frame_delta
             );
 
-            auto error_pos = sub(position(target[i]), calculated.position);
+            auto error_pos = sub(target[i].position, calculated.position);
             auto error_quat_largest =
                 calculated_quat.orientation_largest !=
                     static_cast<unsigned>(target[i].orientation_largest);
@@ -1561,12 +1544,7 @@ auto encode
                     );
             }
 
-            auto error_quat = Vec3i
-            {
-                target[i].orientation_a - calculated_quat.vec[0],
-                target[i].orientation_b - calculated_quat.vec[1],
-                target[i].orientation_c - calculated_quat.vec[2],
-            };
+            auto error_quat = sub(target[i].orientation, calculated_quat.vec);
 
             auto has_error_pos =
                 error_pos[0]
@@ -1646,7 +1624,7 @@ auto encode
                 };
 
                 auto previous_cube_0_distance =
-                    sub(position(base[i]), position(base[0]));
+                    sub(base[i].position, base[0].position);
 
                 auto previous_cube_0_distance2 =
                     dot(previous_cube_0_distance, previous_cube_0_distance);
@@ -1732,7 +1710,7 @@ auto decode
             // Right, for fun, lets see how good the predictor is.
             auto b = Position_and_quat
             {
-                position(base[i]),
+                base[i].position,
                 q_b
             };
 
@@ -1801,7 +1779,7 @@ auto decode
                 };
 
                 auto previous_cube_0_distance =
-                    sub(position(base[i]), position(base[0]));
+                    sub(base[i].position, base[0].position);
 
                 auto previous_cube_0_distance2 =
                     dot(previous_cube_0_distance, previous_cube_0_distance);
@@ -1841,13 +1819,8 @@ auto decode
             target[i].orientation_largest =
                 calculated_quat.orientation_largest;
 
-            target[i].orientation_a = calculated_quat.vec[0];
-            target[i].orientation_b = calculated_quat.vec[1];
-            target[i].orientation_c = calculated_quat.vec[2];
-
-            target[i].position_x = calculated.position[0];
-            target[i].position_y = calculated.position[1];
-            target[i].position_z = calculated.position[2];
+            target[i].orientation   = calculated_quat.vec;
+            target[i].position      = calculated.position;
 
             // //////////////////////////////////////////////////////
 
@@ -1856,7 +1829,7 @@ auto decode
 
             auto t = Position_and_quat
             {
-                position(target[i]),
+                target[i].position,
                 q_t
             };
 
