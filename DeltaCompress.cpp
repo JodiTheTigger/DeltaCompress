@@ -959,15 +959,6 @@ auto constexpr mul(const Quat& lhs, const Quat& rhs) -> Quat
     };
 }
 
-auto constexpr dot(const Quat& lhs, const Quat& rhs) -> float
-{
-    return
-        lhs[0]*rhs[0] +
-        lhs[1]*rhs[1] +
-        lhs[2]*rhs[2] +
-        lhs[3]*rhs[3];
-}
-
 auto constexpr magnitude_squared(const Quat& quat) -> float
 {
     return
@@ -1122,13 +1113,6 @@ Quat to_quat(const Gaffer& gaffer)
 
     result[gaffer.orientation_largest] = largest;
     result = mul(result, G_TO_Q);
-
-    {
-        auto mag = magnitude_squared(result);
-        auto quantised = 256 * (mag - 1.0f);
-        assert(std::abs(quantised) < 0.5f);
-    }
-
     result = normalise(result);
     return result;
 }
@@ -1165,11 +1149,10 @@ Gaffer to_gaffer(const Quat& quat)
     }
 
     // If the largest is -ve then we need to negate the quat so it's positive.
-    auto fixed_quat = quat;
-    if (quat[largest_index] < 0)
-    {
-        fixed_quat = mul(quat, -1.0f);
-    }
+    const auto fixed_quat =
+        (quat[largest_index] >= 0)
+            ? quat
+            : mul(quat, -1.0f);
 
     auto write_index = 0;
     Quat gaffer;
@@ -1411,6 +1394,7 @@ auto update_prediciton
         auto mag_squared        = magnitude_squared(rotor);
         auto mag_squared_neg    = magnitude_squared(rotor_neg);
 
+        // RAM: TODO: Can do this another way (via sign dot i think)
         angle_delta =
             (mag_squared < mag_squared_neg) ?
                 rotor.vec :
@@ -1909,9 +1893,9 @@ auto decode
     return target;
 }
 
-#define PRINT_INT(x) printf("%-32s\t%d\n", #x, x);
-#define PRINT_LONG(x) printf("%-32s\t%ld\n", #x, x);
-#define PRINT_FLOAT(x) printf("%-32s\t%f\n", #x, x);
+#define PRINT_INT(x)            printf("%-32s\t%d\n", #x, x);
+#define PRINT_FLOAT(x)          printf("%-32s\t%f\n", #x, x);
+#define PRINT_DURATION(x, y)    printf("%-32s\t%ld %s\n", #x, x.count(), y);
 
 void compress(std::vector<Frame>& frames)
 {
@@ -1925,11 +1909,11 @@ void compress(std::vector<Frame>& frames)
     unsigned min            = 10000000;
     unsigned max            = 0;
 
-    auto min_speed_encode = microseconds::max();
-    auto max_speed_encode = microseconds::min();
+    auto min_encode = microseconds::max();
+    auto max_encode = microseconds::min();
 
-    auto min_speed_decode = microseconds::max();
-    auto max_speed_decode = microseconds::min();
+    auto min_decode = microseconds::max();
+    auto max_decode = microseconds::min();
 
     Frame_predicitons predict_server = {};
     Frame_predicitons predict_client = {};
@@ -1947,8 +1931,8 @@ void compress(std::vector<Frame>& frames)
         auto encode_time
             = duration_cast<microseconds>(Clock::now() - encode_start);
 
-        min_speed_encode = std::min(min_speed_encode, encode_time);
-        max_speed_encode = std::max(max_speed_encode, encode_time);
+        min_encode = std::min(min_encode, encode_time);
+        max_encode = std::max(max_encode, encode_time);
 
         const unsigned size = buffer.size();
         bytes += size;
@@ -1973,8 +1957,8 @@ void compress(std::vector<Frame>& frames)
             auto decode_time
                 = duration_cast<microseconds>(Clock::now() - decode_start);
 
-            min_speed_decode = std::min(min_speed_decode, decode_time);
-            max_speed_decode = std::max(max_speed_decode, decode_time);
+            min_decode = std::min(min_decode, decode_time);
+            max_decode = std::max(max_decode, decode_time);
         }
 
         packetsCoded++;
@@ -1991,10 +1975,10 @@ void compress(std::vector<Frame>& frames)
     PRINT_FLOAT(bytesPerSecondAverage);
     PRINT_FLOAT(packetSizeAverge);
 
-    PRINT_LONG(min_speed_encode.count());
-    PRINT_LONG(max_speed_encode.count());
-    PRINT_LONG(min_speed_decode.count());
-    PRINT_LONG(max_speed_decode.count());
+    PRINT_DURATION(min_encode, "microseconds");
+    PRINT_DURATION(max_encode, "microseconds");
+    PRINT_DURATION(min_decode, "microseconds");
+    PRINT_DURATION(max_decode, "microseconds");
 
     PRINT_INT(min);
     PRINT_INT(max);
