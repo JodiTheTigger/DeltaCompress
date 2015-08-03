@@ -538,17 +538,20 @@ void run_tests()
     using namespace Models;
 
     const auto binary_test =
-            {0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0};
+    {
+        0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0
+    };
 
     {
         Bytes data;
+        const auto p = (Fpaq0p_32bits<>::PROBABILITY_RANGE * 2) / 3;
 
         {
             Fpaq0p_32bits<>::Encoder encoder(data);
 
             for (const unsigned t : binary_test)
             {
-                encoder.encode(t, (Fpaq0p_32bits<>::PROBABILITY_RANGE * 2) / 3);
+                encoder.encode(t, p);
             }
         }
 
@@ -557,12 +560,7 @@ void run_tests()
 
             for (const unsigned t : binary_test)
             {
-                auto value =
-                    decoder.decode
-                    (
-                        (Fpaq0p_32bits<>::PROBABILITY_RANGE * 2)
-                        / 3
-                    );
+                auto value = decoder.decode(p);
 
                 assert(value == t);
             }
@@ -581,7 +579,7 @@ void run_tests()
             {
                 Fpaq0p_32bits<>::Encoder test_encoder(data);
 
-                for (auto t : tests)
+                for (const auto t : tests)
                 {
                     model_in.encode(test_encoder, t);
                 }
