@@ -1891,6 +1891,8 @@ void compress(std::vector<Frame>& frames)
     Frame_predicitons predict_server = {};
     Frame_predicitons predict_client = {};
 
+    auto total_code_start = Clock::now();
+
     for (size_t i = PACKET_DELTA; i < packets; ++i)
     {
         auto encode_start = Clock::now();
@@ -1941,18 +1943,27 @@ void compress(std::vector<Frame>& frames)
     float bytesPerSecondAverage = packetSizeAverge * 60.0f;
     float kbps = bytesPerSecondAverage * 8 / 1000.0f;
 
+    auto average_code_decode_time =
+        duration_cast<microseconds>(Clock::now() - total_code_start)
+        / packetsCoded;
+
     printf("\n==============================================\n\n");
 
     PRINT_INT(packetsCoded);
-    PRINT_INT(bytes);
-    PRINT_FLOAT(bytesPerSecondAverage);
-    PRINT_FLOAT(packetSizeAverge);
+
+    printf("\n");
 
     PRINT_DURATION(min_encode, "microseconds");
     PRINT_DURATION(max_encode, "microseconds");
     PRINT_DURATION(min_decode, "microseconds");
     PRINT_DURATION(max_decode, "microseconds");
+    PRINT_DURATION(average_code_decode_time, "microseconds");
 
+    printf("\n");
+
+    PRINT_INT(bytes);
+    PRINT_FLOAT(bytesPerSecondAverage);
+    PRINT_FLOAT(packetSizeAverge);
     PRINT_INT(min);
     PRINT_INT(max);
     PRINT_FLOAT(kbps);
