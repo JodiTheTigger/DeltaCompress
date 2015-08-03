@@ -956,8 +956,10 @@ auto constexpr magnitude_squared(const Quat& quat) -> float
 }
 
 // NOTE: Interesting theory about normalisation from David Hammen
-// http://stackoverflow.com/a/12934750 however need to convert that one to
-// to use floats.
+// http://stackoverflow.com/a/12934750
+// However sqrt isn't in my hot loop so it makes no difference.
+// Magic number = sqrt((epislon * 0.5) * 0.5 * 8)
+// Magic number = sqrt(epislon * 2)
 auto msvc_constexpr normalise(const Quat& q) -> Quat
 {
     return mul(q, 1.0f / std::sqrt(magnitude_squared(q)));
