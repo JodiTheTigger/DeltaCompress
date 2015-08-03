@@ -488,7 +488,7 @@ namespace Coders
                     {
                         const auto mask = (1 << value_bits);
 
-                        Bitstream<typename BINARY_MODEL::Coder>::encode
+                        Stream::encode
                         (
                             coder,
                             value & mask
@@ -514,12 +514,7 @@ namespace Coders
                     {
                         result <<= 1;
 
-                        result |=
-                            Bitstream
-                            <
-                                typename BINARY_MODEL::Coder
-                            >
-                            ::decode(coder);
+                        result |= Stream::decode(coder);
 
                         --min_bits;
                     }
@@ -529,6 +524,8 @@ namespace Coders
             }
 
         private:
+            typedef Bitstream<typename BINARY_MODEL::Coder> Stream;
+
             Tree<BINARY_MODEL, BITCOUNT_FOR_MAX_VALUE, MAX_VALUE> m_bits;
         };
     }
