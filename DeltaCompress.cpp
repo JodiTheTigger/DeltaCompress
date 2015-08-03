@@ -351,6 +351,8 @@ namespace Coders
         class Tree
         {
         public:
+            typedef BINARY_MODEL Binary_model ;
+
             Tree() = default;
 
             // Forward the binary model constructor arguments.
@@ -537,7 +539,7 @@ void run_tests()
     using namespace Coders;
     using namespace Models;
 
-    const auto binary_test =
+    const auto binary_test_items =
     {
         0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0
     };
@@ -549,7 +551,7 @@ void run_tests()
         {
             Fpaq0p_32bits<>::Encoder encoder(data);
 
-            for (const unsigned t : binary_test)
+            for (const unsigned t : binary_test_items)
             {
                 encoder.encode(t, p);
             }
@@ -558,7 +560,7 @@ void run_tests()
         {
             Fpaq0p_32bits<>::Decoder decoder(data);
 
-            for (const unsigned t : binary_test)
+            for (const unsigned t : binary_test_items)
             {
                 auto value = decoder.decode(p);
 
@@ -572,14 +574,14 @@ void run_tests()
 
     // Binary Model Tests
     {
-        auto Binary_test = [](auto tests, auto model_in, auto model_out)
+        auto binary_test = [&binary_test_items](auto model_in, auto model_out)
         {
             Bytes data;
 
             {
                 Fpaq0p_32bits<>::Encoder test_encoder(data);
 
-                for (const auto t : tests)
+                for (const auto t : binary_test_items)
                 {
                     model_in.encode(test_encoder, t);
                 }
@@ -587,7 +589,7 @@ void run_tests()
             {
                 Fpaq0p_32bits<>::Decoder test_decoder(data);
 
-                for (unsigned t : tests)
+                for (unsigned t : binary_test_items)
                 {
                     auto value = model_out.decode(test_decoder);
                     assert(value == t);
@@ -598,40 +600,41 @@ void run_tests()
             }
         };
 
-        Binary_test
+        binary_test
         (
-            binary_test,
             Bitstream<Fpaq0p_32bits<>>(),
             Bitstream<Fpaq0p_32bits<>>()
         );
-
-        Binary_test(
-            binary_test,
+        binary_test
+        (
             Dual_exponential<Fpaq0p_32bits<>>(5,2),
-            Dual_exponential<Fpaq0p_32bits<>>(5,2));
-        Binary_test(
-            binary_test,
+            Dual_exponential<Fpaq0p_32bits<>>(5,2)
+        );
+        binary_test
+        (
             Dual_exponential<Fpaq0p_32bits<>>(6,1),
-            Dual_exponential<Fpaq0p_32bits<>>(6,1));
-        Binary_test(
-            binary_test,
+            Dual_exponential<Fpaq0p_32bits<>>(6,1)
+        );
+        binary_test
+        (
             Dual_exponential<Fpaq0p_32bits<>>(3,4),
-            Dual_exponential<Fpaq0p_32bits<>>(3,4));
+            Dual_exponential<Fpaq0p_32bits<>>(3,4)
+        );
     }
 
     // Binary tree tests.
     {
+        using Tree_model = Tree<Dual_exponential<Fpaq0p_32bits<>>, 3, 5>;
         Bytes data;
-        Bytes tests{0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 0,1,2};
+        Bytes tests
+        {
+            0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7,
+            0,1,2,3,4,5,6,7, 0,1,2
+        };
 
         {
-            Fpaq0p_32bits<>::Encoder test_encoder(data);
-            Tree
-            <
-                Dual_exponential<Fpaq0p_32bits<>>,
-                3,
-                5
-            > tree;
+            Tree_model::Binary_model::Encoder test_encoder(data);
+            Tree_model tree;
 
             for (auto t : tests)
             {
@@ -639,13 +642,8 @@ void run_tests()
             }
         }
         {
-            Fpaq0p_32bits<>::Decoder test_decoder(data);
-            Tree
-            <
-                Dual_exponential<Fpaq0p_32bits<>>,
-                3,
-                5
-            > tree;
+            Tree_model::Binary_model::Decoder test_decoder(data);
+            Tree_model tree;
 
             for (unsigned t : tests)
             {
@@ -654,35 +652,6 @@ void run_tests()
             }
 
             auto read = test_decoder.bytes_read();
-            assert(read == data.size());
-        }
-    }
-
-    // Binary coder.
-    {
-        Bytes data;
-
-        {
-            Fpaq0p_32bits<>::Encoder encoder(data);
-
-            for (const unsigned t : binary_test)
-            {
-                encoder.encode(t, Fpaq0p_32bits<>::PROBABILITY_RANGE / 10);
-            }
-        }
-
-        {
-            Fpaq0p_32bits<>::Decoder decoder(data);
-
-            for (const unsigned t : binary_test)
-            {
-                auto value =
-                    decoder.decode(Fpaq0p_32bits<>::PROBABILITY_RANGE / 10);
-
-                assert(value == t);
-            }
-
-            auto read = decoder.bytes_read();
             assert(read == data.size());
         }
     }
