@@ -454,7 +454,6 @@ namespace Coders
         public:
             Unsigned_golomb() = default;
 
-            // Forward the binary model constructor arguments.
             template<typename... Args>
             Unsigned_golomb(Args&&... args)
             {
@@ -580,7 +579,6 @@ void run_tests()
         }
     }
 
-    // Binary Model Tests
     {
         auto binary_test = [&binary_test_items](auto model_in, auto model_out)
         {
@@ -630,7 +628,6 @@ void run_tests()
         );
     }
 
-    // Binary tree tests.
     {
         using Tree_model = Tree<Dual_exponential<Coder>, 3, 5>;
         Bytes data;
@@ -671,7 +668,7 @@ using Vec3i = std::array<int, 3>;
 
 // //////////////////////////////////////////////////////
 
-// Cast straight from the file. Don't hcnage the order.
+// Cast straight from the file. Don't change the struct member order.
 // Assume all ints are positive.
 struct delta_data
 {
@@ -1260,7 +1257,6 @@ struct Model
     Tree<Base_model, 2> quat_largest = {5, 7};
     Tree<Base_model, 3> error_signs  = {5, 6};
 
-    // This seems to do the trick.
     Unsigned_golomb<Base_model, 4, 10> error_bits =
     {
         2, 5
@@ -1504,7 +1500,6 @@ auto encode
             auto q_b = to_quat(g_b);
             auto q_t = to_quat(g_t);
 
-            // Right, for fun, lets see how good the predictor is.
             auto b = Position_and_quat
             {
                 base[i].position,
@@ -1569,7 +1564,6 @@ auto encode
                 || has_error_quat
                 || error_quat_largest;
 
-            // Encode!
             model.has_error.encode(binary, has_error);
 
             if (has_error)
@@ -1704,7 +1698,6 @@ auto decode
             auto g_b = to_gaffer(base[i]);
             auto q_b = to_quat(g_b);
 
-            // Right, for fun, lets see how good the predictor is.
             auto b = Position_and_quat
             {
                 base[i].position,
