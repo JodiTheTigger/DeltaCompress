@@ -660,28 +660,30 @@ using Vec3i = std::array<int, 3>;
 
 // //////////////////////////////////////////////////////
 
-struct Delta_data
+// Cast straight from the file. Don't hcnage the order.
+// Assume all ints are positive.
+struct delta_data
 {
-    int orientation_largest;
-    Vec3i orientation;
-    Vec3i position;
-    int interacting;
+    unsigned    orientation_largest;
+    Vec3i       orientation;
+    Vec3i       position;
+    unsigned    interacting;
 };
 
 // //////////////////////////////////////////////////////
 
-inline constexpr bool quat_equal(const Delta_data& lhs, const Delta_data& rhs)
+inline constexpr bool quat_equal(const delta_data& lhs, const delta_data& rhs)
 {
     return
     (
-            (lhs.orientation[0]          == rhs.orientation[0])
-        &&  (lhs.orientation[1]          == rhs.orientation[1])
-        &&  (lhs.orientation[2]          == rhs.orientation[2])
+            (lhs.orientation[0]         == rhs.orientation[0])
+        &&  (lhs.orientation[1]         == rhs.orientation[1])
+        &&  (lhs.orientation[2]         == rhs.orientation[2])
         &&  (lhs.orientation_largest    == rhs.orientation_largest)
     );
 }
 
-inline constexpr bool pos_equal(const Delta_data& lhs, const Delta_data& rhs)
+inline constexpr bool pos_equal(const delta_data& lhs, const delta_data& rhs)
 {
     return
     (
@@ -693,12 +695,12 @@ inline constexpr bool pos_equal(const Delta_data& lhs, const Delta_data& rhs)
 
 // //////////////////////////////////////////////////////
 
-inline constexpr bool operator==(const Delta_data& lhs, const Delta_data& rhs)
+inline constexpr bool operator==(const delta_data& lhs, const delta_data& rhs)
 {
     return (quat_equal(lhs, rhs) && pos_equal(lhs,rhs));
 }
 
-inline constexpr bool operator!=(const Delta_data& lhs, const Delta_data& rhs)
+inline constexpr bool operator!=(const delta_data& lhs, const delta_data& rhs)
 {
     return !operator==(lhs,rhs);
 }
@@ -712,7 +714,7 @@ using ByteVector = std::vector<uint8_t>;
 static const size_t     CUBES           = 901;
 static const unsigned   PACKET_DELTA    = 6;
 
-typedef std::array<Delta_data, CUBES> Frame;
+typedef std::array<delta_data, CUBES> Frame;
 
 // //////////////////////////////////////////////////////
 
@@ -1208,11 +1210,11 @@ Gaffer to_gaffer(const Quat& quat)
     return result;
 }
 
-Gaffer to_gaffer(const Delta_data& delta)
+Gaffer to_gaffer(const delta_data& delta)
 {
     return Gaffer
     {
-        static_cast<unsigned>(delta.orientation_largest),
+        delta.orientation_largest,
         delta.orientation,
     };
 }
@@ -1531,7 +1533,7 @@ auto encode
             auto error_pos = sub(target[i].position, calculated.position);
             auto error_quat_largest =
                 calculated_quat.orientation_largest !=
-                    static_cast<unsigned>(target[i].orientation_largest);
+                    target[i].orientation_largest;
 
             if (error_quat_largest)
             {
@@ -1539,10 +1541,7 @@ auto encode
                     swap_orientation_largest
                     (
                         calculated_quat,
-                        static_cast<unsigned>
-                        (
-                            target[i].orientation_largest
-                        )
+                        target[i].orientation_largest
                     );
             }
 
@@ -1605,23 +1604,13 @@ auto encode
                 auto vec_pos    = strip_signs(error_pos);
                 auto vec_quat   = strip_signs(error_quat);
 
-                auto encode_error_bits = [&model, &binary](const Vec3i& vec)
+                auto encode_error_bits = [&binary](const Vec3i& v, auto& model)
                 {
-                    for (auto v: vec)
+                    for (auto component : v)
                     {
-                        assert(v < (1 << 10));
+                        assert(component < (1 << 10));
 
-                        model.error_bits.encode(binary,v);
-                    }
-                };
-                auto encode_error_bits_near_cube =
-                    [&model, &binary](const Vec3i& vec)
-                {
-                    for (auto v: vec)
-                    {
-                        assert(v < (1 << 10));
-
-                        model.error_bits_near_cube.encode(binary,v);
+                        model.encode(binary,component);
                     }
                 };
 
@@ -1633,13 +1622,13 @@ auto encode
 
                 if (previous_cube_0_distance2 < DISTANCE_CUBE_0_SQ)
                 {
-                    encode_error_bits_near_cube(vec_pos);
-                    encode_error_bits_near_cube(vec_quat);
+                    encode_error_bits(vec_pos,  model.error_bits_near_cube);
+                    encode_error_bits(vec_quat, model.error_bits_near_cube);
                 }
                 else
                 {
-                    encode_error_bits(vec_pos);
-                    encode_error_bits(vec_quat);
+                    encode_error_bits(vec_pos,  model.error_bits);
+                    encode_error_bits(vec_quat, model.error_bits);
                 }
 
                 if (vec_pos[0] || vec_pos[1] || vec_pos[2])
@@ -1664,12 +1653,11 @@ auto encode
             // //////////////////////////////////////////////////////
 
             auto quat_changed = !quat_equal(base[i], target[i]);
-            auto pos_changed = !pos_equal(base[i], target[i]);
+            auto pos_changed  = !pos_equal (base[i], target[i]);
 
             // //////////////////////////////////////////////////////
 
-            // Note: You CAN get no interaction even if the quat or pos
-            // changes.
+            // You CAN get no interaction even if the quat or pos changes.
             unsigned interact_lookup = base[i].interacting;
             if (pos_changed | quat_changed)
             {
@@ -1744,24 +1732,13 @@ auto decode
                 }
 
                 // Get the errors and add them to things.
-                auto decode_vec = [&model, &binary]() -> Vec3i
+                auto decode_vec = [&binary](auto& model) -> Vec3i
                 {
                     Vec3i result;
 
                     for (auto& v: result)
                     {
-                        v = model.error_bits.decode(binary);
-                    }
-
-                    return result;
-                };
-                auto decode_vec_near_cube = [&model, &binary]() -> Vec3i
-                {
-                    Vec3i result;
-
-                    for (auto& v: result)
-                    {
-                        v = model.error_bits_near_cube.decode(binary);
+                        v = model.decode(binary);
                     }
 
                     return result;
@@ -1789,13 +1766,13 @@ auto decode
 
                 if (previous_cube_0_distance2 < DISTANCE_CUBE_0_SQ)
                 {
-                    vec_pos        = decode_vec_near_cube();
-                    vec_quat       = decode_vec_near_cube();
+                    vec_pos     = decode_vec(model.error_bits_near_cube);
+                    vec_quat    = decode_vec(model.error_bits_near_cube);
                 }
                 else
                 {
-                    vec_pos        = decode_vec();
-                    vec_quat       = decode_vec();
+                    vec_pos     = decode_vec(model.error_bits);
+                    vec_quat    = decode_vec(model.error_bits);
                 }
 
                 unsigned signs_pos  = 0;
@@ -1811,7 +1788,7 @@ auto decode
                     signs_quat = model.error_signs.decode(binary);
                 }
 
-                auto error_pos  = add_signs(signs_pos, vec_pos);
+                auto error_pos  = add_signs(signs_pos,  vec_pos);
                 auto error_quat = add_signs(signs_quat, vec_quat);
 
                 calculated.position = add(calculated.position, error_pos);
@@ -1847,7 +1824,7 @@ auto decode
             // //////////////////////////////////////////////////////
 
             auto quat_changed = !quat_equal(base[i], target[i]);
-            auto pos_changed = !pos_equal(base[i], target[i]);
+            auto pos_changed  = !pos_equal (base[i], target[i]);
 
             // //////////////////////////////////////////////////////
 
