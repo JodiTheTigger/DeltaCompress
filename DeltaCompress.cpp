@@ -668,28 +668,22 @@ using Vec3i = std::array<int, 3>;
 
 // //////////////////////////////////////////////////////
 
+struct Gaffer
+{
+    unsigned orientation_largest;
+    Vec3i vec;
+};
+
 // Cast straight from the file. Don't change the struct member order.
 // Assume all ints are positive.
 struct delta_data
 {
-    unsigned    orientation_largest;
-    Vec3i       orientation;
+    Gaffer      rotation;
     Vec3i       position;
     unsigned    interacting;
 };
 
 // //////////////////////////////////////////////////////
-
-inline constexpr bool quat_equal(const delta_data& lhs, const delta_data& rhs)
-{
-    return
-    (
-            (lhs.orientation[0]         == rhs.orientation[0])
-        &&  (lhs.orientation[1]         == rhs.orientation[1])
-        &&  (lhs.orientation[2]         == rhs.orientation[2])
-        &&  (lhs.orientation_largest    == rhs.orientation_largest)
-    );
-}
 
 inline constexpr bool pos_equal(const delta_data& lhs, const delta_data& rhs)
 {
@@ -703,9 +697,25 @@ inline constexpr bool pos_equal(const delta_data& lhs, const delta_data& rhs)
 
 // //////////////////////////////////////////////////////
 
+inline constexpr bool operator==(const Gaffer& lhs, const Gaffer& rhs)
+{
+    return
+    (
+            (lhs.vec[0]                 == rhs.vec[0])
+        &&  (lhs.vec[1]                 == rhs.vec[1])
+        &&  (lhs.vec[2]                 == rhs.vec[2])
+        &&  (lhs.orientation_largest    == rhs.orientation_largest)
+    );
+}
+
+inline constexpr bool operator!=(const Gaffer& lhs, const Gaffer& rhs)
+{
+    return !operator==(lhs,rhs);
+}
+
 inline constexpr bool operator==(const delta_data& lhs, const delta_data& rhs)
 {
-    return (quat_equal(lhs, rhs) && pos_equal(lhs,rhs));
+    return (pos_equal(lhs, rhs) && (lhs.rotation == rhs.rotation));
 }
 
 inline constexpr bool operator!=(const delta_data& lhs, const delta_data& rhs)
@@ -827,12 +837,6 @@ auto constexpr mul(const Vec3f& lhs, float multiple) -> Vec3f
 
 // //////////////////////////////////////////////////////
 
-struct Gaffer
-{
-    unsigned orientation_largest;
-    Vec3i vec;
-};
-
 struct Quat
 {
     static const constexpr unsigned W_INDEX = 0;
@@ -884,22 +888,6 @@ static_assert
     std::is_pod<Rotor>::value,
     "Not a POD."
 );
-
-// //////////////////////////////////////////////////////
-
-inline constexpr bool operator==(const Gaffer& lhs, const Gaffer& rhs)
-{
-    return
-    (
-        (lhs.orientation_largest == rhs.orientation_largest) &&
-        (lhs.vec == rhs.vec)
-    );
-}
-
-inline constexpr bool operator!=(const Gaffer& lhs, const Gaffer& rhs)
-{
-    return !operator==(lhs,rhs);
-}
 
 // //////////////////////////////////////////////////////
 
@@ -1214,15 +1202,6 @@ Gaffer to_gaffer(const Quat& quat)
     return result;
 }
 
-Gaffer to_gaffer(const delta_data& delta)
-{
-    return Gaffer
-    {
-        delta.orientation_largest,
-        delta.orientation,
-    };
-}
-
 // //////////////////////////////////////////////////////
 
 using namespace Coders;
@@ -1495,10 +1474,8 @@ auto encode
             // Ok, get the predicted values, calculate the error
             // and if the error is non-zero, then we have some encoding
             // to do.
-            auto g_b = to_gaffer(base[i]);
-            auto g_t = to_gaffer(target[i]);
-            auto q_b = to_quat(g_b);
-            auto q_t = to_quat(g_t);
+            auto q_b = to_quat(base[i].rotation);
+            auto q_t = to_quat(target[i].rotation);
 
             auto b = Position_and_quat
             {
@@ -1535,7 +1512,7 @@ auto encode
             auto error_pos = sub(target[i].position, calculated.position);
             auto error_quat_largest =
                 calculated_quat.orientation_largest !=
-                    target[i].orientation_largest;
+                    target[i].rotation.orientation_largest;
 
             if (error_quat_largest)
             {
@@ -1543,11 +1520,11 @@ auto encode
                     swap_orientation_largest
                     (
                         calculated_quat,
-                        target[i].orientation_largest
+                        target[i].rotation.orientation_largest
                     );
             }
 
-            auto error_quat = sub(target[i].orientation, calculated_quat.vec);
+            auto error_quat = sub(target[i].rotation.vec, calculated_quat.vec);
 
             auto has_error_pos =
                 error_pos[0]
@@ -1575,7 +1552,7 @@ auto encode
                     model.quat_largest.encode
                     (
                         binary,
-                        target[i].orientation_largest
+                        target[i].rotation.orientation_largest
                     );
                 }
 
@@ -1653,7 +1630,7 @@ auto encode
 
             // //////////////////////////////////////////////////////
 
-            auto quat_changed = !quat_equal(base[i], target[i]);
+            auto quat_changed = !(base[i].rotation == target[i].rotation);
             auto pos_changed  = !pos_equal (base[i], target[i]);
 
             // //////////////////////////////////////////////////////
@@ -1695,8 +1672,7 @@ auto decode
 
         for (unsigned i = 0; i < size; ++i)
         {
-            auto g_b = to_gaffer(base[i]);
-            auto q_b = to_quat(g_b);
+            auto q_b = to_quat(base[i].rotation);
 
             auto b = Position_and_quat
             {
@@ -1795,16 +1771,15 @@ auto decode
                 calculated_quat.vec = add(calculated_quat.vec, error_quat);
             }
 
-            target[i].orientation_largest =
+            target[i].rotation.orientation_largest =
                 calculated_quat.orientation_largest;
 
-            target[i].orientation   = calculated_quat.vec;
+            target[i].rotation.vec  = calculated_quat.vec;
             target[i].position      = calculated.position;
 
             // //////////////////////////////////////////////////////
 
-            auto g_t = to_gaffer(target[i]);
-            auto q_t = to_quat(g_t);
+            auto q_t = to_quat(target[i].rotation);
 
             auto t = Position_and_quat
             {
@@ -1823,7 +1798,7 @@ auto decode
 
             // //////////////////////////////////////////////////////
 
-            auto quat_changed = !quat_equal(base[i], target[i]);
+            auto quat_changed = !(base[i].rotation == target[i].rotation);
             auto pos_changed  = !pos_equal (base[i], target[i]);
 
             // //////////////////////////////////////////////////////
