@@ -676,7 +676,7 @@ struct Gaffer
 
 // Cast straight from the file. Don't change the struct member order.
 // Assume all ints are positive.
-struct delta_data
+struct Delta_data
 {
     Gaffer      rotation;
     Vec3i       position;
@@ -685,7 +685,7 @@ struct delta_data
 
 // //////////////////////////////////////////////////////
 
-inline constexpr bool pos_equal(const delta_data& lhs, const delta_data& rhs)
+inline constexpr bool pos_equal(const Delta_data& lhs, const Delta_data& rhs)
 {
     return
     (
@@ -713,12 +713,12 @@ inline constexpr bool operator!=(const Gaffer& lhs, const Gaffer& rhs)
     return !operator==(lhs,rhs);
 }
 
-inline constexpr bool operator==(const delta_data& lhs, const delta_data& rhs)
+inline constexpr bool operator==(const Delta_data& lhs, const Delta_data& rhs)
 {
     return (pos_equal(lhs, rhs) && (lhs.rotation == rhs.rotation));
 }
 
-inline constexpr bool operator!=(const delta_data& lhs, const delta_data& rhs)
+inline constexpr bool operator!=(const Delta_data& lhs, const Delta_data& rhs)
 {
     return !operator==(lhs,rhs);
 }
@@ -732,7 +732,7 @@ using ByteVector = std::vector<uint8_t>;
 static const size_t     CUBES           = 901;
 static const unsigned   PACKET_DELTA    = 6;
 
-typedef std::array<delta_data, CUBES> Frame;
+typedef std::array<Delta_data, CUBES> Frame;
 
 // //////////////////////////////////////////////////////
 
