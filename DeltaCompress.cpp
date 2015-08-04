@@ -1,3 +1,4 @@
+
 // Copyright 2015 Richard Maxwell, all rights reserved.
 
 // http://gafferongames.com/2015/03/14/the-networked-physics-data-compression-challenge/
@@ -32,10 +33,10 @@ bool do_decompress  = true;
 
 #ifdef NDEBUG
 #define REQUIRE(expr) \
-        if (!(expr)) \
-        {\
-            printf("%s:%d: REQUIREMENT FAIL: %s\n", __FILE__, __LINE__, #expr);\
-        }
+    if (!(expr)) \
+    {\
+        printf("%s:%d: REQUIREMENT FAIL: %s\n", __FILE__, __LINE__, #expr);\
+    }
 #else
 #define REQUIRE(expr) assert(expr)
 #endif
@@ -1351,23 +1352,21 @@ auto update_prediciton
         || (base.quat[3] != target.quat[3])
     )
     {
-        // Hmm, seem we get stupid magnitudess due
-        // to rotating near itself (from q to -q roughly).
-        auto target_quat_neg = mul(target.quat, -1.0f);
+        auto side =
+            (base.quat[0] * target.quat[0])
+            + (base.quat[1] * target.quat[1])
+            + (base.quat[2] * target.quat[2])
+            + (base.quat[3] * target.quat[3]);
 
         // http://www.geomerics.com/blogs/quaternions-rotations-and-compression/
-        auto r                  = mul(target.quat, conjugate(base.quat));
-        auto r_neg              = mul(target_quat_neg, conjugate(base.quat));
-        auto rotor              = to_rotor(r);
-        auto rotor_neg          = to_rotor(r_neg);
-        auto mag_squared        = magnitude_squared(rotor);
-        auto mag_squared_neg    = magnitude_squared(rotor_neg);
+        // shortest rotation please.
+        auto r =
+            (side >= 0)
+                ? mul(target.quat, conjugate(base.quat))
+                : mul(mul(target.quat, -1.0f), conjugate(base.quat));
 
-        // RAM: TODO: Can do this another way (via sign dot i think)
-        angle_delta =
-            (mag_squared < mag_squared_neg) ?
-                rotor.vec :
-                rotor_neg.vec;
+        auto rotor = to_rotor(r);
+        angle_delta = rotor.vec;
     }
 
     auto w = div(angle_delta, frame_delta);
