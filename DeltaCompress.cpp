@@ -393,9 +393,11 @@ namespace Coders
                     {
                         m_models[rebuilt - 1].encode(coder, bit);
 
-                        // At any point we get a zero, then that means
-                        // we are not constrained by max value anymore.
-                        // RAM: TODO: algorithm is clunky - fix.
+                        // At any point we get a zero, then that means we are
+                        // not constrained by max value anymore.
+                        // There's probably a nicer way of doing this without
+                        // the redundant branches when we are no longer
+                        // constrained, but I couldn't think of one easily.
                         if (!bit)
                         {
                             mask = MODEL_COUNT - 1;
