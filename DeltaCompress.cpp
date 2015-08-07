@@ -57,7 +57,7 @@ bool do_decompress  = true;
 
 // //////////////////////////////////////////////////////
 
-inline unsigned constexpr min_bits(unsigned value)
+inline unsigned msvc_constexpr min_bits(unsigned value)
 {
     unsigned result = 0;
 
@@ -86,8 +86,8 @@ namespace Coders
     template<unsigned PROBABILITY_RANGE_BITS = 15>
     struct Fpaq0p_32bits
     {
-        static const unsigned PROBABILITY_BITS  = PROBABILITY_RANGE_BITS;
-        static const unsigned PROBABILITY_RANGE = 1 << PROBABILITY_RANGE_BITS;
+        static const uint16_t PROBABILITY_BITS  = PROBABILITY_RANGE_BITS;
+        static const uint16_t PROBABILITY_RANGE = 1 << PROBABILITY_RANGE_BITS;
 
         // w >= 2f + 1 comes from:
         // http://sachingarg.com/compression/entropy_coding/64bit/
@@ -285,11 +285,11 @@ namespace Coders
 
             Dual_exponential(
                     unsigned inertia_1 = 4,
-                    unsigned inertia_2 = 4,
-                    unsigned initial_probability_1 = QUARTER_RANGE,
-                    unsigned initial_probability_2 = QUARTER_RANGE)
-                : m_inertia_1(inertia_1)
-                , m_inertia_2(inertia_2)
+					unsigned inertia_2 = 4,
+					uint16_t initial_probability_1 = QUARTER_RANGE,
+					uint16_t initial_probability_2 = QUARTER_RANGE)
+                : m_inertia_1(static_cast<uint16_t>(inertia_1))
+                , m_inertia_2(static_cast<uint16_t>(inertia_2))
                 , m_probabilities_1(initial_probability_1)
                 , m_probabilities_2(initial_probability_2)
             {
@@ -314,8 +314,8 @@ namespace Coders
             }
 
         private:
-            static const unsigned HALF_RANGE    = CODER::PROBABILITY_RANGE / 2;
-            static const unsigned QUARTER_RANGE = HALF_RANGE / 2;
+            static const uint16_t HALF_RANGE    = CODER::PROBABILITY_RANGE / 2;
+            static const uint16_t QUARTER_RANGE = HALF_RANGE / 2;
 
             unsigned m_inertia_1;
             unsigned m_inertia_2;
@@ -375,9 +375,7 @@ namespace Coders
         class Tree
         {
         public:
-            typedef BINARY_MODEL Binary_model ;
-
-            Tree() = default;
+            typedef BINARY_MODEL Binary_model;
 
             // Forward the binary model constructor arguments.
             template<typename... Args>
@@ -469,8 +467,6 @@ namespace Coders
         class Unsigned_golomb
         {
         public:
-            Unsigned_golomb() = default;
-
             template<typename... Args>
             Unsigned_golomb(Args&&... args)
             {
@@ -753,7 +749,7 @@ typedef std::array<Delta_data, CUBES> Frame;
 
 // //////////////////////////////////////////////////////
 
-inline bool constexpr operator==(const Frame& lhs, const Frame& rhs)
+inline bool operator==(const Frame& lhs, const Frame& rhs)
 {
     auto size = lhs.size();
 
@@ -856,7 +852,7 @@ auto constexpr mul(const Vec3f& lhs, float multiple) -> Vec3f
 
 struct Quat
 {
-    static const constexpr unsigned W_INDEX = 0;
+    static constexpr unsigned W_INDEX = 0;
 
     Vec4f vec;
 
@@ -1037,8 +1033,8 @@ Quat constexpr to_quat(const Rotor& r)
 // //////////////////////////////////////////////////////
 
 static const float G_256    = 256.4995127f;
-static const float Q_TO_G   = G_256 * M_SQRT2;
-static const float G_TO_Q   = 1.0f / (G_256 * M_SQRT2);
+static const float Q_TO_G   = static_cast<float>(G_256 * M_SQRT2);
+static const float G_TO_Q   = static_cast<float>(1.0f / (G_256 * M_SQRT2));
 
 // Did some research, -16, -16, -256 seems to be the worse.
 // Use that as max sum.
@@ -1168,8 +1164,9 @@ Gaffer to_gaffer(const Quat& quat)
     // Screw it, if the quat would produce 256 or -257
     // then re-adjust
     auto multiple = 1.0f;
-    static const auto MAX_POSITIVE = (255.0f / 256.0f) * M_SQRT1_2;
-    static const auto MAX_NEGATIVE = -1.0f * M_SQRT1_2;
+    static const float MAX_NEGATIVE = static_cast<float>(-1.0 * M_SQRT1_2);
+    static const float MAX_POSITIVE =
+        static_cast<float>((255.0 / 256.0) * M_SQRT1_2);
 
     if (gaffer[0] > MAX_POSITIVE)
     {
@@ -1226,12 +1223,12 @@ using namespace Coders::Models;
 
 // Found emperically.
 // Changing restitution for cube 0 makes no difference.
-static const constexpr int LOWEST_POINT         = 38;
-static const constexpr int LOWEST_POINT_CUBE_0  = 367;
-static const constexpr float RESTITUTION        = 0.869;
-static const constexpr float DRAG               = 0.997;
-static const constexpr float ANGULAR_CORRECTION = 0.999;
-static const constexpr float DISTANCE_CUBE_0_SQ = 1742 * 1742;
+static constexpr int LOWEST_POINT         = 38;
+static constexpr int LOWEST_POINT_CUBE_0  = 367;
+static constexpr float RESTITUTION        = 0.869f;
+static constexpr float DRAG               = 0.997f;
+static constexpr float ANGULAR_CORRECTION = 0.999f;
+static constexpr float DISTANCE_CUBE_0_SQ = 1742.0f * 1742.0f;
 
 struct Model
 {
@@ -1294,7 +1291,8 @@ auto predict
         v = mul(v, DRAG);
     }
 
-    auto pos_delta = mul(v, frame_delta);
+	const auto frame_delta_f = static_cast<float>(frame_delta);
+    auto pos_delta = mul(v, frame_delta_f);
 
     auto pos = Vec3i
     {
@@ -1306,7 +1304,12 @@ auto predict
     // reflect z about lowest point.
     if (pos[2] < zero_height)
     {
-        pos[2] = zero_height + RESTITUTION * (zero_height - pos[2]);
+        pos[2] =
+            static_cast<int>
+            (
+                zero_height
+                + (RESTITUTION * (zero_height - pos[2]))
+            );
     }
 
     // Yay, this seems to work!
@@ -1324,7 +1327,7 @@ auto predict
         w = mul(w, ANGULAR_CORRECTION * ANGULAR_CORRECTION);
     }
 
-    auto w_delta = mul(w, frame_delta);
+    auto w_delta = mul(w, frame_delta_f);
 
     // Ok, need to convert to quat to do actual multiplications
     Quat r = to_quat(Rotor{w_delta});
@@ -1357,7 +1360,7 @@ auto update_prediciton
     };
 
     auto v_delta = sub(v, v_and_a.linear_velocity_per_frame);
-    auto a = div(v_delta, frame_delta / 2.0f);
+    auto a = div(v_delta, frame_delta_f / 2.0f);
 
     auto angle_delta = Vec3f{0.0f,0.0f,0.0f};
     if
@@ -1385,7 +1388,7 @@ auto update_prediciton
         angle_delta = rotor.vec;
     }
 
-    auto w = div(angle_delta, frame_delta);
+    auto w = div(angle_delta, frame_delta_f);
     auto w_delta = sub(w, v_and_a.angular_velocity_per_frame);
     auto wa = div(w_delta, frame_delta / 2.0f);
 
@@ -1837,7 +1840,8 @@ auto decode
 
 #define PRINT_INT(x)            printf("%-32s\t%d\n", #x, x);
 #define PRINT_FLOAT(x)          printf("%-32s\t%f\n", #x, x);
-#define PRINT_DURATION(x, y)    printf("%-32s\t%ld %s\n", #x, x.count(), y);
+#define PRINT_DURATION(x, y)    printf("%-32s\t%ld %s\n", #x, \
+                                static_cast<long>(x.count()), y);
 
 void compress(std::vector<Frame>& frames)
 {
