@@ -621,11 +621,6 @@ void run_tests()
 
         binary_test
         (
-            Bitstream<Coder>(),
-            Bitstream<Coder>()
-        );
-        binary_test
-        (
             Dual_exponential<Coder>(5,2),
             Dual_exponential<Coder>(5,2)
         );
