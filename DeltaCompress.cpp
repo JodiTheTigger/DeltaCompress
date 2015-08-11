@@ -18,6 +18,7 @@
 // http://gafferongames.com/2015/03/14/the-networked-physics-data-compression-challenge/
 //
 // g++ -std=c++14 DeltaCompress.cpp -Wall -Wextra -Werror -g -o DeltaCompress
+// cl.exe /GL /Gy /W4 /WX /O2 /MD /EHsc /D "WIN32" /D "NDEBUG" DeltaCompress.cpp
 //
 // //////////////////////////////////////////////////////
 
