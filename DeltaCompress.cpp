@@ -772,7 +772,6 @@ inline bool operator!=(const Frame& lhs, const Frame& rhs)
 
 // //////////////////////////////////////////////////////
 
-using Vec4f = std::array<float, 4>;
 using Vec3f = std::array<float, 4>;
 
 // //////////////////////////////////////////////////////
@@ -850,7 +849,7 @@ struct Quat
 {
     static constexpr unsigned W_INDEX = 0;
 
-    Vec4f vec;
+    std::array<float, 4> vec;
 
     float constexpr operator[](unsigned index) const
     {
