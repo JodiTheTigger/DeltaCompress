@@ -1199,6 +1199,48 @@ void dual_tests()
                 const auto& item_2 = test[item_index - 2];
                 const auto& item_3 = test[item_index - 3];
 
+                {
+                    // Just just multiplying.
+                    auto to_dq = [](const auto& i) -> Dual_quat
+                    {
+                        return to_dual
+                        (
+                            to_quat(i.aa),
+                            i.pos
+                        );
+                    };
+
+                    // returns velocity * time (or just delta)
+                    auto delta = [](const auto &b, const auto& t) -> Dual_quat
+                    {
+                        return mul(t, conjugate(b));
+                    };
+
+                    auto b = to_dq(item_3);
+                    auto c = to_dq(item_2);
+                    auto t = to_dq(item_1);
+                    auto t2 = to_dq(test[item_index]);
+
+                    auto vt = delta(b, c);
+
+                    auto g = mul(vt, b);
+
+                    compare_dq(g, c, 0.0001f);
+
+                    // get two time velocitys, to get an acceleartion?
+                    // RAM: TODO: Out by factor of 2 again :-(
+                    auto v1 = delta(b, c);
+                    auto v2 = delta(c, t);
+                    auto at = delta(v1, v2);
+
+                    // at * v1 = v1 * v2 * v1 = b * c1 * c * t1 * b * c1
+                    // = b * (c1 * c) * t1 * b * c1
+                    // = b * t1 * b * c1
+                    auto v = mul(at, v1);
+                    auto g2 = mul(v, b);
+                    compare_dq(g2, t, 0.0001f);
+                }
+
 //                {
 //                    // Test reflection to see if it works.
 //                    // RAM: No it doesn't :-( I don't know what to believe now.
