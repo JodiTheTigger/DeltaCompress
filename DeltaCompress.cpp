@@ -1227,18 +1227,18 @@ void dual_tests()
 
                     compare_dq(g, c, 0.0001f);
 
-                    // get two time velocitys, to get an acceleartion?
-                    // RAM: TODO: Out by factor of 2 again :-(
+                    // Did some maths
+                    // d = t/2(u + v)
+                    // so at t = 2: d = u + v. t==2==item t.
                     auto v1 = delta(b, c);
                     auto v2 = delta(c, t);
-                    auto at = delta(v1, v2);
 
-                    // at * v1 = v1 * v2 * v1 = b * c1 * c * t1 * b * c1
-                    // = b * (c1 * c) * t1 * b * c1
-                    // = b * t1 * b * c1
-                    auto v = mul(at, v1);
-                    auto g2 = mul(v, b);
+                    auto g2 = mul(mul(v2, v1), b);
+
                     compare_dq(g2, t, 0.0001f);
+
+                    // RAM: TODO: Next step is getting ln and exp for a dual
+                    // quat and using that.
                 }
 
 //                {
