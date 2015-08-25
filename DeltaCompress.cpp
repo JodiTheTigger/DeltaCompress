@@ -1113,6 +1113,27 @@ void dual_tests()
 
     // //////////////////////////////////////////////////////
 
+    auto compare_q = []
+    (
+        const Quat& lhs,
+        const Quat& rhs,
+        const float EPISLON
+    )
+    {
+        std::vector<float> errors;
+        errors.reserve(4);
+
+        errors.push_back(std::abs(lhs[0] - rhs[0]));
+        errors.push_back(std::abs(lhs[1] - rhs[1]));
+        errors.push_back(std::abs(lhs[2] - rhs[2]));
+        errors.push_back(std::abs(lhs[3] - rhs[3]));
+
+        assert(errors[0] < EPISLON);
+        assert(errors[1] < EPISLON);
+        assert(errors[2] < EPISLON);
+        assert(errors[3] < EPISLON);
+    };
+
     auto compare_dq = []
     (
         const Dual_quat& lhs,
@@ -1219,7 +1240,7 @@ void dual_tests()
                     auto b = to_dq(item_3);
                     auto c = to_dq(item_2);
                     auto t = to_dq(item_1);
-                    auto t2 = to_dq(test[item_index]);
+                    //auto t2 = to_dq(test[item_index]);
 
                     auto vt = delta(b, c);
 
@@ -1239,6 +1260,49 @@ void dual_tests()
 
                     // RAM: TODO: Next step is getting ln and exp for a dual
                     // quat and using that.
+                }
+
+                // RAM: TODO: Get acceleration not by angle-axis vectors
+                // but by quats as you cannot add angleaxis vectors apparently?
+                {
+                    // Hack in acceleration of 0.1
+                    auto values = std::vector<Quat>
+                    {
+                        to_quat(Angle_and_axis{0.0f, {0.0f, 1.0f, 0.0f}}),
+                        to_quat(Angle_and_axis{0.1f, {0.0f, 1.0f, 0.0f}}),
+                        to_quat(Angle_and_axis{0.3f, {0.0f, 1.0f, 0.0f}}),
+                        to_quat(Angle_and_axis{0.6f, {0.0f, 1.0f, 0.0f}}),
+                        to_quat(Angle_and_axis{1.0f, {0.0f, 1.0f, 0.0f}})
+                    };
+
+                    auto v1t = mul(values[1], conjugate(values[0]));
+                    auto v2t = mul(values[2], conjugate(values[1]));
+
+                    auto v1t_aa = to_angle_and_axis(v1t);
+                    auto v2t_aa = to_angle_and_axis(v2t);
+
+                    // LOL, wut? Can you even do that?
+                    auto at2 = mul(v2t, conjugate(v1t));
+
+                    // d = ut + 0.5at^2
+                    // d = d0 + 0.5* t * (v0 + v1)
+                    // d = d0 + v1t - 0.5at^2
+                    // assume t = 10?
+                    // do divide or mult by time, we need axis_angle version.
+                    auto at2_aa = to_angle_and_axis(at2);
+                    auto a = at2_aa;
+                    a.angle /= 10.0f * 10.0f;
+
+                    // now, get 0.5at^2
+                    auto at2_2_aa = a;
+                    at2_2_aa.angle *= 10 * 10 * 0.5;
+                    auto at2_2 = to_quat(at2_2_aa);
+
+                    // first test, assume ut = 0 (u = 0);
+                    auto t1 = mul(values[0], mul(v1t, conjugate(at2_2)));
+                    auto t1_aa = to_angle_and_axis(t1);
+
+                    compare_q(t1, values[1], 0.00001f);
                 }
 
 //                {
