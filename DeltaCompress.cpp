@@ -1266,13 +1266,18 @@ void dual_tests()
                 // but by quats as you cannot add angleaxis vectors apparently?
                 {
                     // Hack in acceleration of 0.1
+                    auto acc = [](float t) -> float
+                    {
+                        return 0.5f * 0.5f * (t * t);
+                    };
+
                     auto values = std::vector<Quat>
                     {
-                        to_quat(Angle_and_axis{0.0f, {0.0f, 1.0f, 0.0f}}),
-                        to_quat(Angle_and_axis{0.1f, {0.0f, 1.0f, 0.0f}}),
-                        to_quat(Angle_and_axis{0.3f, {0.0f, 1.0f, 0.0f}}),
-                        to_quat(Angle_and_axis{0.6f, {0.0f, 1.0f, 0.0f}}),
-                        to_quat(Angle_and_axis{1.0f, {0.0f, 1.0f, 0.0f}})
+                        to_quat(Angle_and_axis{acc(0.0f), {0.0f, 1.0f, 0.0f}}),
+                        to_quat(Angle_and_axis{acc(1.0f), {0.0f, 1.0f, 0.0f}}),
+                        to_quat(Angle_and_axis{acc(2.0f), {0.0f, 1.0f, 0.0f}}),
+                        to_quat(Angle_and_axis{acc(3.0f), {0.0f, 1.0f, 0.0f}}),
+                        to_quat(Angle_and_axis{acc(4.0f), {0.0f, 1.0f, 0.0f}})
                     };
 
                     auto v1t = mul(values[1], conjugate(values[0]));
@@ -1281,11 +1286,58 @@ void dual_tests()
                     auto v1t_aa = to_angle_and_axis(v1t);
                     auto v2t_aa = to_angle_and_axis(v2t);
 
+                    // lets do this the proper way.
+                    const auto t = 10.0f;
+
+                    auto v1_aa = v1t_aa;
+                    v1_aa.angle /= t;
+
+                    auto v2_aa = v2t_aa;
+                    v2_aa.angle /= t;
+
+                    auto v1 = to_quat(v1_aa);
+                    auto v2 = to_quat(v2_aa);
+
+                    auto at = mul(v2, conjugate(v1));
+
+                    auto a_aa = to_angle_and_axis(at);
+                    a_aa.angle /= t;
+
+                    auto a_calc = to_quat(a_aa);
+
+                    // Great. Precision issues means acc is identity :-(
+                    auto to_at2_2 = [](const Quat&a, float t) -> Quat
+                    {
+                        auto aa = to_angle_and_axis(a);
+                        aa.angle *= t * t;
+                        return to_quat(aa);
+                    };
+
+                    // Doh, I assume acceleration is relative to the first
+                    // point? (assume point 0 is identity, so skip mul).
+                    // anyway - these values are more or less correct
+                    // however even then they have precision issue of up to 0.01.
+                    auto c_p1 = to_quat({a_aa.angle * 0.5f * 10.0f * 10.0f, a_aa.axis});
+                    auto c_p2 = to_quat({a_aa.angle * 0.5f * 20.0f * 20.0f, a_aa.axis});
+                    auto c_p3 = to_quat({a_aa.angle * 0.5f * 30.0f * 30.0f, a_aa.axis});
+                    auto c_p4 = to_quat({a_aa.angle * 0.5f * 40.0f * 40.0f, a_aa.axis});
+
+
+
+
+
                     // LOL, wut? Can you even do that?
                     auto at2 = mul(v2t, conjugate(v1t));
 
+                    // Now, lets get some things striaght.
+                    auto t_v1 = mul(v1t, values[0]);
+                    compare_q(t_v1, values[1], 0.00001f);
+
+                    auto t_v2 = mul(v2t, values[1]);
+                    compare_q(t_v2, values[2], 0.00001f);
+
+                    // d = delta change!
                     // d = ut + 0.5at^2
-                    // d = d0 + 0.5* t * (v0 + v1)
                     // d = d0 + v1t - 0.5at^2
                     // assume t = 10?
                     // do divide or mult by time, we need axis_angle version.
@@ -1298,11 +1350,26 @@ void dual_tests()
                     at2_2_aa.angle *= 10 * 10 * 0.5;
                     auto at2_2 = to_quat(at2_2_aa);
 
-                    // first test, assume ut = 0 (u = 0);
-                    auto t1 = mul(values[0], mul(v1t, conjugate(at2_2)));
-                    auto t1_aa = to_angle_and_axis(t1);
+                    // d = ut + 0.5at^2
+                    // p = p0 + d
 
-                    compare_q(t1, values[1], 0.00001f);
+                    // first point, u == 0
+                    auto d1 = at2_2;
+
+                    // this should be right!
+                    auto p1 = mul(d1, values[0]);
+
+                    // second point
+                    auto d2 = at2_2;
+                    auto p2 = mul(d2, values[1]);
+
+                    auto d3 = mul(v1t, at2_2);
+                    auto p3 = mul(d2, values[1]);
+
+
+                    compare_q(p1, values[1], 0.00001f);
+                    compare_q(p2, values[2], 0.00001f);
+                    compare_q(p3, values[3], 0.00001f);
                 }
 
 //                {
