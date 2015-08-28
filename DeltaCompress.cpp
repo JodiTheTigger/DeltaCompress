@@ -1393,8 +1393,9 @@ void dual_tests()
                 //      to calculate the new position. Secondly, that requires
                 //      accleration. My naieve way of calculating acceleration
                 //      didn't work. So I had to guess a formula that would.
-                //      I suspect that my guessed formular is related to verlet
+                //      I suspect that my guessed formula is related to verlet
                 //      somehow.
+                //      https://en.wikipedia.org/wiki/Verlet_integration
                 //
                 //      for acceleration calculation:
                 //      x0   = x at t0
@@ -1424,6 +1425,17 @@ void dual_tests()
                 //      b  = (dx * dt1) / dt0
                 //      c  = 0.5 * a * (dt0 + dt1) * dt1
                 //      x1 = a + b + c
+                //
+                //
+                //     struct Predict_data
+                //     {
+                //         float     acceleration;
+                //         Position  x-1;
+                //         float     dt;
+                //     }
+                //
+                //     auto Update(x0, x-1, x-2, dt0, dt-1) -> Predict_data;
+                //     auto Predict(Predict_data, x0, predict_t) -> x1;
 
 //                {
 //                    // Test reflection to see if it works.
