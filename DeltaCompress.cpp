@@ -1268,7 +1268,7 @@ void dual_tests()
                     // Hack in acceleration of 0.1
                     auto acc = [](float t) -> float
                     {
-                        return 0.5f * 0.5f * (t * t);
+                        return 0.1f * 0.5f * (t * t);
                     };
 
                     auto values = std::vector<Quat>
@@ -1317,6 +1317,8 @@ void dual_tests()
                     // point? (assume point 0 is identity, so skip mul).
                     // anyway - these values are more or less correct
                     // however even then they have precision issue of up to 0.01.
+                    // Assuming that q1a*q2b = ab(q1*q2) then just need to divide
+                    // by ab to get a.
                     auto c_p1 = to_quat({a_aa.angle * 0.5f * 10.0f * 10.0f, a_aa.axis});
                     auto c_p2 = to_quat({a_aa.angle * 0.5f * 20.0f * 20.0f, a_aa.axis});
                     auto c_p3 = to_quat({a_aa.angle * 0.5f * 30.0f * 30.0f, a_aa.axis});
@@ -1326,7 +1328,10 @@ void dual_tests()
 
 
 
-                    // LOL, wut? Can you even do that?
+                    // LOL, wut? Can you even do that?                    
+                    // RAM: YES! And more accurate than above!
+                    // RAM: Downside is that it assumes t is constant
+                    // RAM: for v2t and v1t.
                     auto at2 = mul(v2t, conjugate(v1t));
 
                     // Now, lets get some things striaght.
@@ -1344,6 +1349,18 @@ void dual_tests()
                     auto at2_aa = to_angle_and_axis(at2);
                     auto a = at2_aa;
                     a.angle /= 10.0f * 10.0f;
+
+
+                    // Yup, these are correct.
+                    auto d_p1 = to_quat({a.angle * 0.5f * 10.0f * 10.0f, a.axis});
+                    auto d_p2 = to_quat({a.angle * 0.5f * 20.0f * 20.0f, a.axis});
+                    auto d_p3 = to_quat({a.angle * 0.5f * 30.0f * 30.0f, a.axis});
+                    auto d_p4 = to_quat({a.angle * 0.5f * 40.0f * 40.0f, a.axis});
+
+
+                    // RAM: But we're not working with only acc, how to
+                    // incoperate ut as well?
+
 
                     // now, get 0.5at^2
                     auto at2_2_aa = a;
