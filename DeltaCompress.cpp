@@ -1389,6 +1389,42 @@ void dual_tests()
                     compare_q(p3, values[3], 0.00001f);
                 }
 
+                // RAM: Ok, now I know. I need to do verlet integration
+                //      to calculate the new position. Secondly, that requires
+                //      accleration. My naieve way of calculating acceleration
+                //      didn't work. So I had to guess a formula that would.
+                //      I suspect that my guessed formular is related to verlet
+                //      somehow.
+                //
+                //      for acceleration calculation:
+                //      x0   = x at t0
+                //      x-1  = x at t-1
+                //      x-2  = x at t-2
+                //      dt0  = t0  - t-1
+                //      dt-1 = t-1 - t-2
+                //
+                //      calculation:
+                //      vt0  = (x0 - x-1)   / dt0
+                //      vt-1 = (x-1 - x-2)  / dt1
+                //      dv   = (vt0 - vt-1) / dt0
+                //      a    = dv / ((dt0 + dt-1)
+                //
+                //
+                //      To calculate the next position:
+                //      x1  = next posisiton
+                //      x0  = current position
+                //      x-1 = previous position
+                //      dt1 = t1 - t0 (the time delta you're predicting over)
+                //      dt0 = t0 - t-1
+                //      a
+                //
+                //      calculation (verlet):
+                //      dx = x0 - x-1
+                //      a  = x0
+                //      b  = (dx * dt1) / dt0
+                //      c  = 0.5 * a * (dt0 + dt1) * dt1
+                //      x1 = a + b + c
+
 //                {
 //                    // Test reflection to see if it works.
 //                    // RAM: No it doesn't :-( I don't know what to believe now.
