@@ -936,6 +936,106 @@ auto delta_t(const Quat& q, float delta_t) -> Quat
 
 // //////////////////////////////////////////////////////
 
+
+// RAM: Ok, now I know. I need to do verlet integration
+//      to calculate the new position. Secondly, that requires
+//      accleration. My naieve way of calculating acceleration
+//      didn't work. So I had to guess a formula that would.
+//      I suspect that my guessed formula is related to verlet
+//      somehow.
+//      https://en.wikipedia.org/wiki/Verlet_integration
+//
+//      for acceleration calculation:
+//      x0   = x at t0
+//      x-1  = x at t-1
+//      x-2  = x at t-2
+//      dt0  = t0  - t-1
+//      dt-1 = t-1 - t-2
+//
+//      calculation:
+//      vt0  = (x0 - x-1)   / dt0
+//      vt-1 = (x-1 - x-2)  / dt1
+//      dv   = (vt0 - vt-1) / dt0
+//      a    = dv / ((dt0 + dt-1)
+//
+//
+//      To calculate the next position:
+//      x1  = next posisiton
+//      x0  = current position
+//      x-1 = previous position
+//      dt1 = t1 - t0 (the time delta you're predicting over)
+//      dt0 = t0 - t-1
+//      a
+//
+//      calculation (verlet):
+//      dx = x0 - x-1
+//      a  = x0
+//      b  = (dx * dt1) / dt0
+//      c  = 0.5 * a * (dt0 + dt1) * dt1
+//      x1 = a + b + c
+//
+//
+//     struct Predict_data
+//     {
+//         float     acceleration;
+//         Position  x-1;
+//         float     dt;
+//     }
+//
+//     auto Update(x0, x-1, x-2, dt0, dt-1) -> Predict_data;
+//     auto Predict(Predict_data, x0, predict_t) -> x1;
+
+struct Prediciton_data
+{
+    float acceleration;
+    float xm1;
+    float dt;
+};
+
+auto verlet_acceleration
+(
+    float x0,
+    float xm1,
+    float xm2,
+    float dt0,
+    float dtm1
+)
+-> float
+{
+    auto dx0  = (x0 - xm1);
+    auto dx1  = (xm1 - xm2);
+    auto vt0  = dx0 / dt0;
+    auto vtm1 = dx1 / dtm1;
+    auto dvt  = vt0 - vtm1;
+    auto dv   = dvt / dt0;
+
+    // RAM: Shouldn't a /2 be here somewhere?
+    auto a = dv / (dt0 + dtm1);
+
+    return a;
+}
+
+auto verlet_prediction
+(
+    float x0,
+    float xm1,
+    float dt0,
+    float dt1,
+    float acceleration
+)
+-> float
+{
+    auto dx = x0 - xm1;
+    auto a = x0;
+    auto b = (dx * dt1) / dt0;
+    auto c = 0.5 * acceleration * (dt0 + dt1) * dt1;
+    auto x1 = a + b + c;
+
+    return x1;
+}
+
+// //////////////////////////////////////////////////////
+
 void dual_tests()
 {
     static const float EPISLON = 0.00001f;
@@ -1388,54 +1488,6 @@ void dual_tests()
                     compare_q(p2, values[2], 0.00001f);
                     compare_q(p3, values[3], 0.00001f);
                 }
-
-                // RAM: Ok, now I know. I need to do verlet integration
-                //      to calculate the new position. Secondly, that requires
-                //      accleration. My naieve way of calculating acceleration
-                //      didn't work. So I had to guess a formula that would.
-                //      I suspect that my guessed formula is related to verlet
-                //      somehow.
-                //      https://en.wikipedia.org/wiki/Verlet_integration
-                //
-                //      for acceleration calculation:
-                //      x0   = x at t0
-                //      x-1  = x at t-1
-                //      x-2  = x at t-2
-                //      dt0  = t0  - t-1
-                //      dt-1 = t-1 - t-2
-                //
-                //      calculation:
-                //      vt0  = (x0 - x-1)   / dt0
-                //      vt-1 = (x-1 - x-2)  / dt1
-                //      dv   = (vt0 - vt-1) / dt0
-                //      a    = dv / ((dt0 + dt-1)
-                //
-                //
-                //      To calculate the next position:
-                //      x1  = next posisiton
-                //      x0  = current position
-                //      x-1 = previous position
-                //      dt1 = t1 - t0 (the time delta you're predicting over)
-                //      dt0 = t0 - t-1
-                //      a
-                //
-                //      calculation (verlet):
-                //      dx = x0 - x-1
-                //      a  = x0
-                //      b  = (dx * dt1) / dt0
-                //      c  = 0.5 * a * (dt0 + dt1) * dt1
-                //      x1 = a + b + c
-                //
-                //
-                //     struct Predict_data
-                //     {
-                //         float     acceleration;
-                //         Position  x-1;
-                //         float     dt;
-                //     }
-                //
-                //     auto Update(x0, x-1, x-2, dt0, dt-1) -> Predict_data;
-                //     auto Predict(Predict_data, x0, predict_t) -> x1;
 
 //                {
 //                    // Test reflection to see if it works.
