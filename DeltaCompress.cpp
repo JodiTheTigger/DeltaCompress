@@ -988,8 +988,9 @@ auto delta_t(const Quat& q, float delta_t) -> Quat
 struct Prediciton_data
 {
     float acceleration;
+    float x0;
     float xm1;
-    float dt;
+    float dt0;
 };
 
 auto verlet_acceleration
@@ -1000,7 +1001,7 @@ auto verlet_acceleration
     float dt0,
     float dtm1
 )
--> float
+-> Prediciton_data
 {
     auto dx0  = (x0 - xm1);
     auto dx1  = (xm1 - xm2);
@@ -1012,23 +1013,26 @@ auto verlet_acceleration
     // RAM: Shouldn't a /2 be here somewhere?
     auto a = dv / (dt0 + dtm1);
 
-    return a;
+    return
+    {
+        a,
+        x0,
+        xm1,
+        dt0
+    };
 }
 
 auto verlet_prediction
 (
-    float x0,
-    float xm1,
-    float dt0,
-    float dt1,
-    float acceleration
+    Prediciton_data prediction,
+    float dt1
 )
 -> float
 {
-    auto dx = x0 - xm1;
-    auto a = x0;
-    auto b = (dx * dt1) / dt0;
-    auto c = 0.5 * acceleration * (dt0 + dt1) * dt1;
+    auto dx = prediction.x0 - prediction.xm1;
+    auto a = prediction.x0;
+    auto b = (dx * dt1) / prediction.dt0;
+    auto c = 0.5 * prediction.acceleration * (prediction.dt0 + dt1) * dt1;
     auto x1 = a + b + c;
 
     return x1;
