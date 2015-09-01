@@ -28,7 +28,7 @@
 
 bool do_tests       = false;
 bool do_compression = true;
-bool do_decompress  = true;
+bool do_decompress  = false;
 
 // //////////////////////////////////////////////////////
 
@@ -224,6 +224,16 @@ using Vec3i = std::array<int, 3>;
 using Vec4f = std::array<float, 4>;
 using Vec3f = std::array<float, 4>;
 
+auto constexpr to_f(const Vec3i& i) -> Vec3f
+{
+    return
+    {
+        static_cast<float>(i[0]),
+        static_cast<float>(i[1]),
+        static_cast<float>(i[2])
+    };
+}
+
 // //////////////////////////////////////////////////////
 
 auto constexpr sub(const Vec3i& lhs, const Vec3i& rhs) -> Vec3i
@@ -418,18 +428,6 @@ struct Position_and_quat
     Vec3i position;
     Quat quat;
 };
-
-// //////////////////////////////////////////////////////
-
-struct Predictors
-{
-    Vec3f linear_velocity_per_frame;
-    Vec3f linear_acceleration_per_frame;
-    Vec3f angular_velocity_per_frame;
-    Vec3f angular_acceleration_per_frame;
-};
-
-typedef std::array<Predictors, Cubes> Frame_predicitons;
 
 // //////////////////////////////////////////////////////
 
@@ -1003,6 +1001,17 @@ auto verlet_acceleration
 )
 -> Prediciton_data
 {
+    if ((dt0 == 0) || (dtm1 == 0))
+    {
+        return
+        {
+            {0.0f, 0.0f, 0.0f},
+            x0,
+            xm1,
+            dt0
+        };
+    }
+
     auto dx0  = sub(x0, xm1);
     auto dx1  = sub(xm1, xm2);
     auto vt0  = div(dx0, dt0);
@@ -1029,6 +1038,11 @@ auto verlet_prediction
 )
 -> Vec3f
 {
+    if ((dt1 == 0) || (prediction.dt0 == 0))
+    {
+        return prediction.x0;
+    }
+
     auto dx = sub(prediction.x0, prediction.xm1);
     auto a  = prediction.x0;
     auto b  = div(mul(dx, dt1), prediction.dt0);
@@ -1037,6 +1051,20 @@ auto verlet_prediction
 
     return x1;
 }
+
+// //////////////////////////////////////////////////////
+
+struct Predictors
+{
+    Vec3f linear_velocity_per_frame;
+    Vec3f linear_acceleration_per_frame;
+    Vec3f angular_velocity_per_frame;
+    Vec3f angular_acceleration_per_frame;
+
+    Prediciton_data verlet;
+};
+
+typedef std::array<Predictors, Cubes> Frame_predicitons;
 
 // //////////////////////////////////////////////////////
 
@@ -2007,6 +2035,27 @@ namespace Naive_error
 
         auto rotation = mul(r, base.quat);
 
+        // RAM: How is verlet doing?
+        // RAM: It sufferes from initial conditions, but seems much
+        // RAM: better after that :-)
+        // RAM: Pity the intial condition error > encode bits, so I
+        // RAM: need to improve that.
+        {
+            auto verlet = verlet_prediction
+            (
+                v_and_a.verlet,
+                frame_delta
+            );
+
+            // RAM: DO IT!
+            pos =
+            {
+                static_cast<int>(std::round(verlet[0])),
+                static_cast<int>(std::round(verlet[1])),
+                static_cast<int>(std::round(verlet[2])),
+            };
+        }
+
         return
         {
             pos,
@@ -2052,12 +2101,24 @@ namespace Naive_error
         auto w_delta = sub(w, v_and_a.angular_velocity_per_frame);
         auto wa = div(w_delta, frame_delta);
 
+        // Do verlet predicition too.
+        auto data = verlet_acceleration
+        (
+            to_f(target.position),
+            v_and_a.verlet.x0,
+            v_and_a.verlet.xm1,
+            frame_delta,
+            v_and_a.verlet.dt0
+        );
+
         return
         {
             v,
             a,
             w,
-            wa
+            wa,
+
+            data
         };
     }
 
@@ -2148,7 +2209,8 @@ namespace Naive_error
 
             // //////////////////////////////////////////////////////
 
-            for (unsigned i = 0; i < size; ++i)
+            // RAM: TODO: Change size back please!
+            for (unsigned i = 0; i < 1; ++i)
             {
                 // Ok, get the predicted values, calculate the error
                 // and if the error is non-zero, then we have some encoding
