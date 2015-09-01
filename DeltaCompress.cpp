@@ -952,9 +952,14 @@ auto delta_t(const Quat& q, float delta_t) -> Quat
 //
 //      calculation:
 //      vt0  = (x0 - x-1)   / dt0
-//      vt-1 = (x-1 - x-2)  / dt1
+//      vt-1 = (x-1 - x-2)  / dt-1
 //      dv   = (vt0 - vt-1) / dt0
 //      a    = dv / ((dt0 + dt-1)
+//
+//      RAM: Argh, I cannot reproduce proper results with the above
+//           calculation. I had to rederive one.
+//
+//      a    = (2 * (vt0 - vt-1)) / (t0 - t-2)
 //
 //
 //      To calculate the next position:
@@ -1001,7 +1006,7 @@ auto verlet_acceleration
 )
 -> Prediciton_data
 {
-    if ((dt0 == 0) || (dtm1 == 0))
+    if (dt0 == 0)
     {
         return
         {
@@ -1015,11 +1020,10 @@ auto verlet_acceleration
     auto dx0  = sub(x0, xm1);
     auto dx1  = sub(xm1, xm2);
     auto vt0  = div(dx0, dt0);
-    auto vtm1 = div(dx1, dtm1);
+    auto vtm1 = (dtm1 != 0.0f) ? div(dx1, dtm1) : Vec3f{0.0f, 0.0f, 0.0f};
     auto dvt  = sub(vt0, vtm1);
     auto dv   = div(dvt, dt0);
 
-    // RAM: Shouldn't a /2 be here somewhere?
     auto a = div(dv, dt0 + dtm1);
 
     return
