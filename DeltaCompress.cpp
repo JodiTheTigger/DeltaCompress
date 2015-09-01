@@ -2041,9 +2041,13 @@ namespace Naive_error
         // RAM: Pity the intial condition error > encode bits, so I
         // RAM: need to improve that.
         {
+            // RAM: My interface is broken if this works.
+            auto t = v_and_a.verlet;
+            t.x0 = to_f(base.position);
+
             auto verlet = verlet_prediction
             (
-                v_and_a.verlet,
+                t,
                 frame_delta
             );
 
