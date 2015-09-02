@@ -996,6 +996,12 @@ auto delta_t(const Quat& q, float delta_t) -> Quat
 //          x2 is 1, not 6, since we are using the previously calculated
 //          poisition. I have to verify that this doesn't break the game rules
 //          somehow, and then correct the maths.
+//
+//          Ok, I thought about it. If I only use the base values for
+//          predicitons, and not the target values then I should be fine, since
+//          the assumption is, is that both source and dest know that we
+//          are using the base values, it implies they have already been
+//          confirmed as recieved by the destination.
 
 struct Prediciton_data
 {
