@@ -987,6 +987,15 @@ auto delta_t(const Quat& q, float delta_t) -> Quat
 //
 //     auto Update(x0, x-1, x-2, dt0, dt-1) -> Predict_data;
 //     auto Predict(Predict_data, x0, predict_t) -> x1;
+//
+//     RAM: Update. Ok, verlet still has initial condition issues.
+//          However it also has MORE issues. I have been assuming a
+//          delta of 6 between each position. But that's incorrect.
+//          its a delta of 6 between the first and second packet,
+//          but once we have x0 and x1, then the delta between x1 and
+//          x2 is 1, not 6, since we are using the previously calculated
+//          poisition. I have to verify that this doesn't break the game rules
+//          somehow, and then correct the maths.
 
 struct Prediciton_data
 {
@@ -2046,22 +2055,22 @@ namespace Naive_error
         // RAM: need to improve that.
         {
             // RAM: My interface is broken if this works.
-            auto t = v_and_a.verlet;
-            t.x0 = to_f(base.position);
+//            auto t = v_and_a.verlet;
+//            t.x0 = to_f(base.position);
 
             auto verlet = verlet_prediction
             (
-                t,
+                v_and_a.verlet,
                 frame_delta
             );
 
             // RAM: DO IT!
-            pos =
-            {
-                static_cast<int>(std::round(verlet[0])),
-                static_cast<int>(std::round(verlet[1])),
-                static_cast<int>(std::round(verlet[2])),
-            };
+//            pos =
+//            {
+//                static_cast<int>(std::round(verlet[0])),
+//                static_cast<int>(std::round(verlet[1])),
+//                static_cast<int>(std::round(verlet[2])),
+//            };
         }
 
         return
