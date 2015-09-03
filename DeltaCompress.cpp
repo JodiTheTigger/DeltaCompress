@@ -2059,11 +2059,12 @@ namespace Naive_error
         // RAM: better after that :-)
         // RAM: Pity the intial condition error > encode bits, so I
         // RAM: need to improve that.
+        //
+        // RAM: My approximation seems really bad since I changed to using
+        //      base only. No doubt I'm setting up my predictor data wrong
+        //      somehow. Secondly, this is a huge area of maths, and I can
+        //      spend a long time playing in here.
         {
-            // RAM: My interface is broken if this works.
-//            auto t = v_and_a.verlet;
-//            t.x0 = to_f(base.position);
-
             auto verlet = verlet_prediction
             (
                 v_and_a.verlet,
