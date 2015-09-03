@@ -2127,10 +2127,10 @@ namespace Naive_error
         // Do verlet predicition too.
         auto data = verlet_acceleration
         (
-            to_f(target.position),
+            to_f(base.position),
             v_and_a.verlet.x0,
             v_and_a.verlet.xm1,
-            frame_delta,
+            1,
             v_and_a.verlet.dt0
         );
 
@@ -2228,7 +2228,7 @@ namespace Naive_error
 
         {
             Range_coders::Encoder           range(data);
-            Range_coders::Binary_encoder    binary(range);;
+            Range_coders::Binary_encoder    binary(range);
 
             // //////////////////////////////////////////////////////
 
@@ -2593,7 +2593,28 @@ void range_compress(std::vector<Frame>& frames)
         unsigned max = 0;
 
         Frame_predicitons predict_server = {};
-        Frame_predicitons predict_client = {};
+        Frame_predicitons predict_client = {};               
+
+        // RAM: DEBUG Initial conditions for verlet
+        predict_server[0].verlet = Prediciton_data
+        {
+            Vec3f{0.0f, 0.0f, 0.0f},
+            to_f
+            ({
+                frames[0][0].position_x,
+                frames[0][0].position_y,
+                frames[0][0].position_z,
+            }),
+
+            to_f
+            (Vec3i{
+                frames[0][0].position_x,
+                frames[0][0].position_y,
+                frames[0][0].position_z,
+            }),
+
+            1.0f
+        };
 
         for (size_t i = PacketDelta; i < packets; ++i)
         {
