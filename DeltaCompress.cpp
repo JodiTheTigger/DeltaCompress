@@ -26,9 +26,10 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests       = false;
-bool do_compression = true;
-bool do_decompress  = true;
+bool do_tests                           = false;
+bool do_compression                     = true;
+bool do_decompress                      = true;
+bool do_enable_2nd_order_predictions    = false;
 
 // //////////////////////////////////////////////////////
 
@@ -1860,7 +1861,9 @@ namespace Naive_error
         // p = p0 + tv
         // v = v0 + at/2
         auto at_2 =
-            mul(v_and_a.linear_acceleration_per_frame, frame_delta / 2.0f);
+            do_enable_2nd_order_predictions
+            ? mul(v_and_a.linear_acceleration_per_frame, frame_delta / 2.0f)
+            : Vec3f{0.0f, 0.0f, 0.0f};
 
         auto v = add(v_and_a.linear_velocity_per_frame, at_2);
 
