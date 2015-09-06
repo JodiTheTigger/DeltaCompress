@@ -428,6 +428,9 @@ struct Predictors
     Vec3f linear_acceleration_per_frame;
     Vec3f angular_velocity_per_frame;
     Vec3f angular_acceleration_per_frame;
+
+    // Oooh, finaly! dq!
+    Dual_quat velocity_per_frame;
 };
 
 typedef std::array<Predictors, Cubes> Frame_predicitons;
@@ -1986,6 +1989,64 @@ namespace Naive_error
 
         auto rotation = mul(r, base.quat);
 
+        // Lets try dqs shall we?
+        //{
+            auto to_vec3f = [](const Vec3i v) -> Vec3f
+            {
+                return
+                {
+                    static_cast<float>(v[0]),
+                    static_cast<float>(v[1]),
+                    static_cast<float>(v[2])
+                };
+            };
+
+            auto to_vec3i = [](const Vec3f v) -> Vec3i
+            {
+                return
+                {
+                    static_cast<int>(std::round(v[0])),
+                    static_cast<int>(std::round(v[1])),
+                    static_cast<int>(std::round(v[2]))
+                };
+            };
+
+            Dual_quat b = to_dual
+            (
+                base.quat,
+                to_vec3f(base.position)
+            );
+
+            auto p = new_position(v_and_a.velocity_per_frame, b, frame_delta);
+            auto answer =  Position_and_quat
+            {
+                to_vec3i(to_position(p)),
+                p.real
+            };
+
+            // reflect z about lowest point.
+            if (answer.position[2] < zero_height)
+            {
+                answer.position[2] =
+                    zero_height
+                    + (RESTITUTION * (zero_height - answer.position[2]));
+            }
+
+            // Are we different?
+            // Yes - lets see if that means lower kbps.
+//            auto diff = sub(pos, answer.position);
+
+//            assert(diff[0] == 0);
+//            assert(diff[1] == 0);
+//            assert(diff[2] == 0);
+
+//            return
+//            {
+//                to_vec3i(to_position(p)),
+//                p.real
+//            };
+        //}
+
 //        {
 //            // RAM: DEbug, do we need to convert to axis angle in order to add
 //            // angular velocities to a rotation?
@@ -2067,12 +2128,43 @@ namespace Naive_error
         auto w_delta = sub(w, v_and_a.angular_velocity_per_frame);
         auto wa = div(w_delta, frame_delta);
 
+        // ///////////////////////////////////////////////////////////////////
+        // dq stuff.
+
+        auto to_vec3f = [](const Vec3i v) -> Vec3f
+        {
+            return
+            {
+                static_cast<float>(v[0]),
+                static_cast<float>(v[1]),
+                static_cast<float>(v[2])
+            };
+        };
+
+        Dual_quat b = to_dual
+        (
+            base.quat,
+            to_vec3f(base.position)
+        );
+
+        Dual_quat t = to_dual
+        (
+            target.quat,
+            to_vec3f(target.position)
+        );
+
+        auto dq_v = velocity(t, b, frame_delta);
+
+        // ///////////////////////////////////////////////////////////////////
+
         return
         {
             v,
             a,
             w,
-            wa
+            wa,
+
+            dq_v
         };
     }
 
