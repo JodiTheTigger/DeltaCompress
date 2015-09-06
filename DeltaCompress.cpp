@@ -1205,7 +1205,8 @@ void dual_tests()
     (
         const Dual_quat& lhs,
         const Dual_quat& rhs,
-        const float EPISLON
+        const float EPISLON_ANGLE,
+        const float EPISLON_POSITION
     )
     {
         std::vector<float> errors;
@@ -1221,15 +1222,15 @@ void dual_tests()
         errors.push_back(std::abs(lhs.dual[2] - rhs.dual[2]));
         errors.push_back(std::abs(lhs.dual[3] - rhs.dual[3]));
 
-        assert(errors[0] < EPISLON);
-        assert(errors[1] < EPISLON);
-        assert(errors[2] < EPISLON);
-        assert(errors[3] < EPISLON);
+        assert(errors[0] < EPISLON_ANGLE);
+        assert(errors[1] < EPISLON_ANGLE);
+        assert(errors[2] < EPISLON_ANGLE);
+        assert(errors[3] < EPISLON_ANGLE);
 
-        assert(errors[4] < EPISLON);
-        assert(errors[5] < EPISLON);
-        assert(errors[6] < EPISLON);
-        assert(errors[7] < EPISLON);
+        assert(errors[4] < EPISLON_POSITION);
+        assert(errors[5] < EPISLON_POSITION);
+        assert(errors[6] < EPISLON_POSITION);
+        assert(errors[7] < EPISLON_POSITION);
     };
 
 
@@ -1266,14 +1267,14 @@ void dual_tests()
     };
 
     const auto test_count = tests.size();
-    for (unsigned test_index = 0; test_index < test_count; ++test_index)
+    for (unsigned index_test = 0; index_test < test_count; ++index_test)
     {
-        const auto& test = tests[test_index];
+        const auto& test = tests[index_test];
 
         const auto item_count = test.size();
-        for (unsigned item_index = 0; item_index < item_count; ++item_index)
+        for (unsigned index_item = 0; index_item < item_count; ++index_item)
         {
-            const auto& item = test[item_index];
+            const auto& item = test[index_item];
 
             Dual_quat dq = to_dual
             (
@@ -1611,6 +1612,16 @@ void dual_tests()
 
 //            }
 
+            // Test velocity functions
+            {
+                auto v = velocity(dq, previous, FRAME_DELTA);
+                auto p = new_position(v, previous, FRAME_DELTA);
+
+                // Wow, precision gets bad fast :-(
+                compare_dq(p, dq, EPISLON, 0.001);
+            }
+
+
             // First, make sure that our "delta" can be converted
             // back and forward.
             {
@@ -1618,7 +1629,7 @@ void dual_tests()
 
                 auto dq_calc = mul(previous_delta, previous);
 
-                compare_dq(dq, dq_calc, EPISLON);
+                compare_dq(dq, dq_calc, EPISLON, EPISLON);
 
                 auto pos = to_position(dq_calc);
 
@@ -1641,6 +1652,8 @@ void dual_tests()
                     assert(std::abs(item.aa.angle - aa.angle) < EPISLON);
                 }
             }
+
+            previous = dq;
         }
     }
 }
