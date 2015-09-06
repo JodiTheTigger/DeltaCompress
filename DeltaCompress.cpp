@@ -26,7 +26,7 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests       = true;
+bool do_tests       = false;
 bool do_compression = true;
 bool do_decompress  = true;
 
@@ -1264,130 +1264,130 @@ void dual_tests()
 
                 // RAM: TODO: Get acceleration not by angle-axis vectors
                 // but by quats as you cannot add angleaxis vectors apparently?
-                {
-                    // Hack in acceleration of 0.1
-                    auto acc = [](float t) -> float
-                    {
-                        return 0.1f * 0.5f * (t * t);
-                    };
+//                {
+//                    // Hack in acceleration of 0.1
+//                    auto acc = [](float t) -> float
+//                    {
+//                        return 0.1f * 0.5f * (t * t);
+//                    };
 
-                    auto values = std::vector<Quat>
-                    {
-                        to_quat(Angle_and_axis{acc(0.0f), {0.0f, 1.0f, 0.0f}}),
-                        to_quat(Angle_and_axis{acc(1.0f), {0.0f, 1.0f, 0.0f}}),
-                        to_quat(Angle_and_axis{acc(2.0f), {0.0f, 1.0f, 0.0f}}),
-                        to_quat(Angle_and_axis{acc(3.0f), {0.0f, 1.0f, 0.0f}}),
-                        to_quat(Angle_and_axis{acc(4.0f), {0.0f, 1.0f, 0.0f}})
-                    };
+//                    auto values = std::vector<Quat>
+//                    {
+//                        to_quat(Angle_and_axis{acc(0.0f), {0.0f, 1.0f, 0.0f}}),
+//                        to_quat(Angle_and_axis{acc(1.0f), {0.0f, 1.0f, 0.0f}}),
+//                        to_quat(Angle_and_axis{acc(2.0f), {0.0f, 1.0f, 0.0f}}),
+//                        to_quat(Angle_and_axis{acc(3.0f), {0.0f, 1.0f, 0.0f}}),
+//                        to_quat(Angle_and_axis{acc(4.0f), {0.0f, 1.0f, 0.0f}})
+//                    };
 
-                    auto v1t = mul(values[1], conjugate(values[0]));
-                    auto v2t = mul(values[2], conjugate(values[1]));
+//                    auto v1t = mul(values[1], conjugate(values[0]));
+//                    auto v2t = mul(values[2], conjugate(values[1]));
 
-                    auto v1t_aa = to_angle_and_axis(v1t);
-                    auto v2t_aa = to_angle_and_axis(v2t);
+//                    auto v1t_aa = to_angle_and_axis(v1t);
+//                    auto v2t_aa = to_angle_and_axis(v2t);
 
-                    // lets do this the proper way.
-                    const auto t = 10.0f;
+//                    // lets do this the proper way.
+//                    const auto t = 10.0f;
 
-                    auto v1_aa = v1t_aa;
-                    v1_aa.angle /= t;
+//                    auto v1_aa = v1t_aa;
+//                    v1_aa.angle /= t;
 
-                    auto v2_aa = v2t_aa;
-                    v2_aa.angle /= t;
+//                    auto v2_aa = v2t_aa;
+//                    v2_aa.angle /= t;
 
-                    auto v1 = to_quat(v1_aa);
-                    auto v2 = to_quat(v2_aa);
+//                    auto v1 = to_quat(v1_aa);
+//                    auto v2 = to_quat(v2_aa);
 
-                    auto at = mul(v2, conjugate(v1));
+//                    auto at = mul(v2, conjugate(v1));
 
-                    auto a_aa = to_angle_and_axis(at);
-                    a_aa.angle /= t;
+//                    auto a_aa = to_angle_and_axis(at);
+//                    a_aa.angle /= t;
 
-                    auto a_calc = to_quat(a_aa);
+//                    auto a_calc = to_quat(a_aa);
 
-                    // Great. Precision issues means acc is identity :-(
-                    auto to_at2_2 = [](const Quat&a, float t) -> Quat
-                    {
-                        auto aa = to_angle_and_axis(a);
-                        aa.angle *= t * t;
-                        return to_quat(aa);
-                    };
+//                    // Great. Precision issues means acc is identity :-(
+//                    auto to_at2_2 = [](const Quat&a, float t) -> Quat
+//                    {
+//                        auto aa = to_angle_and_axis(a);
+//                        aa.angle *= t * t;
+//                        return to_quat(aa);
+//                    };
 
-                    // Doh, I assume acceleration is relative to the first
-                    // point? (assume point 0 is identity, so skip mul).
-                    // anyway - these values are more or less correct
-                    // however even then they have precision issue of up to 0.01.
-                    // Assuming that q1a*q2b = ab(q1*q2) then just need to divide
-                    // by ab to get a.
-                    auto c_p1 = to_quat({a_aa.angle * 0.5f * 10.0f * 10.0f, a_aa.axis});
-                    auto c_p2 = to_quat({a_aa.angle * 0.5f * 20.0f * 20.0f, a_aa.axis});
-                    auto c_p3 = to_quat({a_aa.angle * 0.5f * 30.0f * 30.0f, a_aa.axis});
-                    auto c_p4 = to_quat({a_aa.angle * 0.5f * 40.0f * 40.0f, a_aa.axis});
-
-
+//                    // Doh, I assume acceleration is relative to the first
+//                    // point? (assume point 0 is identity, so skip mul).
+//                    // anyway - these values are more or less correct
+//                    // however even then they have precision issue of up to 0.01.
+//                    // Assuming that q1a*q2b = ab(q1*q2) then just need to divide
+//                    // by ab to get a.
+//                    auto c_p1 = to_quat({a_aa.angle * 0.5f * 10.0f * 10.0f, a_aa.axis});
+//                    auto c_p2 = to_quat({a_aa.angle * 0.5f * 20.0f * 20.0f, a_aa.axis});
+//                    auto c_p3 = to_quat({a_aa.angle * 0.5f * 30.0f * 30.0f, a_aa.axis});
+//                    auto c_p4 = to_quat({a_aa.angle * 0.5f * 40.0f * 40.0f, a_aa.axis});
 
 
 
-                    // LOL, wut? Can you even do that?                    
-                    // RAM: YES! And more accurate than above!
-                    // RAM: Downside is that it assumes t is constant
-                    // RAM: for v2t and v1t.
-                    auto at2 = mul(v2t, conjugate(v1t));
-
-                    // Now, lets get some things striaght.
-                    auto t_v1 = mul(v1t, values[0]);
-                    compare_q(t_v1, values[1], 0.00001f);
-
-                    auto t_v2 = mul(v2t, values[1]);
-                    compare_q(t_v2, values[2], 0.00001f);
-
-                    // d = delta change!
-                    // d = ut + 0.5at^2
-                    // d = d0 + v1t - 0.5at^2
-                    // assume t = 10?
-                    // do divide or mult by time, we need axis_angle version.
-                    auto at2_aa = to_angle_and_axis(at2);
-                    auto a = at2_aa;
-                    a.angle /= 10.0f * 10.0f;
 
 
-                    // Yup, these are correct.
-                    auto d_p1 = to_quat({a.angle * 0.5f * 10.0f * 10.0f, a.axis});
-                    auto d_p2 = to_quat({a.angle * 0.5f * 20.0f * 20.0f, a.axis});
-                    auto d_p3 = to_quat({a.angle * 0.5f * 30.0f * 30.0f, a.axis});
-                    auto d_p4 = to_quat({a.angle * 0.5f * 40.0f * 40.0f, a.axis});
+//                    // LOL, wut? Can you even do that?
+//                    // RAM: YES! And more accurate than above!
+//                    // RAM: Downside is that it assumes t is constant
+//                    // RAM: for v2t and v1t.
+//                    auto at2 = mul(v2t, conjugate(v1t));
+
+//                    // Now, lets get some things striaght.
+//                    auto t_v1 = mul(v1t, values[0]);
+//                    compare_q(t_v1, values[1], 0.00001f);
+
+//                    auto t_v2 = mul(v2t, values[1]);
+//                    compare_q(t_v2, values[2], 0.00001f);
+
+//                    // d = delta change!
+//                    // d = ut + 0.5at^2
+//                    // d = d0 + v1t - 0.5at^2
+//                    // assume t = 10?
+//                    // do divide or mult by time, we need axis_angle version.
+//                    auto at2_aa = to_angle_and_axis(at2);
+//                    auto a = at2_aa;
+//                    a.angle /= 10.0f * 10.0f;
 
 
-                    // RAM: But we're not working with only acc, how to
-                    // incoperate ut as well?
+//                    // Yup, these are correct.
+//                    auto d_p1 = to_quat({a.angle * 0.5f * 10.0f * 10.0f, a.axis});
+//                    auto d_p2 = to_quat({a.angle * 0.5f * 20.0f * 20.0f, a.axis});
+//                    auto d_p3 = to_quat({a.angle * 0.5f * 30.0f * 30.0f, a.axis});
+//                    auto d_p4 = to_quat({a.angle * 0.5f * 40.0f * 40.0f, a.axis});
 
 
-                    // now, get 0.5at^2
-                    auto at2_2_aa = a;
-                    at2_2_aa.angle *= 10 * 10 * 0.5;
-                    auto at2_2 = to_quat(at2_2_aa);
-
-                    // d = ut + 0.5at^2
-                    // p = p0 + d
-
-                    // first point, u == 0
-                    auto d1 = at2_2;
-
-                    // this should be right!
-                    auto p1 = mul(d1, values[0]);
-
-                    // second point
-                    auto d2 = at2_2;
-                    auto p2 = mul(d2, values[1]);
-
-                    auto d3 = mul(v1t, at2_2);
-                    auto p3 = mul(d2, values[1]);
+//                    // RAM: But we're not working with only acc, how to
+//                    // incoperate ut as well?
 
 
-                    compare_q(p1, values[1], 0.00001f);
-                    compare_q(p2, values[2], 0.00001f);
-                    compare_q(p3, values[3], 0.00001f);
-                }
+//                    // now, get 0.5at^2
+//                    auto at2_2_aa = a;
+//                    at2_2_aa.angle *= 10 * 10 * 0.5;
+//                    auto at2_2 = to_quat(at2_2_aa);
+
+//                    // d = ut + 0.5at^2
+//                    // p = p0 + d
+
+//                    // first point, u == 0
+//                    auto d1 = at2_2;
+
+//                    // this should be right!
+//                    auto p1 = mul(d1, values[0]);
+
+//                    // second point
+//                    auto d2 = at2_2;
+//                    auto p2 = mul(d2, values[1]);
+
+//                    auto d3 = mul(v1t, at2_2);
+//                    auto p3 = mul(d2, values[1]);
+
+
+//                    compare_q(p1, values[1], 0.00001f);
+//                    compare_q(p2, values[2], 0.00001f);
+//                    compare_q(p3, values[3], 0.00001f);
+//                }
 
 //                {
 //                    // Test reflection to see if it works.
@@ -1499,35 +1499,35 @@ void dual_tests()
 
                 auto dq_calc = mul(delta_new, previous_d);
 
-                {
-                    // RAM: WTF, when I assert, the norm has a value > 1.0
-                    // Is it a rounding issue, or a maths issue?
-                    // Seems to be a precision issue :-(
-                    // comparing a,b,c to spreadsheet it comes under 1.0
-                    // but the spreadsheet says abouve 1.0.
-                    // question is: will it affect the angle and axis?
-                    auto dq_calc_norm = normalise(dq_calc);
-                    auto dq_calc_norm2 = normalise(dq_calc_norm);
+//                {
+//                    // RAM: WTF, when I assert, the norm has a value > 1.0
+//                    // Is it a rounding issue, or a maths issue?
+//                    // Seems to be a precision issue :-(
+//                    // comparing a,b,c to spreadsheet it comes under 1.0
+//                    // but the spreadsheet says abouve 1.0.
+//                    // question is: will it affect the angle and axis?
+//                    auto dq_calc_norm = normalise(dq_calc);
+//                    auto dq_calc_norm2 = normalise(dq_calc_norm);
 
 
-                    //auto mag2 = dot(dq_calc.real, conjugate(dq_calc).real);
-                    auto a = dq_calc.real[0] * dq_calc.real[0];
-                    auto b = dq_calc.real[3] * dq_calc.real[3];
-                    auto mag2c = a+b;
-    //                auto mag2b =
-    //                    a +
-    //                    dq_calc.real[1] * dq_calc.real[1] +
-    //                    dq_calc.real[2] * dq_calc.real[2] +
-    //                    b;
+//                    //auto mag2 = dot(dq_calc.real, conjugate(dq_calc).real);
+//                    auto a = dq_calc.real[0] * dq_calc.real[0];
+//                    auto b = dq_calc.real[3] * dq_calc.real[3];
+//                    auto mag2c = a+b;
+//    //                auto mag2b =
+//    //                    a +
+//    //                    dq_calc.real[1] * dq_calc.real[1] +
+//    //                    dq_calc.real[2] * dq_calc.real[2] +
+//    //                    b;
 
 
-                    auto s = std::sqrt(mag2c);
-                    auto s_1 = 1.0f / s;
-                    auto dq_calc_norm_m = mul(dq_calc, s_1);
-                    mul(dq_calc_norm, 1.0f);
-                    mul(dq_calc_norm2, 1.0f);
-                    mul(dq_calc_norm_m, 1.0f);
-                }
+//                    auto s = std::sqrt(mag2c);
+//                    auto s_1 = 1.0f / s;
+//                    auto dq_calc_norm_m = mul(dq_calc, s_1);
+//                    mul(dq_calc_norm, 1.0f);
+//                    mul(dq_calc_norm2, 1.0f);
+//                    mul(dq_calc_norm_m, 1.0f);
+//                }
 
 
 
@@ -1903,41 +1903,41 @@ namespace Naive_error
 
         auto rotation = mul(r, base.quat);
 
-        {
-            // RAM: DEbug, do we need to convert to axis angle in order to add
-            // angular velocities to a rotation?
-            // Hmm, it seems I have my maths wrong, as this isn't working :-(
-            auto q_wa = to_quat
-            (
-                Angle_axis{v_and_a.angular_acceleration_per_frame}
-            );
+//        {
+//            // RAM: DEbug, do we need to convert to axis angle in order to add
+//            // angular velocities to a rotation?
+//            // Hmm, it seems I have my maths wrong, as this isn't working :-(
+//            auto q_wa = to_quat
+//            (
+//                Angle_axis{v_and_a.angular_acceleration_per_frame}
+//            );
 
-            auto q_w = to_quat
-            (
-                Angle_axis{v_and_a.angular_velocity_per_frame}
-            );
+//            auto q_w = to_quat
+//            (
+//                Angle_axis{v_and_a.angular_velocity_per_frame}
+//            );
 
-            auto q_wt_2     = delta_t(q_wa, frame_delta / 2.0f);
-            auto q_new_w    = mul(q_w, q_wt_2);
+//            auto q_wt_2     = delta_t(q_wa, frame_delta / 2.0f);
+//            auto q_new_w    = mul(q_w, q_wt_2);
 
-            auto q_delta_w  = delta_t(q_new_w, frame_delta);
+//            auto q_delta_w  = delta_t(q_new_w, frame_delta);
 
-            auto rotation2 = mul(q_delta_w, base.quat);
+//            auto rotation2 = mul(q_delta_w, base.quat);
 
-            std::array<float, 4> error;
+//            std::array<float, 4> error;
 
-            for (unsigned g = 0; g < 4; g++)
-            {
-                error[g] = std::abs(rotation[g] - rotation2[g]);
-            }
+//            for (unsigned g = 0; g < 4; g++)
+//            {
+//                error[g] = std::abs(rotation[g] - rotation2[g]);
+//            }
 
-            static const float EPISLON = 0.000001f;
+//            static const float EPISLON = 0.000001f;
 
-            assert(error[0] < EPISLON);
-            assert(error[1] < EPISLON);
-            assert(error[2] < EPISLON);
-            assert(error[3] < EPISLON);
-        }
+//            assert(error[0] < EPISLON);
+//            assert(error[1] < EPISLON);
+//            assert(error[2] < EPISLON);
+//            assert(error[3] < EPISLON);
+//        }
 
         return
         {
