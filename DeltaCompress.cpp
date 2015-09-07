@@ -1,17 +1,24 @@
-//    Copyright (C) 2015 Richard Maxwell.
+// DeltaCompress by Richard Maxwell
 //
-//    This program is free software: you can redistribute it and/or modify
-//    it under the terms of the GNU General Public License as published by
-//    the Free Software Foundation, either version 3 of the License, or
-//    (at your option) any later version.
+// This is free and unencumbered software released into the public domain.
 //
-//    This program is distributed in the hope that it will be useful,
-//    but WITHOUT ANY WARRANTY; without even the implied warranty of
-//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//    GNU General Public License for more details.
+// Anyone is free to copy, modify, publish, use, compile, sell, or distribute
+// this software, either in source code form or as a compiled binary, for any
+// purpose, commercial or non-commercial, and by any means.
 //
-//    You should have received a copy of the GNU General Public License
-//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// In jurisdictions that recognize copyright laws, the author or authors
+// of this software dedicate any and all copyright interest in the software
+// to the public domain. We make this dedication for the benefit of the public
+// at large and to the detriment of our heirs and successors. We intend this
+// dedication to be an overt act of relinquishment in perpetuity of all present
+// and future rights to this software under copyright law.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+// ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 // //////////////////////////////////////////////////////
 //
@@ -34,7 +41,6 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests       = true;
 bool do_compression = true;
 bool do_decompress  = true;
 
@@ -550,124 +556,6 @@ namespace Coders
 
             Tree<BINARY_MODEL, BITCOUNT_FOR_MAX_VALUE, MAX_VALUE> m_bits;
         };
-    }
-}
-
-void run_tests()
-{
-    using namespace Coders;
-    using namespace Models;
-
-    using Coder = Fpaq0p_32bits<>;
-
-    const auto binary_test_items =
-    {
-        0,1,0,1,0,1,1,0,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0
-    };
-
-    {
-        Bytes data;
-        const auto p = (Fpaq0p_32bits<>::PROBABILITY_RANGE * 2) / 3;
-
-        {
-            Coder::Encoder encoder(data);
-
-            for (const unsigned t : binary_test_items)
-            {
-                encoder.encode(t, p);
-            }
-        }
-
-        {
-            Coder::Decoder decoder(data);
-
-            for (const unsigned t : binary_test_items)
-            {
-                auto value = decoder.decode(p);
-
-                REQUIRE(value == t);
-            }
-
-            auto read = decoder.bytes_read();
-            REQUIRE(read == data.size());
-        }
-    }
-
-    {
-        auto binary_test = [&binary_test_items](auto model_in, auto model_out)
-        {
-            Bytes data;
-
-            {
-                Coder::Encoder test_encoder(data);
-
-                for (const auto t : binary_test_items)
-                {
-                    model_in.encode(test_encoder, t);
-                }
-            }
-            {
-                Coder::Decoder test_decoder(data);
-
-                for (unsigned t : binary_test_items)
-                {
-                    auto value = model_out.decode(test_decoder);
-                    REQUIRE(value == t);
-                }
-
-                auto read = test_decoder.bytes_read();
-                REQUIRE(read == data.size());
-            }
-        };
-
-        binary_test
-        (
-            Dual_exponential<Coder>(5,2),
-            Dual_exponential<Coder>(5,2)
-        );
-        binary_test
-        (
-            Dual_exponential<Coder>(6,1),
-            Dual_exponential<Coder>(6,1)
-        );
-        binary_test
-        (
-            Dual_exponential<Coder>(3,4),
-            Dual_exponential<Coder>(3,4)
-        );
-    }
-
-    {
-        using Tree_model = Tree<Dual_exponential<Coder>, 3, 5>;
-        Bytes data;
-        Bytes tests
-        {
-            0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7,
-            0,1,2,3,4,5,6,7, 0,1,2
-        };
-
-        {
-            Tree_model::Binary_model::Encoder test_encoder(data);
-            Tree_model tree;
-
-            for (auto t : tests)
-            {
-                tree.encode(test_encoder, t % 6);
-            }
-        }
-        {
-            Tree_model::Binary_model::Decoder test_decoder(data);
-            Tree_model tree;
-
-            for (unsigned t : tests)
-            {
-                auto value = tree.decode(test_decoder);
-                REQUIRE(value == (t % 6));
-            }
-
-            auto read = test_decoder.bytes_read();
-            REQUIRE(read == data.size());
-        }
     }
 }
 
@@ -1256,6 +1144,9 @@ struct Model
     };
 };
 
+// NOTE: I'm using a bad form of 2nd order Euler integration. This could
+//       probably be improved by using Störmer–Verlet integration or some other
+//       n-order prediction model.
 auto predict
 (
     const Predictors& v_and_a,
@@ -1915,7 +1806,9 @@ void compress(std::vector<Frame>& frames)
         duration_cast<microseconds>(Clock::now() - total_code_start)
         / packetsCoded;
 
+    printf("\nDeltaCompress: By Richard Maxwell");
     printf("\n==============================================\n\n");
+
 
     PRINT_INT(packetsCoded);
 
@@ -1974,11 +1867,6 @@ int main(int, char**)
     if (frames.empty())
     {
         return 1;
-    }
-
-    if (do_tests)
-    {
-        run_tests();
     }
 
     if (do_compression)
