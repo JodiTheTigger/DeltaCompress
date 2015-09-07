@@ -30,7 +30,7 @@ bool do_tests                           = true;
 bool do_compression                     = true;
 bool do_decompress                      = true;
 bool do_enable_2nd_order_predictions    = false;
-bool do_use_dq_prediction               = false;
+bool do_use_dq_prediction               = true;
 
 // //////////////////////////////////////////////////////
 
@@ -635,9 +635,13 @@ auto to_screw(const Dual_quat& d) -> Screw
     // Note that for us θ(0) == theta, and s(0) = direction.
     // I assume that s(0) is a unit vec (is it?). so, would distance
     // still be valid?
+
     auto wr         = d.real[0];
-    auto theta      = 2.0f * std::acos(wr);
-    auto vd         = Vec3f{d.dual[1], d.dual[2], d.dual[3]};
+    auto vd         = Vec3f{d.dual[1], d.dual[2], d.dual[3]};    
+    auto theta      =
+        ((wr < 1.0f) && (wr > -1.0f))
+        ? 2.0f * std::acos(wr)
+        : 0.0f;
 
     if (theta != 0.0f)
     {
@@ -1256,6 +1260,15 @@ void dual_tests()
         assert(errors[1] < EPISLON);
         assert(errors[2] < EPISLON);
     };
+
+    // RAM: Test screwing stuff up.
+    {
+        auto dq = to_dual({0.0f, 0.0f, 1.0f});
+        auto s = to_screw(dq);
+        auto p = to_dual_quat(s);
+
+        compare_dq(dq, p, 0.00001f, 0.00001f);
+    }
 
     Dual_quat previous =
     {
@@ -2037,12 +2050,7 @@ namespace Naive_error
 
         if (do_use_dq_prediction)
         {
-            return
-            {
-                to_vec3i(to_position(p)),
-                p.real
-            };
-
+            return answer;
         }
         else
         {
