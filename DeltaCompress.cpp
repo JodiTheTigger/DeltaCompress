@@ -30,7 +30,7 @@ bool do_tests                           = true;
 bool do_compression                     = true;
 bool do_decompress                      = true;
 bool do_enable_2nd_order_predictions    = false;
-bool do_use_dq_prediction               = true;
+bool do_use_dq_prediction               = false;
 
 // //////////////////////////////////////////////////////
 
@@ -1965,13 +1965,13 @@ namespace Naive_error
         auto v = add(v_and_a.linear_velocity_per_frame, at_2);
 
         // RAM: TODO: angular!
-        if ((std::abs(v[0]) > 0.0001f) || (std::abs(v[1]) > 0.0001f))
-        {
-            if (std::abs(v[2]) < 0.001f)
-            {
-                v = mul(v, DRAG);
-            }
-        }
+//        if ((std::abs(v[0]) > 0.0001f) || (std::abs(v[1]) > 0.0001f))
+//        {
+//            if (std::abs(v[2]) < 0.001f)
+//            {
+//                v = mul(v, DRAG);
+//            }
+//        }
 
         auto pos_delta = mul(v, frame_delta);
 
