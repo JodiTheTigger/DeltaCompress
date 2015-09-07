@@ -26,11 +26,11 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests                           = true;
+bool do_tests                           = false;
 bool do_compression                     = true;
 bool do_decompress                      = true;
-bool do_enable_2nd_order_predictions    = false;
-bool do_use_dq_prediction               = false;
+bool do_enable_2nd_order_predictions    = true;
+bool do_use_dq_prediction               = true;
 
 // //////////////////////////////////////////////////////
 
@@ -393,8 +393,8 @@ static_assert
 
 struct Dual_quat
 {
-    Quat real;
-    Quat dual;
+    Quat real = {{{1.0f, 0.0f, 0.0f, 0.0f}}};
+    Quat dual = {{{0.0f, 0.0f, 0.0f, 0.0f}}};
 };
 
 // //////////////////////////////////////////////////////
@@ -432,6 +432,7 @@ struct Predictors
 
     // Oooh, finaly! dq!
     Dual_quat velocity_per_frame;
+    Dual_quat acceleration_per_frame;
 };
 
 typedef std::array<Predictors, Cubes> Frame_predicitons;
@@ -726,7 +727,15 @@ auto velocity
     // Which makes sense, since we are rotating back to identity, then rotating
     // by q1.
 
-    auto delta = mul(target, conjugate(base));
+    // Wait! make sure we are rotating around the shortest path.
+    // Shortest path
+    auto side = dot(base.real, target.real);
+    auto from =
+        (side >= 0)
+        ? target
+        : mul(target, -1.0f);
+
+    auto delta = mul(from, conjugate(base));
 
     auto delta_screw = to_screw(delta);
 
@@ -1949,7 +1958,8 @@ namespace Naive_error
         const Predictors& v_and_a,
         const Position_and_quat& base,
         int zero_height,
-        unsigned frame_delta
+        unsigned frame_delta,
+        const Position_and_quat& target
     )
     -> Position_and_quat
     {
@@ -2025,13 +2035,18 @@ namespace Naive_error
             };
         };
 
+        auto dq_v =
+            do_enable_2nd_order_predictions
+            ? new_position(v_and_a.acceleration_per_frame, v_and_a.velocity_per_frame, frame_delta / 2.0f)
+            : v_and_a.velocity_per_frame;
+
         Dual_quat b = to_dual
         (
             base.quat,
             to_vec3f(base.position)
         );
 
-        auto p = new_position(v_and_a.velocity_per_frame, b, frame_delta);
+        auto p = new_position(dq_v, b, frame_delta);
         auto answer =  Position_and_quat
         {
             to_vec3i(to_position(p)),
@@ -2045,6 +2060,24 @@ namespace Naive_error
                 zero_height
                 + (RESTITUTION * (zero_height - answer.position[2]));
         }
+
+        // //////////////////////////////////////////////////////
+
+        // RAM: Print out the deltas to see what they look like.
+        // For now, only position.
+//        auto edq = sub(target.position, answer.position);
+//        auto edn = sub(target.position, pos);
+
+//        if ((edq[0] != edn[0]) || (edq[1] != edn[1]) || (edq[2] != edn[2]))
+//        {
+//            printf
+//            (
+//                "%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+//                target.position[0], target.position[1], target.position[2],
+//                pos[0], pos[1], pos[2],
+//                answer.position[0], answer.position[1], answer.position[2]
+//            );
+//        }
 
         // //////////////////////////////////////////////////////
 
@@ -2127,6 +2160,9 @@ namespace Naive_error
 
         auto dq_v = velocity(t, b, frame_delta);
 
+        // oh hey, we can use this for acceleration too?
+        auto dq_a = velocity(dq_v, v_and_a.velocity_per_frame, frame_delta);
+
         // ///////////////////////////////////////////////////////////////////
 
         return
@@ -2136,7 +2172,8 @@ namespace Naive_error
             w,
             wa,
 
-            dq_v
+            dq_v,
+            dq_a
         };
     }
 
@@ -2450,7 +2487,8 @@ namespace Naive_error
                     predicitons[i],
                     b,
                     zero_height,
-                    frame_delta
+                    frame_delta,
+                    t
                 );
 
                 auto calculated_quat = to_gaffer(calculated.quat);
@@ -2640,7 +2678,8 @@ namespace Naive_error
                     predicitons[i],
                     b,
                     zero_height,
-                    frame_delta
+                    frame_delta,
+                    b
                 );
 
                 auto calculated_quat = to_gaffer(calculated.quat);
