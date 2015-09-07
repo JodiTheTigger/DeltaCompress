@@ -26,10 +26,15 @@
 
 // //////////////////////////////////////////////////////
 
-bool do_tests                           = false;
+bool do_tests                           = true;
 bool do_compression                     = true;
 bool do_decompress                      = true;
 bool do_enable_2nd_order_predictions    = true;
+
+// dq predictions seem to do worse, comparing both 1st and second order
+// predicitons. I suspect it's because they are predicting over a screw motion
+// as opposed to a linear motion. But that's a guess. So the conclusion is that
+// you should predict position and rotation independently for simple objects.
 bool do_use_dq_prediction               = true;
 
 // //////////////////////////////////////////////////////
